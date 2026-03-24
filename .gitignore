@@ -1,0 +1,43 @@
+# Dependências
+node_modules/
+.pnp
+.pnp.js
+
+# Build
+dist/
+.vite/
+
+# Ambiente
+.env
+.env.local
+.env.production
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs Manus (resíduo)
+.manus-logs/
+
+# Logs gerais
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# TypeScript
+*.tsbuildinfo
+
+# Drizzle migrations geradas
+drizzle/*.sql
+drizzle/meta/
+
+# Uploads temporários
+uploads/

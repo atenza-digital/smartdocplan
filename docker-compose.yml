@@ -1,0 +1,52 @@
+# docker-compose.yml para produção com Traefik (SSL automático via Let's Encrypt)
+# Deploy: porta interna 5000, acesso via https://srv1450720.hstgr.cloud
+
+services:
+  app:
+    image: smartdocplan-app:latest
+    container_name: smartdocplan-app
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "5000"
+      DATABASE_URL: ${DATABASE_URL}
+      JWT_SECRET: ${JWT_SECRET}
+    networks:
+      - traefik_default
+      - smartdocplan_net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.smartdocplan.rule=Host(`srv1450720.hstgr.cloud`)"
+      - "traefik.http.routers.smartdocplan.entrypoints=websecure"
+      - "traefik.http.routers.smartdocplan.tls=true"
+      - "traefik.http.routers.smartdocplan.tls.certresolver=letsencrypt"
+      - "traefik.http.services.smartdocplan.loadbalancer.server.port=5000"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/trpc/system.health?input=%7B%22timestamp%22%3A0%7D"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    depends_on:
+      - db-check
+
+  # Serviço auxiliar que aguarda o banco estar pronto antes de subir o app
+  db-check:
+    image: mysql:8.0
+    container_name: smartdocplan-dbcheck
+    restart: "no"
+    command: >
+      sh -c "until mysqladmin ping -h smartdocplan-db -u smartdoc -pSmartDoc_App_2024! --silent; do echo 'Aguardando banco...'; sleep 3; done; echo 'Banco OK'"
+    networks:
+      - smartdocplan_net
+
+networks:
+  traefik_default:
+    external: true
+    name: traefik_default
+  smartdocplan_net:
+    external: true
+    name: smartdocplan_net
