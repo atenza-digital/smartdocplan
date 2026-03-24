@@ -57,9 +57,9 @@ function Router() {
   const { user, loading } = useLocalAuth();
   const [location, navigate] = useLocation();
 
-  // Redirecionar / para o painel correto apos login
+  // Redirecionar / e /login para o painel correto apos login
   useEffect(() => {
-    if (!loading && user && location === "/") {
+    if (!loading && user && (location === "/" || location === "/login")) {
       const isPlatform = ["platform_admin", "platform_analyst", "platform_auditor"].includes(user.role);
       navigate(isPlatform ? "/admin" : "/empresa");
     }
