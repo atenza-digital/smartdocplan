@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -114,7 +115,7 @@ export default function AdminEmpresas() {
                 </div>
                 <div className="mt-4 flex gap-2">
                   <Button variant="outline" size="sm" className="flex-1 text-xs" asChild>
-                    <a href={`/admin/empresas/${empresa.id}`}>Ver Detalhes</a>
+                    <Link href={`/admin/empresas/${empresa.id}`}>Ver Detalhes</Link>
                   </Button>
                 </div>
               </CardContent>

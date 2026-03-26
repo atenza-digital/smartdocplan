@@ -18,6 +18,7 @@ import AdminAuditoria from "./pages/admin/AdminAuditoria";
 import AdminBI from "./pages/admin/AdminBI";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
 import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
+import AdminEmpresaDetalhe from "./pages/admin/AdminEmpresaDetalhe";
 
 // Empresa (usuarios das empresas clientes)
 import EmpresaDashboard from "./pages/empresa/EmpresaDashboard";
@@ -79,6 +80,9 @@ function Router() {
       </Route>
       <Route path="/admin/empresas">
         <AuthGuard><AdminEmpresas /></AuthGuard>
+      </Route>
+      <Route path="/admin/empresas/:id">
+        <AuthGuard><AdminEmpresaDetalhe /></AuthGuard>
       </Route>
       <Route path="/admin/solicitacoes">
         <AuthGuard><AdminSolicitacoes /></AuthGuard>
