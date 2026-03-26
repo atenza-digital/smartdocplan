@@ -200,3 +200,41 @@
     }
   }
 }
+/* ─── Alto Contraste (Acessibilidade) ──────────────────────────────────────── */
+.high-contrast {
+  filter: contrast(1.5) brightness(1.05);
+}
+
+.high-contrast body {
+  background-color: #000 !important;
+  color: #fff !important;
+}
+
+.high-contrast a,
+.high-contrast button:not([disabled]) {
+  text-decoration: underline;
+  outline-offset: 2px;
+}
+
+.high-contrast *:focus-visible {
+  outline: 3px solid #ffff00 !important;
+  outline-offset: 2px !important;
+}
+
+/* ─── Skip to content (Acessibilidade) ─────────────────────────────────────── */
+.skip-to-content {
+  position: absolute;
+  top: -100%;
+  left: 0;
+  z-index: 9999;
+  padding: 8px 16px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: top 0.1s;
+}
+
+.skip-to-content:focus {
+  top: 0;
+}

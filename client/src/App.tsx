@@ -4,7 +4,10 @@ import NotFound from "@/pages/NotFound";
 import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { AccessibilityProvider } from "./contexts/AccessibilityContext";
 import { LocalAuthProvider, useLocalAuth } from "./contexts/LocalAuthContext";
+import { AccessibilityBar } from "./components/AccessibilityBar";
+import { CookieBanner } from "./components/CookieBanner";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 
@@ -141,14 +144,27 @@ function Router() {
 function App() {
   return (
     <ErrorBoundary>
-      <ThemeProvider defaultTheme="light" switchable>
-        <LocalAuthProvider>
-          <TooltipProvider>
-            <Toaster />
-            <Router />
-          </TooltipProvider>
-        </LocalAuthProvider>
-      </ThemeProvider>
+      <AccessibilityProvider>
+        <ThemeProvider defaultTheme="light" switchable>
+          <LocalAuthProvider>
+            <TooltipProvider>
+              {/* Link de acessibilidade - pular para conteúdo */}
+              <a href="#main-content" className="skip-to-content">
+                Pular para o conteúdo principal
+              </a>
+              {/* Barra de acessibilidade */}
+              <AccessibilityBar />
+              {/* Conteúdo principal */}
+              <main id="main-content">
+                <Toaster />
+                <Router />
+              </main>
+              {/* Banner de cookies LGPD */}
+              <CookieBanner />
+            </TooltipProvider>
+          </LocalAuthProvider>
+        </ThemeProvider>
+      </AccessibilityProvider>
     </ErrorBoundary>
   );
 }

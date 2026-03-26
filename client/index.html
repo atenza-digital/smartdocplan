@@ -1,26 +1,31 @@
 <!doctype html>
-<html lang="en">
+<html lang="pt-BR">
 
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1" />
-    <title>Smart Doc Plan</title>    
-    <!-- THIS IS THE START OF A COMMENT BLOCK, BLOCK TO BE DELETED: Google Fonts here, example:
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    THIS IS THE END OF A COMMENT BLOCK, BLOCK TO BE DELETED -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SmartDocPlan — Gestão Documental de SST</title>
+    <meta name="description" content="Plataforma de gestão documental para Saúde e Segurança no Trabalho" />
+    <!-- vLibras - Acessibilidade em Libras (Gov.br) -->
+    <script>
+      window.vlibras = { settings: { VLibras: { engage: true, rootPath: 'https://vlibras.gov.br/app' } } };
+    </script>
   </head>
 
   <body>
+    <!-- vLibras widget container -->
+    <div vw class="enabled">
+      <div vw-access-button class="active"></div>
+      <div vw-plugin-wrapper>
+        <div class="vw-plugin-top-wrapper"></div>
+      </div>
+    </div>
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+    <script>
+      try { new window.VLibras.Widget('https://vlibras.gov.br/app'); } catch(e) {}
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script
-      defer
-      src="%VITE_ANALYTICS_ENDPOINT%/umami"
-      data-website-id="%VITE_ANALYTICS_WEBSITE_ID%"></script>
   </body>
 
 </html>
