@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, superAdminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
@@ -11,7 +11,29 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+async function insertAuditLog(opts: {
+  userId?: number | null;
+  companyId?: number | null;
+  acao: string;
+  entidade?: string;
+  entidadeId?: number | null;
+  dadosDepois?: unknown;
+}) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    await db.insert(auditLogs).values({
+      userId: opts.userId ?? null,
+      companyId: opts.companyId ?? null,
+      acao: opts.acao,
+      entidade: opts.entidade ?? null,
+      entidadeId: opts.entidadeId ?? null,
+      dadosDepois: opts.dadosDepois ? JSON.stringify(opts.dadosDepois) : null,
+    } as any);
+  } catch { /* não bloquear a operação principal */ }
+}
 
 /** Verifica se o usuário é da plataforma (admin, analista ou auditor) */
 function isPlatformUser(role: string) {
@@ -45,7 +67,7 @@ const companiesRouter = router({
     return result[0] ?? null;
   }),
 
-  create: adminProcedure.input(z.object({
+  create: superAdminProcedure.input(z.object({
     razaoSocial: z.string().min(1),
     nomeFantasia: z.string().optional(),
     cnpj: z.string().optional(),
@@ -59,7 +81,7 @@ const companiesRouter = router({
     return { success: true };
   }),
 
-  update: adminProcedure.input(z.object({
+  update: superAdminProcedure.input(z.object({
     id: z.number(),
     razaoSocial: z.string().min(1).optional(),
     nomeFantasia: z.string().optional(),
@@ -210,6 +232,7 @@ const requestsRouter = router({
     if (!db) throw new Error("DB unavailable");
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) throw new Error("Acesso negado");
     await db.insert(requests).values({ ...input, criadoPor: ctx.user.id });
+    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: 'criou_solicitacao', entidade: 'requests', dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
     return { success: true };
   }),
 
@@ -414,22 +437,24 @@ const legalReqRouter = router({
 const auditRouter = router({
   list: adminProcedure.input(z.object({
     companyId: z.number().optional(),
-    limit: z.number().default(50),
+    limit: z.number().default(100),
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    const conditions = [];
+    const conditions: any[] = [];
     if (input.companyId) conditions.push(eq(auditLogs.companyId, input.companyId));
-    return db.select().from(auditLogs)
+    const rows = await db.select().from(auditLogs)
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(auditLogs.createdAt))
       .limit(input.limit);
+    // Enriquecer com nome do usuário
+    return rows;
   }),
 });
 
 // ─── USERS ROUTER (gestão de usuários das empresas) ──────────────────────────
 const usersRouter = router({
-  create: adminProcedure.input(z.object({
+  create: superAdminProcedure.input(z.object({
     name: z.string().min(1),
     email: z.string().email(),
     password: z.string().min(6),
@@ -450,20 +475,22 @@ const usersRouter = router({
       role: input.role,
       companyId: input.companyId ?? null,
     });
+    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId ?? null, acao: 'criou_usuario', entidade: 'users', dadosDepois: { email: input.email, role: input.role } });
     return { success: true };
   }),
 
-  toggleAtivo: adminProcedure.input(z.object({
+  toggleAtivo: superAdminProcedure.input(z.object({
     userId: z.number(),
     ativo: z.boolean(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.update(users).set({ ativo: input.ativo }).where(eq(users.id, input.userId));
+    await insertAuditLog({ userId: ctx.user.id, acao: input.ativo ? 'ativou_usuario' : 'desativou_usuario', entidade: 'users', entidadeId: input.userId });
     return { success: true };
   }),
 
-  resetPassword: adminProcedure.input(z.object({
+  resetPassword: superAdminProcedure.input(z.object({
     userId: z.number(),
     newPassword: z.string().min(6),
   })).mutation(async ({ ctx, input }) => {
@@ -475,7 +502,7 @@ const usersRouter = router({
     return { success: true };
   }),
 
-  list: adminProcedure.query(async () => {
+  list: superAdminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
     return db.select({
@@ -485,7 +512,7 @@ const usersRouter = router({
     }).from(users).orderBy(desc(users.createdAt));
   }),
 
-  listByCompany: adminProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+  listByCompany: superAdminProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     return db.select({
@@ -495,7 +522,7 @@ const usersRouter = router({
     }).from(users).where(eq(users.companyId, input.companyId));
   }),
 
-  updateRole: adminProcedure.input(z.object({
+  updateRole: superAdminProcedure.input(z.object({
     userId: z.number(),
     role: z.enum(["platform_admin","platform_analyst","platform_auditor","company_admin","company_hr","company_manager","company_viewer"]),
     companyId: z.number().optional(),
@@ -593,7 +620,10 @@ export const appRouter = router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+      // Limpar o cookie com todas as variantes para garantir remoção
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: 0 });
+      ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", maxAge: 0 });
+      ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", secure: true, sameSite: "none", maxAge: 0 });
       return { success: true } as const;
     }),
   }),
