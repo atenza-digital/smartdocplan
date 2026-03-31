@@ -614,38 +614,6 @@ const dashboardRouter = router({
 });
 
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
-export const appRouter = router({
-  system: systemRouter,
-  documentTemplates: documentTemplatesRouter,
-  requestDocUploads: requestDocUploadsRouter,
-  auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
-    logout: publicProcedure.mutation(({ ctx }) => {
-      const cookieOptions = getSessionCookieOptions(ctx.req);
-      // Limpar o cookie com todas as variantes para garantir remoção
-      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: 0 });
-      ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", maxAge: 0 });
-      ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", secure: true, sameSite: "none", maxAge: 0 });
-      return { success: true } as const;
-    }),
-  }),
-  companies: companiesRouter,
-  employees: employeesRouter,
-  requests: requestsRouter,
-  tickets: ticketsRouter,
-  positions: positionsRouter,
-  worksites: worksitesRouter,
-  legalRequirements: legalReqRouter,
-  audit: auditRouter,
-  users: usersRouter,
-  employeeDocs: employeeDocsRouter,
-  dashboard: dashboardRouter,
-});
-
-export type AppRouter = typeof appRouter;
-
-// ─── DOCUMENT TYPE TEMPLATES ROUTER ──────────────────────────────────────────
-
 const documentTemplatesRouter = router({
   // Listar templates por tipo de solicitação
   listByTipo: protectedProcedure.input(z.object({
@@ -781,3 +749,35 @@ const requestDocUploadsRouter = router({
     return { success: true };
   }),
 });
+
+export const appRouter = router({
+  system: systemRouter,
+  documentTemplates: documentTemplatesRouter,
+  requestDocUploads: requestDocUploadsRouter,
+  auth: router({
+    me: publicProcedure.query(opts => opts.ctx.user),
+    logout: publicProcedure.mutation(({ ctx }) => {
+      const cookieOptions = getSessionCookieOptions(ctx.req);
+      // Limpar o cookie com todas as variantes para garantir remoção
+      ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: 0 });
+      ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", maxAge: 0 });
+      ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", secure: true, sameSite: "none", maxAge: 0 });
+      return { success: true } as const;
+    }),
+  }),
+  companies: companiesRouter,
+  employees: employeesRouter,
+  requests: requestsRouter,
+  tickets: ticketsRouter,
+  positions: positionsRouter,
+  worksites: worksitesRouter,
+  legalRequirements: legalReqRouter,
+  audit: auditRouter,
+  users: usersRouter,
+  employeeDocs: employeeDocsRouter,
+  dashboard: dashboardRouter,
+});
+
+export type AppRouter = typeof appRouter;
+
+// ─── DOCUMENT TYPE TEMPLATES ROUTER ──────────────────────────────────────────
