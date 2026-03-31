@@ -5,6 +5,7 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerLocalAuthRoutes, seedAdminUser } from "./localAuth";
+import { runAutoMigrations } from "./migrations";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
@@ -38,6 +39,8 @@ async function startServer() {
   registerLocalAuthRoutes(app);
   // OAuth callback under /api/oauth/callback (mantido para compat)
   registerOAuthRoutes(app);
+  // Executar migrações automáticas
+  await runAutoMigrations();
   // Seed do admin inicial
   await seedAdminUser();
   // tRPC API
