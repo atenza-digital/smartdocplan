@@ -39,10 +39,18 @@ async function startServer() {
   registerLocalAuthRoutes(app);
   // OAuth callback under /api/oauth/callback (mantido para compat)
   registerOAuthRoutes(app);
-  // Executar migrações automáticas
-  await runAutoMigrations();
+  // Executar migrações automáticas (sem crashar o servidor se falhar)
+  try {
+    await runAutoMigrations();
+  } catch (migrationErr: any) {
+    console.error("[Migration] Erro inesperado nas migrações:", migrationErr.message);
+  }
   // Seed do admin inicial
-  await seedAdminUser();
+  try {
+    await seedAdminUser();
+  } catch (seedErr: any) {
+    console.error("[Seed] Erro inesperado:", seedErr.message);
+  }
   // tRPC API
   app.use(
     "/api/trpc",
