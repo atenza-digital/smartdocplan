@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { Paperclip,
+ useState } from "react";
+import { RequestDocumentos } from "@/components/RequestDocumentos";
 import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
@@ -12,7 +14,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import {
   ClipboardList, Search, Building2, FileText, Calendar,
   ArrowRight, Filter, LayoutGrid, List
-} from "lucide-react";
+}  from "lucide-react";
+// paperclip imported
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";

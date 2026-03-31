@@ -22,6 +22,7 @@ import AdminBI from "./pages/admin/AdminBI";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
 import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
 import AdminEmpresaDetalhe from "./pages/admin/AdminEmpresaDetalhe";
+import AdminDocumentos from "./pages/admin/AdminDocumentos";
 
 // Empresa (usuarios das empresas clientes)
 import EmpresaDashboard from "./pages/empresa/EmpresaDashboard";
@@ -107,6 +108,9 @@ function Router() {
       </Route>
       <Route path="/admin/configuracoes">
         <AuthGuard><AdminConfiguracoes /></AuthGuard>
+      </Route>
+      <Route path="/admin/documentos">
+        <AuthGuard><AdminDocumentos /></AuthGuard>
       </Route>
 
       {/* -- Empresa (usuarios das empresas clientes) -- */}

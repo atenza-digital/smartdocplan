@@ -275,3 +275,45 @@ export const auditLogs = mysqlTable("audit_logs", {
   ip: varchar("ip", { length: 45 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
+
+// --- DOCUMENT TYPE TEMPLATES (admin configura quais docs exigir por tipo de solicitação) ---
+export const documentTypeTemplates = mysqlTable("document_type_templates", {
+  id: int("id").autoincrement().primaryKey(),
+  tipoSolicitacao: mysqlEnum("tipoSolicitacao", [
+    "admissao", "demissao", "mudanca_funcao", "afastamento", "atestado_medico", "outros"
+  ]).notNull(),
+  categoria: mysqlEnum("categoria", ["pessoal", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  descricao: text("descricao"),
+  obrigatorio: boolean("obrigatorio").default(true).notNull(),
+  sexo: mysqlEnum("sexo", ["todos", "masculino", "feminino"]).default("todos").notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
+  ordem: int("ordem").default(0).notNull(),
+  criadoPor: int("criadoPor"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type DocumentTypeTemplate = typeof documentTypeTemplates.$inferSelect;
+
+// --- REQUEST DOCUMENT UPLOADS (uploads reais vinculados a solicitações) ---
+export const requestDocumentUploads = mysqlTable("request_document_uploads", {
+  id: int("id").autoincrement().primaryKey(),
+  requestId: int("requestId").notNull(),
+  templateId: int("templateId"),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  categoria: mysqlEnum("categoria", ["pessoal", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
+  fileUrl: text("fileUrl"),
+  fileKey: text("fileKey"),
+  fileNome: varchar("fileNome", { length: 255 }),
+  fileTamanho: int("fileTamanho"),
+  fileMime: varchar("fileMime", { length: 100 }),
+  obrigatorio: boolean("obrigatorio").default(true).notNull(),
+  status: mysqlEnum("status", ["pendente", "aprovado", "reprovado"]).default("pendente").notNull(),
+  motivoReprovacao: text("motivoReprovacao"),
+  analisadoPor: int("analisadoPor"),
+  analisadoAt: timestamp("analisadoAt"),
+  uploadedBy: int("uploadedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type RequestDocumentUpload = typeof requestDocumentUploads.$inferSelect;

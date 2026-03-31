@@ -7,7 +7,7 @@ import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
-  legalRequirements, users
+  legalRequirements, users, documentTypeTemplates, requestDocumentUploads
 } from "../drizzle/schema";
 import { eq, and, desc, sql } from "drizzle-orm";
 
@@ -616,6 +616,8 @@ const dashboardRouter = router({
 // ─── APP ROUTER ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
+  documentTemplates: documentTemplatesRouter,
+  requestDocUploads: requestDocUploadsRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
@@ -641,3 +643,141 @@ export const appRouter = router({
 });
 
 export type AppRouter = typeof appRouter;
+
+// ─── DOCUMENT TYPE TEMPLATES ROUTER ──────────────────────────────────────────
+
+const documentTemplatesRouter = router({
+  // Listar templates por tipo de solicitação
+  listByTipo: protectedProcedure.input(z.object({
+    tipoSolicitacao: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]),
+  })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(documentTypeTemplates)
+      .where(and(eq(documentTypeTemplates.tipoSolicitacao, input.tipoSolicitacao), eq(documentTypeTemplates.ativo, true)))
+      .orderBy(documentTypeTemplates.ordem);
+  }),
+
+  // Listar todos (para admin gerenciar)
+  list: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(documentTypeTemplates).orderBy(documentTypeTemplates.tipoSolicitacao, documentTypeTemplates.ordem);
+  }),
+
+  create: superAdminProcedure.input(z.object({
+    tipoSolicitacao: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]),
+    categoria: z.enum(["pessoal","treinamento","exame_medico","outros"]).default("pessoal"),
+    nome: z.string().min(1),
+    descricao: z.string().optional(),
+    obrigatorio: z.boolean().default(true),
+    sexo: z.enum(["todos","masculino","feminino"]).default("todos"),
+    ordem: z.number().default(0),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.insert(documentTypeTemplates).values({ ...input, criadoPor: ctx.user.id } as any);
+    return { success: true };
+  }),
+
+  update: superAdminProcedure.input(z.object({
+    id: z.number(),
+    nome: z.string().min(1).optional(),
+    descricao: z.string().optional(),
+    obrigatorio: z.boolean().optional(),
+    sexo: z.enum(["todos","masculino","feminino"]).optional(),
+    ativo: z.boolean().optional(),
+    ordem: z.number().optional(),
+  })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const { id, ...data } = input;
+    await db.update(documentTypeTemplates).set(data as any).where(eq(documentTypeTemplates.id, id));
+    return { success: true };
+  }),
+
+  delete: superAdminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.update(documentTypeTemplates).set({ ativo: false }).where(eq(documentTypeTemplates.id, input.id));
+    return { success: true };
+  }),
+});
+
+// ─── REQUEST DOCUMENT UPLOADS ROUTER ─────────────────────────────────────────
+const requestDocUploadsRouter = router({
+  // Listar uploads de uma solicitação
+  listByRequest: protectedProcedure.input(z.object({ requestId: z.number() })).query(async ({ input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(requestDocumentUploads)
+      .where(eq(requestDocumentUploads.requestId, input.requestId))
+      .orderBy(requestDocumentUploads.categoria, requestDocumentUploads.nome);
+  }),
+
+  // Upload de documento (base64) — empresa faz upload
+  upload: protectedProcedure.input(z.object({
+    requestId: z.number(),
+    templateId: z.number().optional(),
+    nome: z.string().min(1),
+    categoria: z.enum(["pessoal","treinamento","exame_medico","outros"]).default("pessoal"),
+    obrigatorio: z.boolean().default(false),
+    fileNome: z.string(),
+    fileMime: z.string(),
+    fileTamanho: z.number(),
+    fileBase64: z.string(), // base64 do arquivo
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+
+    // Salvar arquivo em disco local (simples, sem S3)
+    const { fileBase64, ...rest } = input;
+    const fs = await import("fs");
+    const path = await import("path");
+    const uploadsDir = path.join(process.cwd(), "dist", "public", "uploads");
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const ext = input.fileNome.split(".").pop() ?? "bin";
+    const fileName = `req_${input.requestId}_${Date.now()}.${ext}`;
+    const filePath = path.join(uploadsDir, fileName);
+    const buffer = Buffer.from(fileBase64, "base64");
+    fs.writeFileSync(filePath, buffer);
+
+    const fileUrl = `/uploads/${fileName}`;
+
+    await db.insert(requestDocumentUploads).values({
+      ...rest,
+      fileUrl,
+      fileKey: fileName,
+      uploadedBy: ctx.user.id,
+    } as any);
+
+    return { success: true, fileUrl };
+  }),
+
+  // Analista avalia documento (aprovar/reprovar)
+  avaliar: adminProcedure.input(z.object({
+    id: z.number(),
+    status: z.enum(["aprovado","reprovado"]),
+    motivoReprovacao: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.update(requestDocumentUploads).set({
+      status: input.status,
+      motivoReprovacao: input.motivoReprovacao ?? null,
+      analisadoPor: ctx.user.id,
+      analisadoAt: new Date(),
+    } as any).where(eq(requestDocumentUploads.id, input.id));
+    await insertAuditLog({ userId: ctx.user.id, acao: `${input.status}_documento`, entidade: "request_document_uploads", entidadeId: input.id });
+    return { success: true };
+  }),
+
+  // Deletar upload
+  delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.delete(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
+    return { success: true };
+  }),
+});

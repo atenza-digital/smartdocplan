@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { RequestDocumentos } from "@/components/RequestDocumentos";
 import CompanyLayout from "@/components/CompanyLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -43,6 +44,7 @@ const prioridadeColors: Record<string, string> = {
 export default function EmpresaSolicitacoes() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
+  const [docModal, setDocModal] = useState<{ id: number; tipo: string; titulo: string } | null>(null);
   const [view, setView] = useState<"kanban" | "lista">("kanban");
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
@@ -125,6 +127,13 @@ export default function EmpresaSolicitacoes() {
                                 <Calendar className="w-3 h-3" />
                                 {new Date(sol.createdAt).toLocaleDateString("pt-BR")}
                               </div>
+                              {/* Documentos */}
+                              <button
+                                className="flex items-center gap-1 text-[10px] text-primary hover:underline mt-1"
+                                onClick={(e) => { e.stopPropagation(); setDocModal({ id: sol.id, tipo: sol.tipo, titulo: sol.titulo }); }}
+                              >
+                                <Paperclip className="w-3 h-3" /> Documentos
+                              </button>
                               {/* Mover status */}
                               <Select
                                 value={sol.status}
@@ -206,6 +215,25 @@ export default function EmpresaSolicitacoes() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Modal Documentos da Solicitação */}
+      {docModal && (
+        <Dialog open={!!docModal} onOpenChange={() => setDocModal(null)}>
+          <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-base">
+                Documentos — #{docModal.id} {docModal.titulo}
+              </DialogTitle>
+            </DialogHeader>
+            <RequestDocumentos
+              requestId={docModal.id}
+              tipoSolicitacao={docModal.tipo}
+              canUpload={true}
+              canReview={false}
+            />
+          </DialogContent>
+        </Dialog>
+      )}
 
       {/* Modal Nova Solicitação */}
       <Dialog open={showModal} onOpenChange={setShowModal}>

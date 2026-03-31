@@ -12,7 +12,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import {
   LayoutDashboard, Building2, Users, ClipboardList, Ticket,
   BookOpen, ScrollText, Settings, ChevronLeft, ChevronRight,
-  Sun, Moon, LogOut, Menu, X, BarChart3,
+  Sun, Moon, LogOut, Menu, X, BarChart3, FileCheck2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +24,7 @@ const navItems = [
   { href: "/admin/chamados", icon: Ticket, label: "Chamados" },
   { href: "/admin/matriz-legal", icon: BookOpen, label: "Matriz Legal (NRs)" },
   { href: "/admin/auditoria", icon: ScrollText, label: "Auditoria" },
+  { href: "/admin/documentos", icon: FileCheck2, label: "Checklist Docs" },
   { href: "/admin/bi", icon: BarChart3, label: "BI Global" },
   { href: "/admin/configuracoes", icon: Settings, label: "Configurações" },
 ];
