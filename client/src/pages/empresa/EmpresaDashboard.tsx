@@ -1,14 +1,16 @@
+import { Link } from "wouter";
 import CompanyLayout from "@/components/CompanyLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Users, ClipboardList, Ticket, AlertTriangle, UserCheck, UserMinus, TrendingUp, Plus } from "lucide-react";
-import { Link } from "wouter";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { AlertTriangle, ClipboardList, Plus, Ticket, UserMinus, Users } from "lucide-react";
+import { canCreateRequests } from "@shared/permissions";
 
 export default function EmpresaDashboard() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
+  const canOpenRequests = canCreateRequests(user?.role ?? null);
 
   const { data: dash, isLoading } = trpc.dashboard.company.useQuery(
     { companyId },
@@ -21,7 +23,7 @@ export default function EmpresaDashboard() {
 
   const kpis = [
     {
-      title: "Colaboradores Ativos",
+      title: "Colaboradores ativos",
       value: dash?.colaboradores.ativos ?? 0,
       sub: `${dash?.colaboradores.total ?? 0} total`,
       icon: Users,
@@ -39,7 +41,7 @@ export default function EmpresaDashboard() {
       href: "/empresa/colaboradores",
     },
     {
-      title: "Solicitações Novas",
+      title: "Solicitações novas",
       value: dash?.solicitacoes.novas ?? 0,
       sub: `${dash?.solicitacoes.total ?? 0} total`,
       icon: ClipboardList,
@@ -48,7 +50,7 @@ export default function EmpresaDashboard() {
       href: "/empresa/solicitacoes",
     },
     {
-      title: "Chamados Abertos",
+      title: "Chamados abertos",
       value: dash?.chamadosAbertos ?? 0,
       sub: "aguardando atendimento",
       icon: Ticket,
@@ -61,37 +63,38 @@ export default function EmpresaDashboard() {
   return (
     <CompanyLayout title="Dashboard">
       <div className="space-y-6">
-        <div className="flex items-start justify-between">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Painel de RH</h2>
-            <p className="text-muted-foreground text-sm mt-1">
+            <p className="mt-1 text-sm text-muted-foreground">
               Bem-vindo, <span className="font-medium text-foreground">{user?.name}</span>. Aqui está o resumo da sua empresa.
             </p>
           </div>
-          <Button asChild className="bg-primary hover:bg-primary/90 text-primary-foreground">
-            <Link href="/empresa/solicitacoes/nova">
-              <Plus className="w-4 h-4 mr-2" />
-              Nova Solicitação
-            </Link>
-          </Button>
+          {canOpenRequests && (
+            <Button asChild className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Link href="/empresa/solicitacoes/nova">
+                <Plus className="mr-2 h-4 w-4" />
+                Nova solicitação
+              </Link>
+            </Button>
+          )}
         </div>
 
-        {/* KPIs */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {kpis.map((kpi) => (
             <Link key={kpi.title} href={kpi.href}>
-              <Card className="border-border hover:border-primary/30 transition-colors cursor-pointer">
+              <Card className="cursor-pointer border-border transition-colors hover:border-primary/30">
                 <CardContent className="p-5">
                   <div className="flex items-start justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground font-medium">{kpi.title}</p>
-                      <p className="text-3xl font-bold text-foreground mt-1">
-                        {isLoading ? "—" : kpi.value.toLocaleString("pt-BR")}
+                      <p className="text-sm font-medium text-muted-foreground">{kpi.title}</p>
+                      <p className="mt-1 text-3xl font-bold text-foreground">
+                        {isLoading ? "-" : kpi.value.toLocaleString("pt-BR")}
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">{kpi.sub}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{kpi.sub}</p>
                     </div>
-                    <div className={`p-2.5 rounded-lg ${kpi.bg}`}>
-                      <kpi.icon className={`w-5 h-5 ${kpi.color}`} />
+                    <div className={`rounded-lg p-2.5 ${kpi.bg}`}>
+                      <kpi.icon className={`h-5 w-5 ${kpi.color}`} />
                     </div>
                   </div>
                 </CardContent>
@@ -100,25 +103,24 @@ export default function EmpresaDashboard() {
           ))}
         </div>
 
-        {/* Status das Solicitações + Acesso Rápido */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card className="border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <ClipboardList className="w-4 h-4 text-primary" />
-                Solicitações por Status
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <ClipboardList className="h-4 w-4 text-primary" />
+                Solicitações por status
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {[
                 { label: "Novas", value: reqStats?.novas ?? 0, color: "bg-amber-500" },
-                { label: "Em Análise", value: reqStats?.emAnalise ?? 0, color: "bg-blue-500" },
+                { label: "Em análise", value: reqStats?.emAnalise ?? 0, color: "bg-blue-500" },
                 { label: "Concluídas", value: reqStats?.concluidas ?? 0, color: "bg-green-500" },
                 { label: "Rejeitadas", value: reqStats?.rejeitadas ?? 0, color: "bg-red-500" },
               ].map((item) => (
                 <div key={item.label} className="flex items-center gap-3">
-                  <div className={`w-2 h-2 rounded-full ${item.color} shrink-0`} />
-                  <span className="text-sm text-muted-foreground flex-1">{item.label}</span>
+                  <div className={`h-2 w-2 shrink-0 rounded-full ${item.color}`} />
+                  <span className="flex-1 text-sm text-muted-foreground">{item.label}</span>
                   <span className="text-sm font-semibold text-foreground">{item.value}</span>
                 </div>
               ))}
@@ -127,20 +129,20 @@ export default function EmpresaDashboard() {
 
           <Card className="border-border">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Acesso Rápido</CardTitle>
+              <CardTitle className="text-base font-semibold">Acesso rápido</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: "Novo Colaborador", href: "/empresa/colaboradores/novo", icon: Users },
-                  { label: "Nova Solicitação", href: "/empresa/solicitacoes/nova", icon: ClipboardList },
-                  { label: "Ver Pendências", href: "/empresa/pendencias", icon: AlertTriangle },
-                  { label: "Abrir Chamado", href: "/empresa/chamados/novo", icon: Ticket },
+                  { label: "Colaboradores", href: "/empresa/colaboradores", icon: Users },
+                  { label: canOpenRequests ? "Nova solicitação" : "Solicitações", href: canOpenRequests ? "/empresa/solicitacoes/nova" : "/empresa/solicitacoes", icon: ClipboardList },
+                  { label: "Ver pendências", href: "/empresa/pendencias", icon: AlertTriangle },
+                  { label: "Abrir chamado", href: "/empresa/chamados", icon: Ticket },
                 ].map((item) => (
                   <Link key={item.label} href={item.href}>
-                    <div className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border hover:bg-accent hover:border-primary/30 transition-colors text-center cursor-pointer group">
-                      <div className="p-2 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors">
-                        <item.icon className="w-4 h-4 text-primary" />
+                    <div className="group flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-3 text-center transition-colors hover:border-primary/30 hover:bg-accent">
+                      <div className="rounded-lg bg-primary/10 p-2 transition-colors group-hover:bg-primary/20">
+                        <item.icon className="h-4 w-4 text-primary" />
                       </div>
                       <span className="text-xs font-medium text-muted-foreground group-hover:text-foreground">{item.label}</span>
                     </div>

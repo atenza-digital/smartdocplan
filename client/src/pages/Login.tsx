@@ -4,9 +4,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Eye, EyeOff, Loader2, FolderOpen } from "lucide-react";
+import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { useTheme } from "@/contexts/ThemeContext";
 import { Sun, Moon } from "lucide-react";
+import BrandLogo from "@/components/BrandLogo";
 
 export default function Login() {
   const { login, loading, error } = useLocalAuth();
@@ -33,16 +34,12 @@ export default function Login() {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <div className="min-h-full bg-background flex flex-col">
       {/* Header minimalista */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-border/50">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <FolderOpen className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <span className="font-bold text-foreground text-lg tracking-tight">
-            Smart<span className="text-primary">Doc</span>Plan
-          </span>
+        <div className="flex items-center gap-3">
+          <BrandLogo variant="icon" imageClassName="h-10 w-10 rounded-xl" />
+          <BrandLogo variant="text" imageClassName="h-6 w-auto" />
         </div>
         <button
           onClick={toggleTheme}
@@ -58,9 +55,7 @@ export default function Login() {
         <div className="w-full max-w-sm">
           {/* Logo e titulo */}
           <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary/10 mb-4">
-              <FolderOpen className="w-8 h-8 text-primary" />
-            </div>
+            <BrandLogo variant="complete" className="justify-center mb-5" imageClassName="h-16 w-auto" />
             <h1 className="text-2xl font-bold text-foreground">Bem-vindo</h1>
             <p className="text-muted-foreground text-sm mt-1">
               Acesse sua conta SmartDocPlan
@@ -149,7 +144,7 @@ export default function Login() {
 
       {/* Footer */}
       <footer className="text-center py-4 text-xs text-muted-foreground border-t border-border/50">
-        &copy; {new Date().getFullYear()} SmartDocPlan &mdash; Gestao Documental de RH
+        &copy; {new Date().getFullYear()} SmartDocPlan &mdash; Gestão Documental de RH
       </footer>
     </div>
   );

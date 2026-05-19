@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { isCompanyUser, isPlatformUser } from "@shared/permissions";
 
 export type LocalUser = {
   id: number;
@@ -67,8 +68,8 @@ export function LocalAuthProvider({ children }: { children: React.ReactNode }) {
     setState({ user: null, loading: false, error: null });
   }, []);
 
-  const isPlatformUser = ["platform_admin", "platform_analyst", "platform_auditor"].includes(state.user?.role ?? "");
-  const isCompanyUser = ["company_admin", "company_hr", "company_manager", "company_viewer"].includes(state.user?.role ?? "");
+  const isPlatformUserValue = isPlatformUser(state.user?.role ?? null);
+  const isCompanyUserValue = isCompanyUser(state.user?.role ?? null);
 
   return (
     <LocalAuthContext.Provider value={{
@@ -77,8 +78,8 @@ export function LocalAuthProvider({ children }: { children: React.ReactNode }) {
       logout,
       refresh,
       isAuthenticated: !!state.user,
-      isPlatformUser,
-      isCompanyUser,
+      isPlatformUser: isPlatformUserValue,
+      isCompanyUser: isCompanyUserValue,
     }}>
       {children}
     </LocalAuthContext.Provider>

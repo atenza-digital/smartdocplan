@@ -78,11 +78,11 @@ export default function EmpresaConfiguracoes() {
   });
 
   return (
-    <CompanyLayout title="Configuracoes">
+    <CompanyLayout title="Configurações">
       <div className="space-y-5">
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Configuracoes</h2>
-          <p className="text-muted-foreground text-sm mt-1">Gerencie as informacoes, cargos, locais e requisitos legais da sua empresa.</p>
+          <h2 className="text-2xl font-bold text-foreground">Configurações</h2>
+          <p className="text-muted-foreground text-sm mt-1">Gerencie as informações, cargos, locais e requisitos legais da sua empresa.</p>
         </div>
 
         <Tabs defaultValue="empresa">
@@ -106,7 +106,7 @@ export default function EmpresaConfiguracoes() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="col-span-2 space-y-1.5">
-                    <Label>Razao Social</Label>
+                    <Label>Razão Social</Label>
                     <Input value={form.razaoSocial} onChange={(e) => setForm({ ...form, razaoSocial: e.target.value })} disabled={!canEdit} />
                   </div>
                   <div className="space-y-1.5">
@@ -129,7 +129,7 @@ export default function EmpresaConfiguracoes() {
                 {canEdit && (
                   <div className="flex justify-end pt-2">
                     <Button onClick={() => updateEmpresaMutation.mutate({ id: companyId, ...form })} disabled={updateEmpresaMutation.isPending} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                      {updateEmpresaMutation.isPending ? "Salvando..." : "Salvar Alteracoes"}
+                      {updateEmpresaMutation.isPending ? "Salvando..." : "Salvar Alterações"}
                     </Button>
                   </div>
                 )}
@@ -212,7 +212,7 @@ export default function EmpresaConfiguracoes() {
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold text-foreground">Matriz de Requisitos Legais</h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">NRs e requisitos legais aplicaveis a esta empresa.</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">NRs e requisitos legais aplicáveis a esta empresa.</p>
                 </div>
                 {canEdit && (
                   <Button size="sm" onClick={() => setLegalModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
@@ -291,14 +291,14 @@ export default function EmpresaConfiguracoes() {
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base font-semibold flex items-center gap-2">
                     <Shield className="w-4 h-4 text-primary" />
-                    Seguranca
+                    Segurança
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
                     <div>
-                      <p className="text-sm font-medium text-foreground">Autenticacao</p>
-                      <p className="text-xs text-muted-foreground">Login por email e senha</p>
+                      <p className="text-sm font-medium text-foreground">Autenticação</p>
+                      <p className="text-xs text-muted-foreground">Login por e-mail e senha</p>
                     </div>
                     <Badge variant="outline" className="bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20">Ativo</Badge>
                   </div>
@@ -314,9 +314,9 @@ export default function EmpresaConfiguracoes() {
         <DialogContent className="max-w-sm">
           <DialogHeader><DialogTitle>Novo Cargo</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
-            <div className="space-y-1.5"><Label>Nome do Cargo *</Label><Input value={novoCargo.nome} onChange={(e) => setNovoCargo({ ...novoCargo, nome: e.target.value })} placeholder="Ex: Eletricista de Manutencao" /></div>
-            <div className="space-y-1.5"><Label>Codigo CBO</Label><Input value={novoCargo.cbo} onChange={(e) => setNovoCargo({ ...novoCargo, cbo: e.target.value })} placeholder="Ex: 9101-05" /></div>
-            <div className="space-y-1.5"><Label>Descricao</Label><Input value={novoCargo.descricao} onChange={(e) => setNovoCargo({ ...novoCargo, descricao: e.target.value })} placeholder="Descricao opcional" /></div>
+            <div className="space-y-1.5"><Label>Nome do Cargo *</Label><Input value={novoCargo.nome} onChange={(e) => setNovoCargo({ ...novoCargo, nome: e.target.value })} placeholder="Ex: Eletricista de Manutenção" /></div>
+            <div className="space-y-1.5"><Label>Código CBO</Label><Input value={novoCargo.cbo} onChange={(e) => setNovoCargo({ ...novoCargo, cbo: e.target.value })} placeholder="Ex: 9101-05" /></div>
+            <div className="space-y-1.5"><Label>Descrição</Label><Input value={novoCargo.descricao} onChange={(e) => setNovoCargo({ ...novoCargo, descricao: e.target.value })} placeholder="Descrição opcional" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCargoModal(false)}>Cancelar</Button>
@@ -333,8 +333,8 @@ export default function EmpresaConfiguracoes() {
           <DialogHeader><DialogTitle>Novo Local de Trabalho</DialogTitle></DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5"><Label>Nome *</Label><Input value={novoLocal.nome} onChange={(e) => setNovoLocal({ ...novoLocal, nome: e.target.value })} placeholder="Ex: Obra Av. Paulista" /></div>
-            <div className="space-y-1.5"><Label>CNOS</Label><Input value={novoLocal.cnos} onChange={(e) => setNovoLocal({ ...novoLocal, cnos: e.target.value })} placeholder="Codigo CNOS" /></div>
-            <div className="space-y-1.5"><Label>Endereco</Label><Input value={novoLocal.endereco} onChange={(e) => setNovoLocal({ ...novoLocal, endereco: e.target.value })} placeholder="Rua, numero" /></div>
+            <div className="space-y-1.5"><Label>CNOS</Label><Input value={novoLocal.cnos} onChange={(e) => setNovoLocal({ ...novoLocal, cnos: e.target.value })} placeholder="Código CNOS" /></div>
+            <div className="space-y-1.5"><Label>Endereço</Label><Input value={novoLocal.endereco} onChange={(e) => setNovoLocal({ ...novoLocal, endereco: e.target.value })} placeholder="Rua, número" /></div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5"><Label>Cidade</Label><Input value={novoLocal.cidade} onChange={(e) => setNovoLocal({ ...novoLocal, cidade: e.target.value })} /></div>
               <div className="space-y-1.5"><Label>UF</Label><Input value={novoLocal.estado} onChange={(e) => setNovoLocal({ ...novoLocal, estado: e.target.value })} maxLength={2} placeholder="SP" /></div>
@@ -358,7 +358,7 @@ export default function EmpresaConfiguracoes() {
             <div className="space-y-1.5"><Label>Requisito *</Label><Input value={novaLegal.requisito} onChange={(e) => setNovaLegal({ ...novaLegal, requisito: e.target.value })} placeholder="Ex: Trabalho em altura" /></div>
             <div className="space-y-1.5"><Label>Documento Exigido *</Label><Input value={novaLegal.documentoExigido} onChange={(e) => setNovaLegal({ ...novaLegal, documentoExigido: e.target.value })} placeholder="Ex: Certificado NR-35" /></div>
             <div className="space-y-1.5"><Label>Validade (meses)</Label><Input type="number" value={novaLegal.validadeMeses} onChange={(e) => setNovaLegal({ ...novaLegal, validadeMeses: e.target.value })} placeholder="Ex: 24" /></div>
-            <div className="space-y-1.5"><Label>Descricao</Label><Input value={novaLegal.descricao} onChange={(e) => setNovaLegal({ ...novaLegal, descricao: e.target.value })} placeholder="Observacoes adicionais" /></div>
+            <div className="space-y-1.5"><Label>Descrição</Label><Input value={novaLegal.descricao} onChange={(e) => setNovaLegal({ ...novaLegal, descricao: e.target.value })} placeholder="Observações adicionais" /></div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLegalModal(false)}>Cancelar</Button>

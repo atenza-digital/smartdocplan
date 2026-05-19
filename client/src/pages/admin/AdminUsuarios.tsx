@@ -53,7 +53,7 @@ export default function AdminUsuarios() {
 
   const createMutation = trpc.users.create.useMutation({
     onSuccess: () => {
-      toast.success("Usuario criado com sucesso!");
+      toast.success("Usuário criado com sucesso!");
       setModal(null);
       setCreateForm({ name: "", email: "", password: "", role: "company_hr", companyId: "" });
       refetch();
@@ -72,7 +72,7 @@ export default function AdminUsuarios() {
 
   const toggleAtivoMutation = trpc.users.toggleAtivo.useMutation({
     onSuccess: (_, vars) => {
-      toast.success(vars.ativo ? "Usuario ativado!" : "Usuario desativado!");
+      toast.success(vars.ativo ? "Usuário ativado!" : "Usuário desativado!");
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -102,13 +102,13 @@ export default function AdminUsuarios() {
     ["platform_admin", "platform_analyst", "platform_auditor"].includes(role);
 
   return (
-    <AdminLayout title="Usuarios">
+    <AdminLayout title="Usuários">
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-2xl font-bold text-foreground">Gestao de Usuarios</h2>
+            <h2 className="text-2xl font-bold text-foreground">Gestão de Usuários</h2>
             <p className="text-muted-foreground text-sm mt-1">
-              Usuarios internos da plataforma e usuarios vinculados as empresas.
+              Usuários internos da plataforma e usuários vinculados às empresas.
             </p>
           </div>
           <Button
@@ -116,7 +116,7 @@ export default function AdminUsuarios() {
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             <UserPlus className="w-4 h-4 mr-2" />
-            Novo Usuario
+            Novo Usuário
           </Button>
         </div>
 
@@ -144,7 +144,7 @@ export default function AdminUsuarios() {
                 {group === "platform" ? (
                   <><Users className="w-4 h-4 text-primary" /><h3 className="font-semibold text-foreground">Equipe Interna da Plataforma</h3></>
                 ) : (
-                  <><Building2 className="w-4 h-4 text-amber-500" /><h3 className="font-semibold text-foreground">Usuarios das Empresas</h3></>
+                  <><Building2 className="w-4 h-4 text-amber-500" /><h3 className="font-semibold text-foreground">Usuários das Empresas</h3></>
                 )}
                 <Badge variant="outline" className="text-xs">{groupUsers.length}</Badge>
               </div>
@@ -208,9 +208,9 @@ export default function AdminUsuarios() {
                                 className={u.ativo === false ? "text-green-600" : "text-destructive"}
                               >
                                 {u.ativo === false ? (
-                                  <><UserCheck className="w-4 h-4 mr-2" />Ativar Usuario</>
+                                  <><UserCheck className="w-4 h-4 mr-2" />Ativar Usuário</>
                                 ) : (
-                                  <><UserX className="w-4 h-4 mr-2" />Desativar Usuario</>
+                                  <><UserX className="w-4 h-4 mr-2" />Desativar Usuário</>
                                 )}
                               </DropdownMenuItem>
                             </DropdownMenuContent>
@@ -229,7 +229,7 @@ export default function AdminUsuarios() {
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-16 text-center">
               <Users className="w-12 h-12 text-muted-foreground/40 mb-4" />
-              <p className="text-muted-foreground font-medium">Nenhum usuario encontrado</p>
+              <p className="text-muted-foreground font-medium">Nenhum usuário encontrado</p>
             </CardContent>
           </Card>
         )}
@@ -239,12 +239,12 @@ export default function AdminUsuarios() {
       <Dialog open={modal === "create"} onOpenChange={(o) => !o && setModal(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Novo Usuario</DialogTitle>
+            <DialogTitle>Novo Usuário</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Nome completo *</Label>
-              <Input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Nome do usuario" />
+              <Input value={createForm.name} onChange={(e) => setCreateForm({ ...createForm, name: e.target.value })} placeholder="Nome do usuário" />
             </div>
             <div className="space-y-1.5">
               <Label>E-mail *</Label>
@@ -252,7 +252,7 @@ export default function AdminUsuarios() {
             </div>
             <div className="space-y-1.5">
               <Label>Senha inicial *</Label>
-              <Input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Minimo 6 caracteres" />
+              <Input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Mínimo 6 caracteres" />
             </div>
             <div className="space-y-1.5">
               <Label>Papel *</Label>
@@ -292,7 +292,7 @@ export default function AdminUsuarios() {
               disabled={!createForm.name || !createForm.email || !createForm.password || createMutation.isPending}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              {createMutation.isPending ? "Criando..." : "Criar Usuario"}
+              {createMutation.isPending ? "Criando..." : "Criar Usuário"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -360,7 +360,7 @@ export default function AdminUsuarios() {
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Minimo 6 caracteres"
+                placeholder="Mínimo 6 caracteres"
               />
             </div>
           </div>

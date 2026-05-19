@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
+import {
+  canCreateRequests,
+  canCreateTickets,
+  canManageCompanyData,
+  canManagePlatformSettings,
+  canManageRequestWorkflow,
+  canSeeCompanySettings,
+} from "@shared/permissions";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -127,6 +135,96 @@ describe("requests router", () => {
     );
     await expect(caller.requests.globalStats()).rejects.toThrow();
   });
+
+  it("company_viewer não deve abrir solicitações", async () => {
+    const caller = appRouter.createCaller(
+      makeCtx({ role: "company_viewer" as any, companyId: 1 })
+    );
+    await expect(
+      caller.requests.create({
+        companyId: 1,
+        tipo: "admissao",
+        titulo: "Admissao - Joao",
+        prioridade: "media",
+      })
+    ).rejects.toThrow("Seu perfil não pode abrir solicitações.");
+  });
+
+  it("company_hr pode iniciar abertura de solicitação para a própria empresa", async () => {
+    const caller = appRouter.createCaller(
+      makeCtx({ role: "company_hr" as any, companyId: 1 })
+    );
+    await expect(
+      caller.requests.create({
+        companyId: 1,
+        tipo: "admissao",
+        titulo: "Admissao - Joao",
+        prioridade: "media",
+      })
+    ).rejects.toThrow("DB unavailable");
+  });
+
+  it("platform_admin pode abrir solicitação para qualquer empresa informada", async () => {
+    const caller = appRouter.createCaller(
+      makeCtx({ role: "platform_admin" as any, companyId: null })
+    );
+    await expect(
+      caller.requests.create({
+        companyId: 1,
+        tipo: "admissao",
+        titulo: "Admissão - João",
+        prioridade: "media",
+      })
+    ).rejects.toThrow("DB unavailable");
+  });
+});
+
+describe("matriz de permissões compartilhada", () => {
+  it("deve permitir abertura de solicitações apenas para company_admin e company_hr", () => {
+    expect(canCreateRequests("platform_admin")).toBe(true);
+    expect(canCreateRequests("company_admin")).toBe(true);
+    expect(canCreateRequests("company_hr")).toBe(true);
+    expect(canCreateRequests("company_manager")).toBe(false);
+    expect(canCreateRequests("company_viewer")).toBe(false);
+  });
+
+  it("deve permitir tramitação apenas para platform_admin e platform_analyst", () => {
+    expect(canManageRequestWorkflow("platform_admin")).toBe(true);
+    expect(canManageRequestWorkflow("platform_analyst")).toBe(true);
+    expect(canManageRequestWorkflow("platform_auditor")).toBe(false);
+    expect(canManageRequestWorkflow("company_hr")).toBe(false);
+  });
+
+  it("deve permitir abertura de chamados para company_admin, company_hr e company_manager", () => {
+    expect(canCreateTickets("platform_admin")).toBe(true);
+    expect(canCreateTickets("company_admin")).toBe(true);
+    expect(canCreateTickets("company_hr")).toBe(true);
+    expect(canCreateTickets("company_manager")).toBe(true);
+    expect(canCreateTickets("company_viewer")).toBe(false);
+  });
+
+  it("deve permitir gestão de dados da empresa apenas para perfis operacionais", () => {
+    expect(canManageCompanyData("platform_admin")).toBe(true);
+    expect(canManageCompanyData("platform_analyst")).toBe(true);
+    expect(canManageCompanyData("company_admin")).toBe(true);
+    expect(canManageCompanyData("company_hr")).toBe(true);
+    expect(canManageCompanyData("company_manager")).toBe(false);
+    expect(canManageCompanyData("company_viewer")).toBe(false);
+  });
+
+  it("deve restringir configurações administrativas ao platform_admin", () => {
+    expect(canManagePlatformSettings("platform_admin")).toBe(true);
+    expect(canManagePlatformSettings("platform_analyst")).toBe(false);
+    expect(canManagePlatformSettings("platform_auditor")).toBe(false);
+    expect(canManagePlatformSettings("company_admin")).toBe(false);
+  });
+
+  it("deve expor configurações da empresa apenas para company_admin e company_hr", () => {
+    expect(canSeeCompanySettings("company_admin")).toBe(true);
+    expect(canSeeCompanySettings("company_hr")).toBe(true);
+    expect(canSeeCompanySettings("company_manager")).toBe(false);
+    expect(canSeeCompanySettings("company_viewer")).toBe(false);
+  });
 });
 
 // ─── Tickets Router Tests ─────────────────────────────────────────────────────
@@ -139,6 +237,34 @@ describe("tickets router", () => {
     expect(stats).toHaveProperty("abertos");
     expect(stats).toHaveProperty("emAtendimento");
     expect(stats).toHaveProperty("resolvidos");
+  });
+
+  it("company_manager pode abrir chamado para a própria empresa", async () => {
+    const caller = appRouter.createCaller(
+      makeCtx({ role: "company_manager" as any, companyId: 1 })
+    );
+    await expect(
+      caller.tickets.create({
+        companyId: 1,
+        tipo: "duvida",
+        titulo: "Preciso de ajuda",
+        prioridade: "media",
+      })
+    ).rejects.toThrow("DB unavailable");
+  });
+
+  it("company_viewer não deve abrir chamados", async () => {
+    const caller = appRouter.createCaller(
+      makeCtx({ role: "company_viewer" as any, companyId: 1 })
+    );
+    await expect(
+      caller.tickets.create({
+        companyId: 1,
+        tipo: "duvida",
+        titulo: "Nao deveria abrir",
+        prioridade: "media",
+      })
+    ).rejects.toThrow("Seu perfil não pode abrir chamados.");
   });
 });
 

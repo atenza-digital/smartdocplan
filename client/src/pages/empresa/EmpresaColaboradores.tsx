@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Plus, Search, Users, FolderOpen, UserCheck, UserMinus, UserX } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { canManageCompanyData } from "@shared/permissions";
 
 const statusColors: Record<string, string> = {
   ativo: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
@@ -28,6 +29,7 @@ const statusIcons: Record<string, React.ElementType> = {
 export default function EmpresaColaboradores() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
+  const canCreate = canManageCompanyData(user?.role ?? null);
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("todos");
   const [showModal, setShowModal] = useState(false);
@@ -68,10 +70,12 @@ export default function EmpresaColaboradores() {
             <h2 className="text-2xl font-bold text-foreground">Colaboradores</h2>
             <p className="text-muted-foreground text-sm mt-1">Gerencie os colaboradores da sua empresa.</p>
           </div>
-          <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" />
-            Novo Colaborador
-          </Button>
+          {canCreate && (
+            <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" />
+              Novo Colaborador
+            </Button>
+          )}
         </div>
 
         {/* Filtros */}
@@ -107,7 +111,9 @@ export default function EmpresaColaboradores() {
             <div className="col-span-full text-center py-12 text-muted-foreground">
               <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">Nenhum colaborador encontrado</p>
-              <p className="text-sm">Cadastre o primeiro colaborador clicando em "Novo Colaborador"</p>
+              <p className="text-sm">
+                {canCreate ? 'Cadastre o primeiro colaborador clicando em "Novo Colaborador"' : "Nenhum colaborador disponivel para consulta."}
+              </p>
             </div>
           )}
           {filtered.map((col) => {
@@ -163,7 +169,7 @@ export default function EmpresaColaboradores() {
       </div>
 
       {/* Modal Novo Colaborador */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      <Dialog open={showModal && canCreate} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Cadastrar Novo Colaborador</DialogTitle>

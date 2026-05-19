@@ -1,4 +1,12 @@
 import { COOKIE_NAME } from "@shared/const";
+import {
+  canCreateRequests,
+  canCreateTickets,
+  canManageCompanyData,
+  canManageRequestWorkflow,
+  isPlatformOperator,
+  isPlatformUser,
+} from "@shared/permissions";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, superAdminProcedure, router } from "./_core/trpc";
@@ -36,14 +44,34 @@ async function insertAuditLog(opts: {
 }
 
 /** Verifica se o usuário é da plataforma (admin, analista ou auditor) */
-function isPlatformUser(role: string) {
-  return ["platform_admin", "platform_analyst", "platform_auditor"].includes(role);
-}
-
-/** Verifica se o usuário pertence à empresa ou é da plataforma */
 function canAccessCompany(userRole: string, userCompanyId: number | null | undefined, targetCompanyId: number) {
   if (isPlatformUser(userRole)) return true;
   return userCompanyId === targetCompanyId;
+}
+
+function assertAccess(condition: unknown, message: string = "Acesso negado") {
+  if (!condition) throw new Error(message);
+}
+
+async function getEmployeeByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
+  const result = await db!.select().from(employees).where(eq(employees.id, id)).limit(1);
+  const employee = result[0];
+  if (!employee) throw new Error("Colaborador não encontrado");
+  return employee;
+}
+
+async function getRequestByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
+  const result = await db!.select().from(requests).where(eq(requests.id, id)).limit(1);
+  const request = result[0];
+  if (!request) throw new Error("Solicitação não encontrada");
+  return request;
+}
+
+async function getTicketByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
+  const result = await db!.select().from(tickets).where(eq(tickets.id, id)).limit(1);
+  const ticket = result[0];
+  if (!ticket) throw new Error("Chamado não encontrado");
+  return ticket;
 }
 
 // ─── COMPANIES ROUTER ─────────────────────────────────────────────────────────
@@ -78,6 +106,12 @@ const companiesRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(companies).values(input);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      acao: "criou_empresa",
+      entidade: "companies",
+      dadosDepois: { razaoSocial: input.razaoSocial, nomeFantasia: input.nomeFantasia ?? null },
+    });
     return { success: true };
   }),
 
@@ -94,6 +128,14 @@ const companiesRouter = router({
     if (!db) throw new Error("DB unavailable");
     const { id, ...data } = input;
     await db.update(companies).set(data).where(eq(companies.id, id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: id,
+      acao: "atualizou_empresa",
+      entidade: "companies",
+      entidadeId: id,
+      dadosDepois: data,
+    });
     return { success: true };
   }),
 
@@ -142,14 +184,22 @@ const employeesRouter = router({
     email: z.string().email().optional(),
     telefone: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar colaboradores.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) throw new Error("Acesso negado");
     await db.insert(employees).values({
       ...input,
       dataNascimento: input.dataNascimento ? new Date(input.dataNascimento) : undefined,
       dataAdmissao: input.dataAdmissao ? new Date(input.dataAdmissao) : undefined,
     } as any);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "criou_colaborador",
+      entidade: "employees",
+      dadosDepois: { nome: input.nome, cpf: input.cpf, positionId: input.positionId ?? null, worksiteId: input.worksiteId ?? null },
+    });
     return { success: true };
   }),
 
@@ -164,8 +214,19 @@ const employeesRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const employee = await getEmployeeByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar colaboradores.");
     const { id, ...data } = input;
     await db.update(employees).set(data).where(eq(employees.id, id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: employee.companyId,
+      acao: "atualizou_colaborador",
+      entidade: "employees",
+      entidadeId: employee.id,
+      dadosDepois: data,
+    });
     return { success: true };
   }),
 
@@ -228,9 +289,10 @@ const requestsRouter = router({
     descricao: z.string().optional(),
     prioridade: z.enum(["baixa","media","alta","urgente"]).default("media"),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode abrir solicitações.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) throw new Error("Acesso negado");
     await db.insert(requests).values({ ...input, criadoPor: ctx.user.id });
     await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: 'criou_solicitacao', entidade: 'requests', dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
     return { success: true };
@@ -243,10 +305,21 @@ const requestsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const request = await getRequestByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status da solicitação.");
     const updateData: Record<string, unknown> = { status: input.status };
     if (input.observacoes) updateData.observacoes = input.observacoes;
     if (input.status === "concluido") updateData.concluidoAt = new Date();
     await db.update(requests).set(updateData).where(eq(requests.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: request.companyId,
+      acao: "atualizou_status_solicitacao",
+      entidade: "requests",
+      entidadeId: request.id,
+      dadosDepois: { status: input.status, observacoes: input.observacoes ?? null },
+    });
     return { success: true };
   }),
 
@@ -306,9 +379,12 @@ const ticketsRouter = router({
     descricao: z.string().optional(),
     prioridade: z.enum(["baixa","media","alta","urgente"]).default("media"),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canCreateTickets(ctx.user.role), "Seu perfil não pode abrir chamados.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(tickets).values({ ...input, criadoPor: ctx.user.id });
+    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: "criou_chamado", entidade: "tickets", dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
     return { success: true };
   }),
 
@@ -318,9 +394,13 @@ const ticketsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const ticket = await getTicketByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId), "Acesso negado");
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status do chamado.");
     const updateData: Record<string, unknown> = { status: input.status };
     if (input.status === "resolvido" || input.status === "fechado") updateData.resolvidoAt = new Date();
     await db.update(tickets).set(updateData).where(eq(tickets.id, input.id));
+    await insertAuditLog({ userId: ctx.user.id, companyId: ticket.companyId, acao: "atualizou_status_chamado", entidade: "tickets", entidadeId: ticket.id, dadosDepois: { status: input.status } });
     return { success: true };
   }),
 
@@ -357,10 +437,18 @@ const positionsRouter = router({
     descricao: z.string().optional(),
     cbo: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar cargos.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) throw new Error("Acesso negado");
     await db.insert(positions).values(input);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "criou_funcao",
+      entidade: "positions",
+      dadosDepois: { nome: input.nome, cbo: input.cbo ?? null },
+    });
     return { success: true };
   }),
 });
@@ -384,14 +472,22 @@ const worksitesRouter = router({
     dataInicio: z.string().optional(),
     dataFim: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar frentes de trabalho.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) throw new Error("Acesso negado");
     await db.insert(worksites).values({
       ...input,
       dataInicio: input.dataInicio ? new Date(input.dataInicio) : undefined,
       dataFim: input.dataFim ? new Date(input.dataFim) : undefined,
     } as any);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "criou_frente_local",
+      entidade: "worksites",
+      dadosDepois: { nome: input.nome, cidade: input.cidade ?? null, estado: input.estado ?? null },
+    });
     return { success: true };
   }),
 });
@@ -416,19 +512,38 @@ const legalReqRouter = router({
     validadeMeses: z.number().optional(),
     descricao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) {
-      throw new Error("Acesso negado");
-    }
     await db.insert(legalRequirements).values(input);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "criou_requisito_legal",
+      entidade: "legal_requirements",
+      dadosDepois: { norma: input.norma, requisito: input.requisito, documentoExigido: input.documentoExigido },
+    });
     return { success: true };
   }),
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.id)).limit(1);
+    const requirement = result[0];
+    if (!requirement) throw new Error("Requisito legal não encontrado");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, requirement.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
     await db.update(legalRequirements).set({ ativo: false }).where(eq(legalRequirements.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: requirement.companyId,
+      acao: "removeu_requisito_legal",
+      entidade: "legal_requirements",
+      entidadeId: requirement.id,
+      dadosDepois: { norma: requirement.norma, requisito: requirement.requisito },
+    });
     return { success: true };
   }),
 });
@@ -542,6 +657,8 @@ const employeeDocsRouter = router({
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId)) return [];
     const conditions = [eq(employeeDocuments.employeeId, input.employeeId)];
     if (input.categoria) conditions.push(eq(employeeDocuments.categoria, input.categoria));
     return db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
@@ -559,9 +676,10 @@ const employeeDocsRouter = router({
     obrigatorio: z.boolean().default(true),
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) throw new Error("Acesso negado");
     await db.insert(employeeDocuments).values({
       ...input,
       validade: input.validade ? new Date(input.validade) : undefined,
@@ -675,9 +793,11 @@ const documentTemplatesRouter = router({
 // ─── REQUEST DOCUMENT UPLOADS ROUTER ─────────────────────────────────────────
 const requestDocUploadsRouter = router({
   // Listar uploads de uma solicitação
-  listByRequest: protectedProcedure.input(z.object({ requestId: z.number() })).query(async ({ input }) => {
+  listByRequest: protectedProcedure.input(z.object({ requestId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
+    const request = await getRequestByIdOrThrow(db, input.requestId);
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId)) return [];
     return db.select().from(requestDocumentUploads)
       .where(eq(requestDocumentUploads.requestId, input.requestId))
       .orderBy(requestDocumentUploads.categoria, requestDocumentUploads.nome);
@@ -697,6 +817,9 @@ const requestDocUploadsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const request = await getRequestByIdOrThrow(db, input.requestId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode enviar documentos da solicitação.");
 
     // Salvar arquivo em disco local (simples, sem S3)
     const { fileBase64, ...rest } = input;
@@ -720,6 +843,14 @@ const requestDocUploadsRouter = router({
       uploadedBy: ctx.user.id,
     } as any);
 
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: request.companyId,
+      acao: "enviou_documento_solicitacao",
+      entidade: "request_document_uploads",
+      dadosDepois: { requestId: request.id, nome: input.nome, fileNome: input.fileNome },
+    });
+
     return { success: true, fileUrl };
   }),
 
@@ -731,6 +862,7 @@ const requestDocUploadsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode avaliar documentos.");
     await db.update(requestDocumentUploads).set({
       status: input.status,
       motivoReprovacao: input.motivoReprovacao ?? null,
@@ -745,6 +877,12 @@ const requestDocUploadsRouter = router({
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id)).limit(1);
+    const upload = result[0];
+    if (!upload) throw new Error("Documento não encontrado");
+    const request = await getRequestByIdOrThrow(db, upload.requestId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode excluir documentos da solicitação.");
     await db.delete(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
     return { success: true };
   }),

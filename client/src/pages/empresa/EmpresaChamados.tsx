@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Ticket, Plus, Clock, CheckCircle2, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
+import { canCreateTickets } from "@shared/permissions";
 
 const statusColors: Record<string, string> = {
   aberto: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
@@ -41,6 +42,7 @@ const tipoLabels: Record<string, string> = {
 export default function EmpresaChamados() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
+  const canCreate = canCreateTickets(user?.role ?? null);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     titulo: "", tipo: "duvida" as const, descricao: "", prioridade: "media" as const,
@@ -72,10 +74,12 @@ export default function EmpresaChamados() {
               Abra e acompanhe seus chamados de suporte com a equipe SmartDocPlan.
             </p>
           </div>
-          <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-            <Plus className="w-4 h-4 mr-2" />
-            Abrir Chamado
-          </Button>
+          {canCreate && (
+            <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+              <Plus className="w-4 h-4 mr-2" />
+              Abrir Chamado
+            </Button>
+          )}
         </div>
 
         {/* Stats */}
@@ -107,7 +111,9 @@ export default function EmpresaChamados() {
             <div className="text-center py-12 text-muted-foreground">
               <Ticket className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">Nenhum chamado aberto</p>
-              <p className="text-sm">Clique em "Abrir Chamado" para solicitar suporte</p>
+              <p className="text-sm">
+                {canCreate ? 'Clique em "Abrir Chamado" para solicitar suporte' : "Nenhum chamado disponivel para consulta."}
+              </p>
             </div>
           )}
           {chamados.map((chamado) => (
@@ -139,7 +145,7 @@ export default function EmpresaChamados() {
       </div>
 
       {/* Modal Novo Chamado */}
-      <Dialog open={showModal} onOpenChange={setShowModal}>
+      <Dialog open={showModal && canCreate} onOpenChange={setShowModal}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Abrir Novo Chamado</DialogTitle>

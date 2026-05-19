@@ -11,7 +11,6 @@ import { CookieBanner } from "./components/CookieBanner";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 
-// Admin da Plataforma
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import AdminEmpresas from "./pages/admin/AdminEmpresas";
 import AdminSolicitacoes from "./pages/admin/AdminSolicitacoes";
@@ -24,8 +23,8 @@ import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
 import AdminEmpresaDetalhe from "./pages/admin/AdminEmpresaDetalhe";
 import AdminDocumentos from "./pages/admin/AdminDocumentos";
 
-// Empresa (usuarios das empresas clientes)
 import EmpresaDashboard from "./pages/empresa/EmpresaDashboard";
+import EmpresaNovaSolicitacao from "./pages/empresa/EmpresaNovaSolicitacao";
 import EmpresaSolicitacoes from "./pages/empresa/EmpresaSolicitacoes";
 import EmpresaColaboradores from "./pages/empresa/EmpresaColaboradores";
 import EmpresaDossie from "./pages/empresa/EmpresaDossie";
@@ -35,9 +34,10 @@ import EmpresaBI from "./pages/empresa/EmpresaBI";
 import EmpresaConfiguracoes from "./pages/empresa/EmpresaConfiguracoes";
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
+import { canManagePlatformSettings, canSeeCompanySettings } from "@shared/permissions";
 
 function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading, isAuthenticated } = useLocalAuth();
+  const { loading, isAuthenticated } = useLocalAuth();
   const [location, navigate] = useLocation();
 
   useEffect(() => {
@@ -48,8 +48,8 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      <div className="flex min-h-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
@@ -58,11 +58,40 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+function RoleGuard({
+  allow,
+  redirectTo,
+  children,
+}: {
+  allow: (role?: string | null) => boolean;
+  redirectTo: string;
+  children: React.ReactNode;
+}) {
+  const { user, loading, isAuthenticated } = useLocalAuth();
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    if (!loading && isAuthenticated && user && !allow(user.role)) {
+      navigate(redirectTo);
+    }
+  }, [allow, isAuthenticated, loading, navigate, redirectTo, user]);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user || !allow(user.role)) return null;
+  return <>{children}</>;
+}
+
 function Router() {
   const { user, loading } = useLocalAuth();
   const [location, navigate] = useLocation();
 
-  // Redirecionar / e /login para o painel correto apos login
   useEffect(() => {
     if (!loading && user && (location === "/" || location === "/login")) {
       const isPlatform = ["platform_admin", "platform_analyst", "platform_auditor"].includes(user.role);
@@ -72,71 +101,124 @@ function Router() {
 
   return (
     <Switch>
-      {/* Pagina de login (publica) */}
       <Route path="/login" component={Login} />
-
-      {/* Rota raiz - redireciona apos autenticacao */}
       <Route path="/" component={Home} />
 
-      {/* -- Admin da Plataforma -- */}
       <Route path="/admin">
-        <AuthGuard><AdminDashboard /></AuthGuard>
+        <AuthGuard>
+          <AdminDashboard />
+        </AuthGuard>
       </Route>
       <Route path="/admin/empresas">
-        <AuthGuard><AdminEmpresas /></AuthGuard>
+        <AuthGuard>
+          <AdminEmpresas />
+        </AuthGuard>
       </Route>
       <Route path="/admin/empresas/:id">
-        <AuthGuard><AdminEmpresaDetalhe /></AuthGuard>
+        <AuthGuard>
+          <AdminEmpresaDetalhe />
+        </AuthGuard>
       </Route>
       <Route path="/admin/solicitacoes">
-        <AuthGuard><AdminSolicitacoes /></AuthGuard>
+        <AuthGuard>
+          <AdminSolicitacoes />
+        </AuthGuard>
+      </Route>
+      <Route path="/admin/solicitacoes/nova">
+        <AuthGuard>
+          <EmpresaNovaSolicitacao />
+        </AuthGuard>
       </Route>
       <Route path="/admin/chamados">
-        <AuthGuard><AdminChamados /></AuthGuard>
-      </Route>
-      <Route path="/admin/matriz-legal">
-        <AuthGuard><AdminMatrizLegal /></AuthGuard>
+        <AuthGuard>
+          <AdminChamados />
+        </AuthGuard>
       </Route>
       <Route path="/admin/auditoria">
-        <AuthGuard><AdminAuditoria /></AuthGuard>
+        <AuthGuard>
+          <AdminAuditoria />
+        </AuthGuard>
       </Route>
       <Route path="/admin/bi">
-        <AuthGuard><AdminBI /></AuthGuard>
+        <AuthGuard>
+          <AdminBI />
+        </AuthGuard>
       </Route>
       <Route path="/admin/usuarios">
-        <AuthGuard><AdminUsuarios /></AuthGuard>
+        <AuthGuard>
+          <RoleGuard allow={canManagePlatformSettings} redirectTo="/admin">
+            <AdminUsuarios />
+          </RoleGuard>
+        </AuthGuard>
       </Route>
       <Route path="/admin/configuracoes">
-        <AuthGuard><AdminConfiguracoes /></AuthGuard>
+        <AuthGuard>
+          <RoleGuard allow={canManagePlatformSettings} redirectTo="/admin">
+            <AdminConfiguracoes />
+          </RoleGuard>
+        </AuthGuard>
       </Route>
       <Route path="/admin/documentos">
-        <AuthGuard><AdminDocumentos /></AuthGuard>
+        <AuthGuard>
+          <RoleGuard allow={canManagePlatformSettings} redirectTo="/admin">
+            <AdminDocumentos />
+          </RoleGuard>
+        </AuthGuard>
+      </Route>
+      <Route path="/admin/matriz-legal">
+        <AuthGuard>
+          <RoleGuard allow={canManagePlatformSettings} redirectTo="/admin">
+            <AdminMatrizLegal />
+          </RoleGuard>
+        </AuthGuard>
       </Route>
 
-      {/* -- Empresa (usuarios das empresas clientes) -- */}
       <Route path="/empresa">
-        <AuthGuard><EmpresaDashboard /></AuthGuard>
+        <AuthGuard>
+          <EmpresaDashboard />
+        </AuthGuard>
+      </Route>
+      <Route path="/empresa/solicitacoes/nova">
+        <AuthGuard>
+          <EmpresaNovaSolicitacao />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/solicitacoes">
-        <AuthGuard><EmpresaSolicitacoes /></AuthGuard>
+        <AuthGuard>
+          <EmpresaSolicitacoes />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/colaboradores">
-        <AuthGuard><EmpresaColaboradores /></AuthGuard>
+        <AuthGuard>
+          <EmpresaColaboradores />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/colaboradores/:id">
-        <AuthGuard><EmpresaDossie /></AuthGuard>
+        <AuthGuard>
+          <EmpresaDossie />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/pendencias">
-        <AuthGuard><EmpresaPendencias /></AuthGuard>
+        <AuthGuard>
+          <EmpresaPendencias />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/chamados">
-        <AuthGuard><EmpresaChamados /></AuthGuard>
+        <AuthGuard>
+          <EmpresaChamados />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/bi">
-        <AuthGuard><EmpresaBI /></AuthGuard>
+        <AuthGuard>
+          <EmpresaBI />
+        </AuthGuard>
       </Route>
       <Route path="/empresa/configuracoes">
-        <AuthGuard><EmpresaConfiguracoes /></AuthGuard>
+        <AuthGuard>
+          <RoleGuard allow={canSeeCompanySettings} redirectTo="/empresa">
+            <EmpresaConfiguracoes />
+          </RoleGuard>
+        </AuthGuard>
       </Route>
 
       <Route path="/404" component={NotFound} />
@@ -152,19 +234,17 @@ function App() {
         <ThemeProvider defaultTheme="light" switchable>
           <LocalAuthProvider>
             <TooltipProvider>
-              {/* Link de acessibilidade - pular para conteúdo */}
-              <a href="#main-content" className="skip-to-content">
-                Pular para o conteúdo principal
-              </a>
-              {/* Barra de acessibilidade */}
-              <AccessibilityBar />
-              {/* Conteúdo principal */}
-              <main id="main-content">
-                <Toaster />
-                <Router />
-              </main>
-              {/* Banner de cookies LGPD */}
-              <CookieBanner />
+              <div className="flex h-dvh flex-col overflow-hidden bg-background">
+                <a href="#main-content" className="skip-to-content">
+                  Pular para o conteúdo principal
+                </a>
+                <AccessibilityBar />
+                <main id="main-content" className="min-h-0 flex-1 overflow-hidden">
+                  <Toaster />
+                  <Router />
+                </main>
+                <CookieBanner />
+              </div>
             </TooltipProvider>
           </LocalAuthProvider>
         </ThemeProvider>
