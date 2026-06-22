@@ -23,12 +23,22 @@ import {
   FilePlus2,
   MapPin,
   MoveRight,
+  Paperclip,
   Plus,
   ShieldAlert,
+  Trash2,
+  Upload,
   UserRoundSearch,
 } from "lucide-react";
 import { toast } from "sonner";
 import { canCreateRequests, canManageCompanyData } from "@shared/permissions";
+import {
+  formatCpf,
+  getBirthDateMax,
+  isAtLeastYearsOld,
+  isValidCpf,
+  normalizeCpf,
+} from "@shared/formValidation";
 
 const PROCESS_OPTIONS = [
   { key: "admissao", label: "Admissão", description: "Novo ingresso na empresa." },
@@ -55,18 +65,27 @@ const CONTRACT_TERM_OPTIONS = [
 
 type ProcessType = (typeof PROCESS_OPTIONS)[number]["key"];
 type StepId = "company" | "process" | "person" | "hiring" | "requirements" | "review";
+type PendingUpload = {
+  id: string;
+  templateId?: number;
+  nome: string;
+  categoria: "pessoal" | "empresa" | "treinamento" | "exame_medico" | "outros";
+  fileNome: string;
+  fileMime: string;
+  fileTamanho: number;
+  fileBase64: string;
+  numeroDocumento?: string;
+  dataEmissao?: string;
+  validade?: string;
+};
 
-function normalizeCpf(value: string) {
-  return value.replace(/\D/g, "");
-}
-
-function formatCpf(value: string) {
-  const digits = normalizeCpf(value).slice(0, 11);
-  return digits
-    .replace(/^(\d{3})(\d)/, "$1.$2")
-    .replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3")
-    .replace(/\.(\d{3})(\d)/, ".$1-$2");
-}
+const REQUEST_CATEGORY_LABELS: Record<PendingUpload["categoria"], string> = {
+  pessoal: "Pessoal",
+  empresa: "Empresa",
+  treinamento: "Treinamento",
+  exame_medico: "Exame Médico",
+  outros: "Outros",
+};
 
 export default function EmpresaNovaSolicitacao() {
   const { user } = useAuth();
@@ -96,6 +115,11 @@ export default function EmpresaNovaSolicitacao() {
   const [localModalOpen, setLocalModalOpen] = useState(false);
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
   const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+  const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [selectedUploadTarget, setSelectedUploadTarget] = useState<{ templateId?: number; nome: string; categoria: PendingUpload["categoria"] } | null>(null);
+  const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
+  const [uploadForm, setUploadForm] = useState({ numeroDocumento: "", dataEmissao: "", validade: "" });
 
   useEffect(() => {
     if (!isPlatformAdmin && user?.companyId) {
@@ -104,6 +128,7 @@ export default function EmpresaNovaSolicitacao() {
   }, [isPlatformAdmin, user?.companyId]);
 
   const companyId = isPlatformAdmin ? Number(selectedCompanyId || 0) : user?.companyId ?? 0;
+  const maxBirthDate = getBirthDateMax(12);
 
   const { data: companies = [] } = trpc.companies.list.useQuery(undefined, { enabled: isPlatformAdmin });
   const { data: company } = trpc.companies.get.useQuery({ id: companyId }, { enabled: companyId > 0 });
@@ -141,8 +166,13 @@ export default function EmpresaNovaSolicitacao() {
   const selectedWorksite = worksites.find((worksite) => worksite.id === Number(form.worksiteId));
   const selectedFormat = WORK_FORMAT_OPTIONS.find((option) => option.key === form.formatoTrabalho);
   const selectedContract = CONTRACT_TERM_OPTIONS.find((option) => option.key === form.tempoContrato);
-  const requiredTemplates = documentTemplates.filter((template) => template.obrigatorio);
-  const optionalTemplates = documentTemplates.filter((template) => !template.obrigatorio);
+  const pendingUploadsByTemplate = pendingUploads.reduce((acc, upload) => {
+    if (upload.templateId) {
+      acc[upload.templateId] = [...(acc[upload.templateId] || []), upload];
+    }
+    return acc;
+  }, {} as Record<number, PendingUpload[]>);
+  const pendingGeneralUploads = pendingUploads.filter((upload) => !upload.templateId);
 
   const visibleSteps = useMemo(
     () =>
@@ -170,10 +200,6 @@ export default function EmpresaNovaSolicitacao() {
   const currentIndex = visibleSteps.findIndex((step) => step.id === currentStep);
 
   const createMutation = trpc.requests.create.useMutation({
-    onSuccess: () => {
-      toast.success("Solicitação criada com sucesso!");
-      navigate(listRoute);
-    },
     onError: (error) => toast.error(error.message),
   });
   const createCargoMutation = trpc.positions.create.useMutation({
@@ -194,6 +220,70 @@ export default function EmpresaNovaSolicitacao() {
     },
     onError: (error) => toast.error(error.message),
   });
+  const uploadRequestDocumentMutation = trpc.requestDocUploads.upload.useMutation({
+    onError: (error) => toast.error(error.message),
+  });
+
+  const fileToBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+
+  const openUploadModal = (target: { templateId?: number; nome: string; categoria: PendingUpload["categoria"] }) => {
+    setSelectedUploadTarget(target);
+    setSelectedUploadFile(null);
+    setUploadForm({ numeroDocumento: "", dataEmissao: "", validade: "" });
+    setUploadModalOpen(true);
+  };
+
+  const handleQueueUpload = async () => {
+    if (!selectedUploadTarget || !selectedUploadFile) {
+      toast.error("Selecione um arquivo para anexar.");
+      return;
+    }
+
+    if (selectedUploadFile.size > 10 * 1024 * 1024) {
+      toast.error("Arquivo muito grande. O limite é 10MB.");
+      return;
+    }
+
+    try {
+      const fileBase64 = await fileToBase64(selectedUploadFile);
+      setPendingUploads((current) => [
+        ...current,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          templateId: selectedUploadTarget.templateId,
+          nome: selectedUploadTarget.nome,
+          categoria: selectedUploadTarget.categoria,
+          fileNome: selectedUploadFile.name,
+          fileMime: selectedUploadFile.type || "application/octet-stream",
+          fileTamanho: selectedUploadFile.size,
+          fileBase64,
+          numeroDocumento: uploadForm.numeroDocumento.trim() || undefined,
+          dataEmissao: uploadForm.dataEmissao || undefined,
+          validade: uploadForm.validade || undefined,
+        },
+      ]);
+      setUploadModalOpen(false);
+      setSelectedUploadTarget(null);
+      setSelectedUploadFile(null);
+      setUploadForm({ numeroDocumento: "", dataEmissao: "", validade: "" });
+      toast.success("Arquivo preparado para ser enviado com a solicitação.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível ler o arquivo.");
+    }
+  };
+
+  const removePendingUpload = (uploadId: string) => {
+    if (!window.confirm("Deseja remover este arquivo da solicitação?")) {
+      return;
+    }
+    setPendingUploads((current) => current.filter((upload) => upload.id !== uploadId));
+  };
 
   const buildDescription = () => {
     const details = [
@@ -219,10 +309,11 @@ export default function EmpresaNovaSolicitacao() {
     }
 
     details.push("");
-    details.push(`Checklist Docs aplicável: ${requiredTemplates.length} obrigatório(s) e ${optionalTemplates.length} opcional(is).`);
-    if (requiredTemplates.length) {
-      details.push(`Documentos obrigatórios: ${requiredTemplates.map((item) => item.nome).join(", ")}`);
+    details.push(`Checklist Docs aplicável: ${documentTemplates.length} item(ns).`);
+    if (documentTemplates.length) {
+      details.push(`Itens previstos: ${documentTemplates.map((item) => item.nome).join(", ")}`);
     }
+    details.push(`Arquivos preparados nesta abertura: ${pendingUploads.length}.`);
 
     details.push(`Matriz Legal ativa da empresa: ${legalRequirements.length} requisito(s).`);
     if (legalRequirements.length) {
@@ -249,7 +340,7 @@ export default function EmpresaNovaSolicitacao() {
     }
 
     if (stepId === "person") {
-      if (!form.cpf || normalizeCpf(form.cpf).length !== 11) {
+      if (!form.cpf || !isValidCpf(form.cpf)) {
         return "Informe um CPF válido.";
       }
 
@@ -259,6 +350,10 @@ export default function EmpresaNovaSolicitacao() {
 
       if (!form.positionId) {
         return "Selecione a função.";
+      }
+
+      if (form.dataNascimento && !isAtLeastYearsOld(form.dataNascimento, 12)) {
+        return "A pessoa deve ter pelo menos 12 anos completos.";
       }
 
       if (form.tipo !== "admissao" && form.tipo !== "outros" && !matchedEmployee) {
@@ -289,7 +384,7 @@ export default function EmpresaNovaSolicitacao() {
     }
   };
 
-  const handleCreate = () => {
+  const handleCreate = async () => {
     for (const step of visibleSteps) {
       const error = validateStep(step.id);
       if (error) {
@@ -306,14 +401,40 @@ export default function EmpresaNovaSolicitacao() {
 
     const titulo = `${selectedProcess.label} - ${form.nome}`.trim();
 
-    createMutation.mutate({
-      companyId,
-      employeeId: matchedEmployee?.id,
-      tipo: form.tipo,
-      titulo,
-      descricao: buildDescription(),
-      prioridade: form.prioridade,
-    });
+    try {
+      const createdRequest = await createMutation.mutateAsync({
+        companyId,
+        employeeId: matchedEmployee?.id,
+        tipo: form.tipo,
+        titulo,
+        descricao: buildDescription(),
+        prioridade: form.prioridade,
+      });
+
+      if (createdRequest.id && pendingUploads.length > 0) {
+        for (const upload of pendingUploads) {
+          await uploadRequestDocumentMutation.mutateAsync({
+            requestId: createdRequest.id,
+            templateId: upload.templateId,
+            nome: upload.nome,
+            categoria: upload.categoria,
+            obrigatorio: false,
+            numeroDocumento: upload.numeroDocumento,
+            dataEmissao: upload.dataEmissao,
+            validade: upload.validade,
+            fileNome: upload.fileNome,
+            fileMime: upload.fileMime,
+            fileTamanho: upload.fileTamanho,
+            fileBase64: upload.fileBase64,
+          });
+        }
+      }
+
+      toast.success("Solicitação criada com sucesso!");
+      navigate(listRoute);
+    } catch {
+      // handled by mutations
+    }
   };
 
   const handleCreateCargo = () => {
@@ -564,9 +685,13 @@ export default function EmpresaNovaSolicitacao() {
                 <Label>Data de nascimento</Label>
                 <Input
                   type="date"
+                  max={maxBirthDate}
                   value={form.dataNascimento}
                   onChange={(event) => setForm((current) => ({ ...current, dataNascimento: event.target.value }))}
                 />
+                <p className="text-xs text-muted-foreground">
+                  A pessoa precisa ter pelo menos 12 anos completos.
+                </p>
               </div>
 
               <div className="space-y-1.5">
@@ -686,18 +811,18 @@ export default function EmpresaNovaSolicitacao() {
                 <ClipboardCheck className="h-4 w-4" />
                 <AlertTitle>Checklist puxado pelo tipo de solicitação</AlertTitle>
                 <AlertDescription>
-                  Os documentos abaixo vêm do módulo Checklist Docs e já entram no fluxo logo após a abertura da solicitação.
+                  Os itens abaixo vêm do módulo Checklist Docs, mas o anexo pode ser feito agora pelo solicitante ou depois por quem vai avaliar.
                 </AlertDescription>
               </Alert>
 
               <div className="grid gap-3 md:grid-cols-3">
                 <div className="rounded-2xl border border-border bg-muted/40 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Obrigatórios</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{requiredTemplates.length}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Itens do checklist</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{documentTemplates.length}</p>
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/40 p-4">
-                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Opcionais</p>
-                  <p className="mt-2 text-2xl font-semibold text-foreground">{optionalTemplates.length}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Anexos preparados</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{pendingUploads.length}</p>
                 </div>
                 <div className="rounded-2xl border border-border bg-muted/40 p-4">
                   <p className="text-xs uppercase tracking-wide text-muted-foreground">Processo</p>
@@ -711,23 +836,106 @@ export default function EmpresaNovaSolicitacao() {
                     <ShieldAlert className="h-4 w-4" />
                     <AlertTitle>Nenhum documento configurado</AlertTitle>
                     <AlertDescription>
-                      Ainda não há checklist cadastrado para este tipo de processo. A solicitação será aberta, mas não terá documentos orientados automaticamente.
+                      Ainda não há checklist cadastrado para este tipo de processo. A solicitação será aberta, mas sem anexos guiados automaticamente.
                     </AlertDescription>
                   </Alert>
                 ) : (
                   documentTemplates.map((template) => (
                     <div key={template.id} className="rounded-2xl border border-border p-4">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="font-medium text-foreground">{template.nome}</p>
-                        <Badge variant="outline">{template.categoria}</Badge>
-                        <Badge variant={template.obrigatorio ? "destructive" : "secondary"}>
-                          {template.obrigatorio ? "Obrigatório" : "Opcional"}
-                        </Badge>
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-foreground">{template.nome}</p>
+                            <Badge variant="outline">{REQUEST_CATEGORY_LABELS[template.categoria as PendingUpload["categoria"]]}</Badge>
+                          </div>
+                          {template.descricao ? <p className="text-sm text-muted-foreground">{template.descricao}</p> : null}
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openUploadModal({
+                              templateId: template.id,
+                              nome: template.nome,
+                              categoria: template.categoria as PendingUpload["categoria"],
+                            })
+                          }
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Anexar arquivo
+                        </Button>
                       </div>
-                      {template.descricao && <p className="mt-2 text-sm text-muted-foreground">{template.descricao}</p>}
+
+                      {(pendingUploadsByTemplate[template.id] ?? []).length > 0 ? (
+                        <div className="mt-4 space-y-2">
+                          {(pendingUploadsByTemplate[template.id] ?? []).map((upload) => (
+                            <div
+                              key={upload.id}
+                              className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border bg-muted/20 p-3"
+                            >
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-foreground">{upload.fileNome}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
+                                  {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
+                                  {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                                </p>
+                              </div>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-4 text-sm text-muted-foreground">Nenhum arquivo preparado para este item ainda.</p>
+                      )}
                     </div>
                   ))
                 )}
+              </div>
+
+              <div className="rounded-2xl border-2 border-dashed border-border p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-foreground">Documento complementar</p>
+                    <p className="text-sm text-muted-foreground">
+                      Use esta opção para anexar algo fora do checklist padrão.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => openUploadModal({ nome: "Documento complementar", categoria: "outros" })}
+                  >
+                    <Paperclip className="mr-2 h-4 w-4" />
+                    Adicionar anexo
+                  </Button>
+                </div>
+
+                {pendingGeneralUploads.length > 0 ? (
+                  <div className="mt-4 space-y-2">
+                    {pendingGeneralUploads.map((upload) => (
+                      <div
+                        key={upload.id}
+                        className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border bg-muted/20 p-3"
+                      >
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">{upload.fileNome}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
+                            {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
+                            {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                          </p>
+                        </div>
+                        <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -813,7 +1021,8 @@ export default function EmpresaNovaSolicitacao() {
               value={form.observacoes}
               onChange={(event) => setForm((current) => ({ ...current, observacoes: event.target.value }))}
               placeholder="Descreva prazos, contexto, documentos já disponíveis ou qualquer instrução relevante para o time."
-              rows={6}
+              rows={8}
+              className="min-h-40 resize-y"
             />
           </div>
 
@@ -903,8 +1112,8 @@ export default function EmpresaNovaSolicitacao() {
                   {currentIndex < visibleSteps.length - 1 ? (
                     <Button onClick={goToNextStep}>Próxima etapa</Button>
                   ) : (
-                    <Button onClick={handleCreate} disabled={createMutation.isPending}>
-                      {createMutation.isPending ? "Criando..." : "Criar solicitação"}
+                    <Button onClick={handleCreate} disabled={createMutation.isPending || uploadRequestDocumentMutation.isPending}>
+                      {createMutation.isPending || uploadRequestDocumentMutation.isPending ? "Criando..." : "Criar solicitação"}
                     </Button>
                   )}
                 </div>
@@ -959,9 +1168,7 @@ export default function EmpresaNovaSolicitacao() {
                     <p className="mt-1 font-medium text-foreground">
                       {documentTemplates.length} item(ns) para {selectedProcess.label.toLowerCase()}
                     </p>
-                    <p className="text-muted-foreground">
-                      {requiredTemplates.length} obrigatório(s) e {optionalTemplates.length} opcional(is).
-                    </p>
+                    <p className="text-muted-foreground">{pendingUploads.length} arquivo(s) preparado(s) nesta abertura.</p>
                   </div>
 
                   <div className="rounded-2xl border border-border bg-muted/30 p-4">
@@ -985,6 +1192,71 @@ export default function EmpresaNovaSolicitacao() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={uploadModalOpen}
+        onOpenChange={(open) => {
+          setUploadModalOpen(open);
+          if (!open) {
+            setSelectedUploadTarget(null);
+            setSelectedUploadFile(null);
+            setUploadForm({ numeroDocumento: "", dataEmissao: "", validade: "" });
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-lg overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>Anexar documento</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Item do checklist</Label>
+              <Input value={selectedUploadTarget?.nome ?? ""} readOnly />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Arquivo</Label>
+              <Input
+                type="file"
+                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                onChange={(event) => setSelectedUploadFile(event.target.files?.[0] ?? null)}
+              />
+              <p className="text-xs text-muted-foreground">PDF, JPG, PNG, DOC ou DOCX com até 10MB.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Número do documento</Label>
+              <Input
+                value={uploadForm.numeroDocumento}
+                onChange={(event) => setUploadForm((current) => ({ ...current, numeroDocumento: event.target.value }))}
+                placeholder="Ex.: 2026-001, ASO-4587, matrícula ou referência"
+              />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label>Data de emissão</Label>
+                <Input
+                  type="date"
+                  value={uploadForm.dataEmissao}
+                  onChange={(event) => setUploadForm((current) => ({ ...current, dataEmissao: event.target.value }))}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Validade</Label>
+                <Input
+                  type="date"
+                  value={uploadForm.validade}
+                  onChange={(event) => setUploadForm((current) => ({ ...current, validade: event.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setUploadModalOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={handleQueueUpload}>Preparar anexo</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={cargoModalOpen} onOpenChange={setCargoModalOpen}>
         <DialogContent className="sm:max-w-lg">
@@ -1046,8 +1318,9 @@ export default function EmpresaNovaSolicitacao() {
             </div>
             <div className="space-y-1.5">
               <Label>Endereço</Label>
-              <Textarea
-                rows={3}
+              <Input
+                maxLength={255}
+                placeholder="Rua, número, complemento"
                 value={novoLocal.endereco}
                 onChange={(event) => setNovoLocal((current) => ({ ...current, endereco: event.target.value }))}
               />

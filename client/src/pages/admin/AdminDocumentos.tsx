@@ -6,9 +6,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plus, FileText, Pencil, Trash2, GripVertical } from "lucide-react";
 import { toast } from "sonner";
@@ -20,11 +20,12 @@ const TIPOS_LABEL: Record<string, string> = {
 const TIPOS = Object.keys(TIPOS_LABEL);
 
 const CATEGORIA_LABEL: Record<string, string> = {
-  pessoal: "Pessoal", treinamento: "Treinamento", exame_medico: "Exame Médico", outros: "Outros",
+  pessoal: "Pessoal", empresa: "Empresa", treinamento: "Treinamento", exame_medico: "Exame Médico", outros: "Outros",
 };
 
 const CATEGORIA_COLORS: Record<string, string> = {
   pessoal: "bg-blue-500/10 text-blue-700 border-blue-500/20",
+  empresa: "bg-cyan-500/10 text-cyan-700 border-cyan-500/20",
   treinamento: "bg-green-500/10 text-green-700 border-green-500/20",
   exame_medico: "bg-orange-500/10 text-orange-700 border-orange-500/20",
   outros: "bg-gray-500/10 text-gray-600 border-gray-500/20",
@@ -35,7 +36,7 @@ const emptyForm = {
   categoria: "pessoal" as const,
   nome: "",
   descricao: "",
-  obrigatorio: true,
+  obrigatorio: false,
   sexo: "todos" as const,
   ordem: 0,
 };
@@ -135,7 +136,7 @@ export default function AdminDocumentos() {
                 </div>
               ) : (
                 <div className="space-y-2 mt-2">
-                  {["pessoal", "treinamento", "exame_medico", "outros"].map(cat => {
+                  {["pessoal", "empresa", "treinamento", "exame_medico", "outros"].map(cat => {
                     const docs = filtrados.filter(d => d.categoria === cat);
                     if (docs.length === 0) return null;
                     return (
@@ -153,11 +154,6 @@ export default function AdminDocumentos() {
                                   <Badge variant="outline" className={`text-xs ${CATEGORIA_COLORS[doc.categoria]}`}>
                                     {CATEGORIA_LABEL[doc.categoria]}
                                   </Badge>
-                                  {doc.obrigatorio ? (
-                                    <Badge variant="outline" className="text-xs bg-red-500/10 text-red-700 border-red-500/20">Obrigatório</Badge>
-                                  ) : (
-                                    <Badge variant="outline" className="text-xs text-muted-foreground">Opcional</Badge>
-                                  )}
                                   {doc.sexo !== "todos" && (
                                     <Badge variant="outline" className="text-xs bg-purple-500/10 text-purple-700 border-purple-500/20">
                                       {doc.sexo === "masculino" ? "♂ Masculino" : "♀ Feminino"}
@@ -175,7 +171,11 @@ export default function AdminDocumentos() {
                                 <Button
                                   variant="ghost" size="icon"
                                   className="h-7 w-7 text-destructive hover:text-destructive"
-                                  onClick={() => deleteMutation.mutate({ id: doc.id })}
+                                  onClick={() => {
+                                    if (window.confirm("Deseja excluir este documento do checklist?")) {
+                                      deleteMutation.mutate({ id: doc.id });
+                                    }
+                                  }}
                                 >
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </Button>
@@ -247,14 +247,6 @@ export default function AdminDocumentos() {
                 <Label className="text-xs">Ordem</Label>
                 <Input type="number" className="h-9 text-sm" value={form.ordem} onChange={e => setForm(f => ({ ...f, ordem: parseInt(e.target.value) || 0 }))} />
               </div>
-            </div>
-
-            <div className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
-              <div>
-                <p className="text-sm font-medium">Obrigatório</p>
-                <p className="text-xs text-muted-foreground">Bloqueia aprovação se não enviado</p>
-              </div>
-              <Switch checked={form.obrigatorio} onCheckedChange={v => setForm(f => ({ ...f, obrigatorio: v }))} />
             </div>
           </div>
           <DialogFooter>

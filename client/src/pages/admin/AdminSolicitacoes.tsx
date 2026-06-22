@@ -339,7 +339,7 @@ export default function AdminSolicitacoes() {
               <RequestDocumentos
                 requestId={selectedRequest.id}
                 tipoSolicitacao={selectedRequest.tipo}
-                canUpload={false}
+                canUpload={canReview}
                 canReview={canReview}
                 readOnly={!canReview}
               />

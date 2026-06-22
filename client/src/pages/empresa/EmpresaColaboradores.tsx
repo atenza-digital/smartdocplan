@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { Link } from "wouter";
 import CompanyLayout from "@/components/CompanyLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -6,13 +7,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Search, Users, FolderOpen, UserCheck, UserMinus, UserX } from "lucide-react";
-import { Link } from "wouter";
+import { FolderOpen, Plus, Search, UserCheck, UserMinus, Users, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { canManageCompanyData } from "@shared/permissions";
+import {
+  formatCpf,
+  formatPhone,
+  getBirthDateMax,
+  isAtLeastYearsOld,
+  isValidCpf,
+  isValidPhone,
+  normalizeTextSearch,
+} from "@shared/formValidation";
 
 const statusColors: Record<string, string> = {
   ativo: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
@@ -26,18 +35,27 @@ const statusIcons: Record<string, React.ElementType> = {
   desligado: UserX,
 };
 
+const emptyForm = {
+  nome: "",
+  cpf: "",
+  email: "",
+  telefone: "",
+  dataAdmissao: "",
+  dataNascimento: "",
+  positionId: "",
+  worksiteId: "",
+};
+
 export default function EmpresaColaboradores() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
   const canCreate = canManageCompanyData(user?.role ?? null);
+  const maxBirthDate = getBirthDateMax(12);
+
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("todos");
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({
-    nome: "", cpf: "", email: "", telefone: "",
-    dataAdmissao: "", dataNascimento: "",
-    positionId: "", worksiteId: "",
-  });
+  const [form, setForm] = useState(emptyForm);
 
   const { data: colaboradores = [], isLoading, refetch } = trpc.employees.list.useQuery(
     { companyId },
@@ -48,47 +66,96 @@ export default function EmpresaColaboradores() {
 
   const createMutation = trpc.employees.create.useMutation({
     onSuccess: () => {
-      toast.success("Colaborador cadastrado!");
+      toast.success("Colaborador cadastrado com sucesso!");
       setShowModal(false);
+      setForm(emptyForm);
       refetch();
-      setForm({ nome: "", cpf: "", email: "", telefone: "", dataAdmissao: "", dataNascimento: "", positionId: "", worksiteId: "" });
     },
-    onError: (e) => toast.error(e.message),
+    onError: (error) => toast.error(error.message),
   });
 
-  const filtered = colaboradores.filter((c) => {
-    const matchSearch = c.nome.toLowerCase().includes(search.toLowerCase()) || c.cpf.includes(search);
-    const matchStatus = filterStatus === "todos" || c.status === filterStatus;
-    return matchSearch && matchStatus;
-  });
+  const filtered = useMemo(() => {
+    const normalizedSearch = normalizeTextSearch(search);
+    const digitSearch = search.replace(/\D/g, "");
+
+    return colaboradores.filter((colaborador) => {
+      const matchesStatus = filterStatus === "todos" || colaborador.status === filterStatus;
+      if (!matchesStatus) return false;
+
+      if (!normalizedSearch) return true;
+
+      const searchableText = normalizeTextSearch(
+        [colaborador.nome, colaborador.email ?? "", colaborador.telefone ?? "", colaborador.cpf].join(" ")
+      );
+      const cpfDigits = colaborador.cpf.replace(/\D/g, "");
+
+      return searchableText.includes(normalizedSearch) || (!!digitSearch && cpfDigits.includes(digitSearch));
+    });
+  }, [colaboradores, filterStatus, search]);
+
+  const handleCreate = () => {
+    if (!form.nome.trim()) {
+      toast.error("Informe o nome completo.");
+      return;
+    }
+
+    if (!isValidCpf(form.cpf)) {
+      toast.error("Informe um CPF válido.");
+      return;
+    }
+
+    if (form.telefone.trim() && !isValidPhone(form.telefone)) {
+      toast.error("Informe um telefone válido com DDD.");
+      return;
+    }
+
+    if (form.dataNascimento && !isAtLeastYearsOld(form.dataNascimento, 12)) {
+      toast.error("A pessoa deve ter pelo menos 12 anos completos.");
+      return;
+    }
+
+    createMutation.mutate({
+      companyId,
+      nome: form.nome.trim(),
+      cpf: form.cpf,
+      email: form.email.trim() || undefined,
+      telefone: form.telefone.trim() || undefined,
+      dataNascimento: form.dataNascimento || undefined,
+      dataAdmissao: form.dataAdmissao || undefined,
+      positionId: form.positionId ? Number(form.positionId) : undefined,
+      worksiteId: form.worksiteId ? Number(form.worksiteId) : undefined,
+    });
+  };
 
   return (
     <CompanyLayout title="Colaboradores">
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-2xl font-bold text-foreground">Colaboradores</h2>
-            <p className="text-muted-foreground text-sm mt-1">Gerencie os colaboradores da sua empresa.</p>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Gerencie os colaboradores da sua empresa com CPF e data de nascimento validados.
+            </p>
           </div>
           {canCreate && (
-            <Button onClick={() => setShowModal(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-              <Plus className="w-4 h-4 mr-2" />
+            <Button onClick={() => setShowModal(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+              <Plus className="mr-2 h-4 w-4" />
               Novo Colaborador
             </Button>
           )}
         </div>
 
-        {/* Filtros */}
         <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-48 max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <div className="relative min-w-48 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
-              placeholder="Buscar por nome ou CPF..."
+              placeholder="Buscar por nome, e-mail, telefone ou CPF..."
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={(event) => setSearch(event.target.value)}
               className="pl-9"
             />
           </div>
+
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-40">
               <SelectValue />
@@ -102,61 +169,88 @@ export default function EmpresaColaboradores() {
           </Select>
         </div>
 
-        {/* Lista */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {isLoading && [...Array(6)].map((_, i) => (
-            <div key={i} className="h-32 rounded-lg bg-muted animate-pulse" />
-          ))}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {isLoading &&
+            [...Array(6)].map((_, index) => (
+              <div key={index} className="h-32 animate-pulse rounded-lg bg-muted" />
+            ))}
+
           {!isLoading && filtered.length === 0 && (
-            <div className="col-span-full text-center py-12 text-muted-foreground">
-              <Users className="w-10 h-10 mx-auto mb-3 opacity-30" />
+            <div className="col-span-full py-12 text-center text-muted-foreground">
+              <Users className="mx-auto mb-3 h-10 w-10 opacity-30" />
               <p className="font-medium">Nenhum colaborador encontrado</p>
               <p className="text-sm">
-                {canCreate ? 'Cadastre o primeiro colaborador clicando em "Novo Colaborador"' : "Nenhum colaborador disponivel para consulta."}
+                {canCreate
+                  ? 'Cadastre o primeiro colaborador clicando em "Novo Colaborador".'
+                  : "Nenhum colaborador disponível para consulta."}
               </p>
             </div>
           )}
-          {filtered.map((col) => {
-            const StatusIcon = statusIcons[col.status] ?? UserCheck;
+
+          {filtered.map((colaborador) => {
+            const StatusIcon = statusIcons[colaborador.status] ?? UserCheck;
+
             return (
-              <Card key={col.id} className="border-border hover:border-primary/30 transition-colors">
+              <Card key={colaborador.id} className="border-border transition-colors hover:border-primary/30">
                 <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-3">
+                  <div className="mb-3 flex items-start justify-between">
                     <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-                        <span className="text-primary font-semibold text-sm">
-                          {col.nome.split(" ").map((n) => n[0]).slice(0, 2).join("").toUpperCase()}
+                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                        <span className="text-sm font-semibold text-primary">
+                          {colaborador.nome
+                            .split(" ")
+                            .map((parte) => parte[0])
+                            .slice(0, 2)
+                            .join("")
+                            .toUpperCase()}
                         </span>
                       </div>
                       <div>
-                        <p className="font-semibold text-foreground text-sm leading-tight">{col.nome}</p>
-                        <p className="text-xs text-muted-foreground font-mono">{col.cpf}</p>
+                        <p className="text-sm font-semibold leading-tight text-foreground">{colaborador.nome}</p>
+                        <p className="font-mono text-xs text-muted-foreground">{colaborador.cpf}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className={`text-xs ${statusColors[col.status]}`}>
-                      {col.status}
+                    <Badge variant="outline" className={`text-xs ${statusColors[colaborador.status]}`}>
+                      <StatusIcon className="mr-1 h-3 w-3" />
+                      {colaborador.status}
                     </Badge>
                   </div>
+
                   <div className="space-y-1 text-xs text-muted-foreground">
-                    {col.dataAdmissao && (
-                      <p>Admissão: <span className="text-foreground">{new Date(col.dataAdmissao).toLocaleDateString("pt-BR")}</span></p>
+                    {colaborador.dataAdmissao && (
+                      <p>
+                        Admissão:{" "}
+                        <span className="text-foreground">
+                          {new Date(colaborador.dataAdmissao).toLocaleDateString("pt-BR")}
+                        </span>
+                      </p>
                     )}
-                    {col.scoreConformidade !== null && (
-                      <div className="flex items-center gap-2 mt-2">
-                        <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
+
+                    {colaborador.scoreConformidade !== null && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
                           <div
-                            className={`h-full rounded-full ${(col.scoreConformidade ?? 0) >= 80 ? "bg-green-500" : (col.scoreConformidade ?? 0) >= 50 ? "bg-amber-500" : "bg-red-500"}`}
-                            style={{ width: `${col.scoreConformidade ?? 0}%` }}
+                            className={`h-full rounded-full ${
+                              (colaborador.scoreConformidade ?? 0) >= 80
+                                ? "bg-green-500"
+                                : (colaborador.scoreConformidade ?? 0) >= 50
+                                  ? "bg-amber-500"
+                                  : "bg-red-500"
+                            }`}
+                            style={{ width: `${colaborador.scoreConformidade ?? 0}%` }}
                           />
                         </div>
-                        <span className="text-xs font-medium text-foreground">{col.scoreConformidade}%</span>
+                        <span className="text-xs font-medium text-foreground">
+                          {colaborador.scoreConformidade}%
+                        </span>
                       </div>
                     )}
                   </div>
+
                   <div className="mt-3 flex gap-2">
                     <Button variant="outline" size="sm" className="flex-1 text-xs" asChild>
-                      <Link href={`/empresa/colaboradores/${col.id}`}>
-                        <FolderOpen className="w-3 h-3 mr-1" />
+                      <Link href={`/empresa/colaboradores/${colaborador.id}`}>
+                        <FolderOpen className="mr-1 h-3 w-3" />
                         Dossiê
                       </Link>
                     </Button>
@@ -168,78 +262,124 @@ export default function EmpresaColaboradores() {
         </div>
       </div>
 
-      {/* Modal Novo Colaborador */}
-      <Dialog open={showModal && canCreate} onOpenChange={setShowModal}>
+      <Dialog
+        open={showModal && canCreate}
+        onOpenChange={(open) => {
+          setShowModal(open);
+          if (!open) setForm(emptyForm);
+        }}
+      >
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Cadastrar Novo Colaborador</DialogTitle>
           </DialogHeader>
+
           <div className="space-y-4 py-2">
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label>Nome Completo *</Label>
-                <Input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} placeholder="Ex: João da Silva" />
+                <Input
+                  value={form.nome}
+                  onChange={(event) => setForm((current) => ({ ...current, nome: event.target.value }))}
+                  placeholder="Ex: João da Silva"
+                  maxLength={255}
+                />
               </div>
+
               <div className="space-y-1.5">
                 <Label>CPF *</Label>
-                <Input value={form.cpf} onChange={(e) => setForm({ ...form, cpf: e.target.value })} placeholder="000.000.000-00" />
+                <Input
+                  value={form.cpf}
+                  onChange={(event) => setForm((current) => ({ ...current, cpf: formatCpf(event.target.value) }))}
+                  placeholder="000.000.000-00"
+                />
               </div>
+
               <div className="space-y-1.5">
                 <Label>Data de Nascimento</Label>
-                <Input type="date" value={form.dataNascimento} onChange={(e) => setForm({ ...form, dataNascimento: e.target.value })} />
+                <Input
+                  type="date"
+                  value={form.dataNascimento}
+                  max={maxBirthDate}
+                  onChange={(event) => setForm((current) => ({ ...current, dataNascimento: event.target.value }))}
+                />
               </div>
+
               <div className="space-y-1.5">
                 <Label>E-mail</Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="joao@empresa.com" />
+                <Input
+                  type="email"
+                  value={form.email}
+                  onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                  placeholder="joao@empresa.com"
+                  maxLength={320}
+                />
               </div>
+
               <div className="space-y-1.5">
                 <Label>Telefone</Label>
-                <Input value={form.telefone} onChange={(e) => setForm({ ...form, telefone: e.target.value })} placeholder="(00) 00000-0000" />
+                <Input
+                  value={form.telefone}
+                  onChange={(event) => setForm((current) => ({ ...current, telefone: formatPhone(event.target.value) }))}
+                  placeholder="(00) 00000-0000"
+                />
               </div>
+
               <div className="space-y-1.5">
                 <Label>Data de Admissão</Label>
-                <Input type="date" value={form.dataAdmissao} onChange={(e) => setForm({ ...form, dataAdmissao: e.target.value })} />
+                <Input
+                  type="date"
+                  value={form.dataAdmissao}
+                  onChange={(event) => setForm((current) => ({ ...current, dataAdmissao: event.target.value }))}
+                />
               </div>
+
               <div className="space-y-1.5">
                 <Label>Cargo</Label>
-                <Select value={form.positionId} onValueChange={(v) => setForm({ ...form, positionId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar cargo" /></SelectTrigger>
+                <Select value={form.positionId} onValueChange={(value) => setForm((current) => ({ ...current, positionId: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar cargo" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {cargos.map((c) => (
-                      <SelectItem key={c.id} value={String(c.id)}>{c.nome}</SelectItem>
+                    {cargos.map((cargo) => (
+                      <SelectItem key={cargo.id} value={String(cargo.id)}>
+                        {cargo.nome}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-1.5">
                 <Label>Obra / Local</Label>
-                <Select value={form.worksiteId} onValueChange={(v) => setForm({ ...form, worksiteId: v })}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar obra" /></SelectTrigger>
+                <Select value={form.worksiteId} onValueChange={(value) => setForm((current) => ({ ...current, worksiteId: value }))}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar obra" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {obras.map((o) => (
-                      <SelectItem key={o.id} value={String(o.id)}>{o.nome}</SelectItem>
+                    {obras.map((obra) => (
+                      <SelectItem key={obra.id} value={String(obra.id)}>
+                        {obra.nome}
+                      </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
             </div>
+
+            <p className="text-xs text-muted-foreground">
+              A data de nascimento aceita somente pessoas com 12 anos completos ou mais.
+            </p>
           </div>
+
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={() => setShowModal(false)}>
+              Cancelar
+            </Button>
             <Button
-              onClick={() => createMutation.mutate({
-                companyId,
-                nome: form.nome,
-                cpf: form.cpf,
-                email: form.email || undefined,
-                telefone: form.telefone || undefined,
-                dataNascimento: form.dataNascimento || undefined,
-                dataAdmissao: form.dataAdmissao || undefined,
-                positionId: form.positionId ? parseInt(form.positionId) : undefined,
-                worksiteId: form.worksiteId ? parseInt(form.worksiteId) : undefined,
-              })}
-              disabled={!form.nome || !form.cpf || createMutation.isPending}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              onClick={handleCreate}
+              disabled={!form.nome.trim() || !form.cpf.trim() || createMutation.isPending}
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {createMutation.isPending ? "Salvando..." : "Cadastrar"}
             </Button>

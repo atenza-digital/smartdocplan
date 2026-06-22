@@ -45,6 +45,14 @@ export async function runAutoMigrations() {
     }
   };
 
+  const runStatement = async (label: string, statement: string) => {
+    try {
+      await conn.execute(statement);
+    } catch (e: any) {
+      console.warn(`[Migration] Erro em ${label}: ${e.message}`);
+    }
+  };
+
   // ── requests ──────────────────────────────────────────────────────────────
   await addColumnIfMissing("requests", "checklistCompleto", "TINYINT(1) NOT NULL DEFAULT 0");
   await addColumnIfMissing("requests", "responsavelId", "INT NULL");
@@ -56,7 +64,7 @@ export async function runAutoMigrations() {
   await createTableIfMissing("document_type_templates", `(
     id INT AUTO_INCREMENT PRIMARY KEY,
     tipoSolicitacao ENUM('admissao','demissao','mudanca_funcao','afastamento','atestado_medico','outros') NOT NULL,
-    categoria ENUM('pessoal','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal',
+    categoria ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal',
     nome VARCHAR(255) NOT NULL,
     descricao TEXT,
     obrigatorio TINYINT(1) NOT NULL DEFAULT 1,
@@ -74,12 +82,15 @@ export async function runAutoMigrations() {
     requestId INT NOT NULL,
     templateId INT,
     nome VARCHAR(255) NOT NULL,
-    categoria ENUM('pessoal','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal',
+    categoria ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal',
     fileUrl TEXT,
     fileKey TEXT,
     fileNome VARCHAR(255),
     fileTamanho INT,
     fileMime VARCHAR(100),
+    numeroDocumento VARCHAR(120),
+    dataEmissao DATE,
+    validade DATE,
     obrigatorio TINYINT(1) NOT NULL DEFAULT 1,
     status ENUM('pendente','aprovado','reprovado') NOT NULL DEFAULT 'pendente',
     motivoReprovacao TEXT,
@@ -89,6 +100,45 @@ export async function runAutoMigrations() {
     createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   )`);
+  await addColumnIfMissing("request_document_uploads", "numeroDocumento", "VARCHAR(120) NULL");
+  await addColumnIfMissing("request_document_uploads", "dataEmissao", "DATE NULL");
+  await addColumnIfMissing("request_document_uploads", "validade", "DATE NULL");
+  await runStatement(
+    "ajuste de enum document_type_templates.categoria",
+    "ALTER TABLE `document_type_templates` MODIFY COLUMN `categoria` ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal'"
+  );
+  await runStatement(
+    "ajuste de enum request_document_uploads.categoria",
+    "ALTER TABLE `request_document_uploads` MODIFY COLUMN `categoria` ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal'"
+  );
+
+  const ensureTemplate = async (
+    tipoSolicitacao: string,
+    categoria: string,
+    nome: string,
+    descricao: string,
+    obrigatorio: 0 | 1,
+    sexo: "todos" | "masculino" | "feminino",
+    ordem: number
+  ) => {
+    try {
+      const [rows] = await conn.execute(
+        "SELECT COUNT(*) as cnt FROM document_type_templates WHERE tipoSolicitacao = ? AND categoria = ? AND nome = ?",
+        [tipoSolicitacao, categoria, nome]
+      );
+      if (rows[0]?.cnt === 0) {
+        await conn.execute(
+          `INSERT INTO document_type_templates
+            (tipoSolicitacao, categoria, nome, descricao, obrigatorio, sexo, ordem, ativo)
+           VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
+          [tipoSolicitacao, categoria, nome, descricao, obrigatorio, sexo, ordem]
+        );
+        console.log(`[Migration] Template padrão inserido: ${nome}.`);
+      }
+    } catch (e: any) {
+      console.warn(`[Migration] Erro ao garantir template ${nome}: ${e.message}`);
+    }
+  };
 
   // ── Seed templates padrão ─────────────────────────────────────────────────
   try {
@@ -118,6 +168,9 @@ export async function runAutoMigrations() {
   } catch (e: any) {
     console.warn("[Migration] Erro no seed de templates:", e.message);
   }
+
+  await ensureTemplate("admissao", "empresa", "Contrato Social", "Contrato social ou última alteração consolidada da empresa.", 0, "todos", 10);
+  await ensureTemplate("admissao", "empresa", "Cartão CNPJ", "Comprovante de inscrição e de situação cadastral do CNPJ.", 0, "todos", 11);
 
   console.log("[Migration] Migrações concluídas.");
 }

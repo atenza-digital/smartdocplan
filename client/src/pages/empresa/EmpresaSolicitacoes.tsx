@@ -6,11 +6,14 @@ import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Calendar, ClipboardList, FileText, Paperclip, Plus } from "lucide-react";
+import { Calendar, ClipboardList, FileText, Paperclip, Plus, Search } from "lucide-react";
 import { canCreateRequests } from "@shared/permissions";
+import { normalizeTextSearch } from "@shared/formValidation";
 
 const STATUS_COLUMNS = [
   { key: "nova", label: "Nova solicitação", color: "border-t-amber-400" },
@@ -52,22 +55,56 @@ export default function EmpresaSolicitacoes() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
   const canCreate = canCreateRequests(user?.role ?? null);
+
   const [docModal, setDocModal] = useState<{ id: number; tipo: string; titulo: string } | null>(null);
   const [view, setView] = useState<"kanban" | "lista">("kanban");
+  const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState("todos");
+  const [tipoFilter, setTipoFilter] = useState("todos");
 
   const { data: solicitacoes = [], isLoading } = trpc.requests.list.useQuery(
     { companyId },
     { enabled: companyId > 0 }
   );
 
-  const byStatus = (status: string) => solicitacoes.filter((solicitacao) => solicitacao.status === status);
+  const filteredSolicitacoes = useMemo(() => {
+    const normalizedSearch = normalizeTextSearch(search);
+    const digitSearch = search.replace(/\D/g, "");
+
+    return solicitacoes.filter((solicitacao) => {
+      const matchesStatus = statusFilter === "todos" || solicitacao.status === statusFilter;
+      const matchesTipo = tipoFilter === "todos" || solicitacao.tipo === tipoFilter;
+      if (!matchesStatus || !matchesTipo) return false;
+
+      if (!normalizedSearch) return true;
+
+      const searchableText = normalizeTextSearch(
+        [
+          solicitacao.titulo,
+          solicitacao.descricao ?? "",
+          tipoLabels[solicitacao.tipo] ?? solicitacao.tipo,
+          String(solicitacao.id),
+        ].join(" ")
+      );
+      const digitsFromDescription = (solicitacao.descricao ?? "").replace(/\D/g, "");
+
+      return (
+        searchableText.includes(normalizedSearch) ||
+        (!!digitSearch && digitsFromDescription.includes(digitSearch))
+      );
+    });
+  }, [search, solicitacoes, statusFilter, tipoFilter]);
+
+  const byStatus = (status: string) =>
+    filteredSolicitacoes.filter((solicitacao) => solicitacao.status === status);
+
   const summary = useMemo(
     () =>
       STATUS_COLUMNS.map((column) => ({
         ...column,
         total: byStatus(column.key).length,
       })),
-    [solicitacoes]
+    [filteredSolicitacoes]
   );
 
   return (
@@ -77,7 +114,7 @@ export default function EmpresaSolicitacoes() {
           <div>
             <h2 className="text-2xl font-bold text-foreground">Solicitações de RH</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Acompanhe o andamento das solicitações da empresa e envie documentos quando solicitado.
+              Pesquise por nome, CPF no histórico da solicitação, tipo e status para acompanhar os fluxos da empresa.
             </p>
           </div>
 
@@ -89,6 +126,46 @@ export default function EmpresaSolicitacoes() {
               </Link>
             </Button>
           )}
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="relative min-w-64 flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar por título, nome, CPF, descrição ou número..."
+              className="pl-9"
+            />
+          </div>
+
+          <Select value={tipoFilter} onValueChange={setTipoFilter}>
+            <SelectTrigger className="w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os tipos</SelectItem>
+              {Object.entries(tipoLabels).map(([key, label]) => (
+                <SelectItem key={key} value={key}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-48">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os status</SelectItem>
+              {STATUS_COLUMNS.map((column) => (
+                <SelectItem key={column.key} value={column.key}>
+                  {column.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-7">
@@ -164,7 +241,9 @@ export default function EmpresaSolicitacoes() {
                             </div>
                           ))}
 
-                          {items.length === 0 && <p className="py-4 text-center text-[10px] text-muted-foreground">Sem itens</p>}
+                          {items.length === 0 && (
+                            <p className="py-4 text-center text-[10px] text-muted-foreground">Sem itens</p>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -177,25 +256,31 @@ export default function EmpresaSolicitacoes() {
           <TabsContent value="lista" className="mt-4">
             <div className="space-y-3">
               {isLoading &&
-                [...Array(4)].map((_, index) => <div key={index} className="h-20 animate-pulse rounded-lg bg-muted" />)}
+                [...Array(4)].map((_, index) => (
+                  <div key={index} className="h-20 animate-pulse rounded-lg bg-muted" />
+                ))}
 
-              {!isLoading && solicitacoes.length === 0 && (
+              {!isLoading && filteredSolicitacoes.length === 0 && (
                 <div className="py-12 text-center text-muted-foreground">
                   <ClipboardList className="mx-auto mb-3 h-10 w-10 opacity-30" />
                   <p className="font-medium">Nenhuma solicitação encontrada</p>
                   <p className="text-sm">
-                    {canCreate ? "Crie a primeira solicitação para iniciar o fluxo." : "Não há solicitações para acompanhar no momento."}
+                    {canCreate
+                      ? "Ajuste os filtros ou crie uma nova solicitação."
+                      : "Não há solicitações para acompanhar no momento."}
                   </p>
                 </div>
               )}
 
-              {solicitacoes.map((solicitacao) => (
+              {filteredSolicitacoes.map((solicitacao) => (
                 <Card key={solicitacao.id} className="border-border transition-colors hover:border-primary/30">
                   <CardContent className="p-4">
                     <div className="flex flex-wrap items-start justify-between gap-4">
                       <div className="min-w-0 flex-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-semibold text-foreground">#{solicitacao.id} - {solicitacao.titulo}</span>
+                          <span className="text-sm font-semibold text-foreground">
+                            #{solicitacao.id} - {solicitacao.titulo}
+                          </span>
                           <Badge variant="outline" className="text-xs">
                             {tipoLabels[solicitacao.tipo] ?? solicitacao.tipo}
                           </Badge>

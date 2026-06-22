@@ -98,8 +98,7 @@ export const positions = mysqlTable("positions", {
   companyId: int("companyId").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   descricao: text("descricao"),
-  cbo: varchar("cbo", { length: 10 }),
-  status: mysqlEnum("status", ["ativo", "inativo"]).default("ativo").notNull(),
+  cbo: varchar("cbo", { length: 20 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -267,12 +266,10 @@ export const auditLogs = mysqlTable("audit_logs", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId"),
   companyId: int("companyId"),
-  acao: varchar("acao", { length: 255 }).notNull(),
-  entidade: varchar("entidade", { length: 100 }),
-  entidadeId: int("entidadeId"),
-  dadosAntes: text("dadosAntes"),
-  dadosDepois: text("dadosDepois"),
-  ip: varchar("ip", { length: 45 }),
+  action: varchar("action", { length: 255 }).notNull(),
+  entity: varchar("entity", { length: 100 }),
+  entityId: int("entityId"),
+  details: text("details"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -282,7 +279,7 @@ export const documentTypeTemplates = mysqlTable("document_type_templates", {
   tipoSolicitacao: mysqlEnum("tipoSolicitacao", [
     "admissao", "demissao", "mudanca_funcao", "afastamento", "atestado_medico", "outros"
   ]).notNull(),
-  categoria: mysqlEnum("categoria", ["pessoal", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
+  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   descricao: text("descricao"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
@@ -301,12 +298,15 @@ export const requestDocumentUploads = mysqlTable("request_document_uploads", {
   requestId: int("requestId").notNull(),
   templateId: int("templateId"),
   nome: varchar("nome", { length: 255 }).notNull(),
-  categoria: mysqlEnum("categoria", ["pessoal", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
+  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
   fileNome: varchar("fileNome", { length: 255 }),
   fileTamanho: int("fileTamanho"),
   fileMime: varchar("fileMime", { length: 100 }),
+  numeroDocumento: varchar("numeroDocumento", { length: 120 }),
+  dataEmissao: date("dataEmissao"),
+  validade: date("validade"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
   status: mysqlEnum("status", ["pendente", "aprovado", "reprovado"]).default("pendente").notNull(),
   motivoReprovacao: text("motivoReprovacao"),
