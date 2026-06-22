@@ -48,6 +48,7 @@ const CATEGORIA_LABEL: Record<string, string> = {
   empresa: "Empresa",
   treinamento: "Treinamento",
   exame_medico: "Exame Médico",
+  psicossocial: "Psicossocial",
   outros: "Outros",
 };
 
@@ -314,6 +315,11 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
                 doc={doc}
                 canReview={canReview}
                 canDelete={canUpload && !readOnly}
+                onUpload={
+                  canUpload && !readOnly && !doc.fileUrl
+                    ? () => openUploadModal({ nome: doc.nome, categoria: doc.categoria })
+                    : undefined
+                }
                 onAvaliar={() => openReviewModal(doc)}
                 onDelete={() => {
                   if (window.confirm("Deseja excluir este arquivo?")) {
@@ -494,12 +500,14 @@ function DocItem({
   doc,
   canReview,
   canDelete,
+  onUpload,
   onAvaliar,
   onDelete,
 }: {
   doc: any;
   canReview: boolean;
   canDelete: boolean;
+  onUpload?: () => void;
   onAvaliar: () => void;
   onDelete: () => void;
 }) {
@@ -552,6 +560,11 @@ function DocItem({
         </Badge>
 
         <div className="flex shrink-0 gap-1">
+          {onUpload && !doc.fileUrl && (
+            <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-primary" title="Anexar" onClick={onUpload}>
+              <Upload className="h-3 w-3" />
+            </Button>
+          )}
           {doc.fileUrl && (
             <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
               <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="Visualizar">
@@ -559,7 +572,7 @@ function DocItem({
               </Button>
             </a>
           )}
-          {canReview && doc.status === "pendente" && (
+          {canReview && doc.status === "pendente" && doc.fileUrl && (
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-primary" title="Avaliar" onClick={onAvaliar}>
               <CheckCircle2 className="h-3 w-3" />
             </Button>

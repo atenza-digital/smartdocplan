@@ -15,9 +15,9 @@ import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
-  legalRequirements, users, documentTypeTemplates, requestDocumentUploads
+  legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads
 } from "../drizzle/schema";
-import { eq, and, desc, sql } from "drizzle-orm";
+import { eq, and, desc, or, sql } from "drizzle-orm";
 import {
   formatCnpj,
   formatCpf,
@@ -119,6 +119,13 @@ async function getEmployeeByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id:
   const employee = result[0];
   if (!employee) throw new Error("Colaborador nÃ£o encontrado");
   return employee;
+}
+
+async function getPositionByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
+  const result = await db!.select().from(positions).where(eq(positions.id, id)).limit(1);
+  const position = result[0];
+  if (!position) throw new Error("FunÃ§Ã£o nÃ£o encontrada");
+  return position;
 }
 
 async function getRequestByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
@@ -367,6 +374,7 @@ const requestsRouter = router({
   create: protectedProcedure.input(z.object({
     companyId: z.number(),
     employeeId: z.number().optional(),
+    positionId: z.number().optional(),
     tipo: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]),
     titulo: z.string().min(1),
     descricao: z.string().optional(),
@@ -376,11 +384,56 @@ const requestsRouter = router({
     assertAccess(canCreateRequests(ctx.user.role), "Seu perfil nÃ£o pode abrir solicitaÃ§Ãµes.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    const insertResult = await db.insert(requests).values({ ...input, criadoPor: ctx.user.id } as any);
+    const { positionId, ...requestData } = input;
+    const insertResult = await db.insert(requests).values({ ...requestData, criadoPor: ctx.user.id } as any);
+    const requestId = Number((insertResult as any)?.[0]?.insertId ?? (insertResult as any)?.insertId ?? 0) || null;
+
+    if (requestId && positionId) {
+      const position = await getPositionByIdOrThrow(db, positionId);
+      if (position.companyId === input.companyId) {
+        const allowedTypes =
+          input.tipo === "admissao" || input.tipo === "demissao" || input.tipo === "mudanca_funcao"
+            ? [input.tipo, "todos"]
+            : ["todos"];
+
+        const dynamicRequirements = await db
+          .select({
+            nome: positionRequirements.documentoNome,
+            categoria: positionRequirements.categoria,
+            obrigatorio: positionRequirements.obrigatorio,
+          })
+          .from(positionRequirements)
+          .where(
+            and(
+              eq(positionRequirements.positionId, positionId),
+              eq(positionRequirements.ativo, true),
+              or(
+                eq(positionRequirements.tipoSolicitacao, allowedTypes[0] as "admissao" | "demissao" | "mudanca_funcao" | "todos"),
+                allowedTypes[1]
+                  ? eq(positionRequirements.tipoSolicitacao, allowedTypes[1] as "todos")
+                  : eq(positionRequirements.tipoSolicitacao, "todos")
+              )
+            )
+          );
+
+        if (dynamicRequirements.length > 0) {
+          await db.insert(requestDocumentUploads).values(
+            dynamicRequirements.map((requirement) => ({
+              requestId,
+              nome: requirement.nome,
+              categoria: requirement.categoria,
+              obrigatorio: requirement.obrigatorio,
+              status: "pendente" as const,
+            })) as any
+          );
+        }
+      }
+    }
+
     await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: 'criou_solicitacao', entidade: 'requests', dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
     return {
       success: true,
-      id: Number((insertResult as any)?.[0]?.insertId ?? (insertResult as any)?.insertId ?? 0) || null,
+      id: requestId,
     };
   }),
 
@@ -542,6 +595,36 @@ const positionsRouter = router({
     });
     return { success: true };
   }),
+
+  update: protectedProcedure.input(z.object({
+    id: z.number(),
+    nome: z.string().min(1),
+    descricao: z.string().optional(),
+    cbo: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const position = await getPositionByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar cargos.");
+
+    const payload = {
+      nome: input.nome.trim(),
+      descricao: normalizeOptionalText(input.descricao) ?? null,
+      cbo: normalizeOptionalText(input.cbo) ?? null,
+    };
+
+    await db.update(positions).set(payload).where(eq(positions.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: position.companyId,
+      acao: "atualizou_funcao",
+      entidade: "positions",
+      entidadeId: position.id,
+      dadosDepois: payload,
+    });
+    return { success: true };
+  }),
 });
 
 // â”€â”€â”€ WORKSITES ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -578,6 +661,256 @@ const worksitesRouter = router({
       acao: "criou_frente_local",
       entidade: "worksites",
       dadosDepois: { nome: input.nome, cidade: input.cidade ?? null, estado: input.estado ?? null },
+    });
+    return { success: true };
+  }),
+
+  update: protectedProcedure.input(z.object({
+    id: z.number(),
+    nome: z.string().min(1),
+    cnos: z.string().optional(),
+    endereco: z.string().optional(),
+    cidade: z.string().optional(),
+    estado: z.string().max(2).optional(),
+    dataInicio: z.string().optional(),
+    dataFim: z.string().optional(),
+    status: z.enum(["ativo", "concluido", "cancelado"]).optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(worksites).where(eq(worksites.id, input.id)).limit(1);
+    const worksite = result[0];
+    if (!worksite) throw new Error("Frente / local nÃ£o encontrado");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, worksite.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar frentes de trabalho.");
+
+    const payload = {
+      nome: input.nome.trim(),
+      cnos: normalizeOptionalText(input.cnos) ?? null,
+      endereco: normalizeOptionalText(input.endereco) ?? null,
+      cidade: normalizeOptionalText(input.cidade) ?? null,
+      estado: normalizeOptionalText(input.estado)?.toUpperCase() ?? null,
+      dataInicio: input.dataInicio ? new Date(input.dataInicio) : null,
+      dataFim: input.dataFim ? new Date(input.dataFim) : null,
+      status: input.status ?? worksite.status,
+    };
+
+    await db.update(worksites).set(payload as any).where(eq(worksites.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: worksite.companyId,
+      acao: "atualizou_frente_local",
+      entidade: "worksites",
+      entidadeId: worksite.id,
+      dadosDepois: payload,
+    });
+    return { success: true };
+  }),
+});
+
+const positionRequirementsRouter = router({
+  listByPosition: protectedProcedure.input(z.object({ positionId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const position = await getPositionByIdOrThrow(db, input.positionId);
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId)) return [];
+
+    return db
+      .select({
+        id: positionRequirements.id,
+        positionId: positionRequirements.positionId,
+        legalRequirementId: positionRequirements.legalRequirementId,
+        categoria: positionRequirements.categoria,
+        tipoSolicitacao: positionRequirements.tipoSolicitacao,
+        documentoNome: positionRequirements.documentoNome,
+        descricao: positionRequirements.descricao,
+        obrigatorio: positionRequirements.obrigatorio,
+        validadeMeses: positionRequirements.validadeMeses,
+        ordem: positionRequirements.ordem,
+        ativo: positionRequirements.ativo,
+        createdAt: positionRequirements.createdAt,
+        updatedAt: positionRequirements.updatedAt,
+        norma: legalRequirements.norma,
+        requisitoLegal: legalRequirements.requisito,
+      })
+      .from(positionRequirements)
+      .leftJoin(legalRequirements, eq(positionRequirements.legalRequirementId, legalRequirements.id))
+      .where(and(eq(positionRequirements.positionId, input.positionId), eq(positionRequirements.ativo, true)))
+      .orderBy(positionRequirements.ordem, positionRequirements.documentoNome);
+  }),
+
+  listByContext: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    positionId: z.number(),
+    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "afastamento", "atestado_medico", "outros"]),
+  })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const position = await getPositionByIdOrThrow(db, input.positionId);
+    if (position.companyId !== input.companyId) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+
+    const allowedTypes =
+      input.tipoSolicitacao === "admissao" || input.tipoSolicitacao === "demissao" || input.tipoSolicitacao === "mudanca_funcao"
+        ? [input.tipoSolicitacao, "todos"]
+        : ["todos"];
+
+    return db
+      .select({
+        id: positionRequirements.id,
+        positionId: positionRequirements.positionId,
+        legalRequirementId: positionRequirements.legalRequirementId,
+        categoria: positionRequirements.categoria,
+        tipoSolicitacao: positionRequirements.tipoSolicitacao,
+        documentoNome: positionRequirements.documentoNome,
+        descricao: positionRequirements.descricao,
+        obrigatorio: positionRequirements.obrigatorio,
+        validadeMeses: positionRequirements.validadeMeses,
+        ordem: positionRequirements.ordem,
+        ativo: positionRequirements.ativo,
+        createdAt: positionRequirements.createdAt,
+        updatedAt: positionRequirements.updatedAt,
+        norma: legalRequirements.norma,
+        requisitoLegal: legalRequirements.requisito,
+      })
+      .from(positionRequirements)
+      .leftJoin(legalRequirements, eq(positionRequirements.legalRequirementId, legalRequirements.id))
+      .where(
+        and(
+          eq(positionRequirements.positionId, input.positionId),
+          eq(positionRequirements.ativo, true),
+          or(
+            eq(positionRequirements.tipoSolicitacao, allowedTypes[0] as "admissao" | "demissao" | "mudanca_funcao" | "todos"),
+            allowedTypes[1]
+              ? eq(positionRequirements.tipoSolicitacao, allowedTypes[1] as "todos")
+              : eq(positionRequirements.tipoSolicitacao, "todos")
+          )
+        )
+      )
+      .orderBy(positionRequirements.ordem, positionRequirements.documentoNome);
+  }),
+
+  create: protectedProcedure.input(z.object({
+    positionId: z.number(),
+    legalRequirementId: z.number().optional(),
+    categoria: z.enum(["treinamento", "exame_medico", "psicossocial", "outros"]).default("treinamento"),
+    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "todos"]).default("todos"),
+    documentoNome: z.string().min(1),
+    descricao: z.string().optional(),
+    obrigatorio: z.boolean().default(true),
+    validadeMeses: z.number().optional(),
+    ordem: z.number().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const position = await getPositionByIdOrThrow(db, input.positionId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar requisitos por funÃ§Ã£o.");
+
+    if (input.legalRequirementId) {
+      const legalResult = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.legalRequirementId)).limit(1);
+      const legalRequirement = legalResult[0];
+      if (!legalRequirement || legalRequirement.companyId !== position.companyId) {
+        throw new Error("O requisito legal informado nÃ£o pertence Ã  mesma empresa.");
+      }
+    }
+
+    await db.insert(positionRequirements).values({
+      positionId: input.positionId,
+      legalRequirementId: input.legalRequirementId ?? null,
+      categoria: input.categoria,
+      tipoSolicitacao: input.tipoSolicitacao,
+      documentoNome: input.documentoNome.trim(),
+      descricao: normalizeOptionalText(input.descricao) ?? undefined,
+      obrigatorio: input.obrigatorio,
+      validadeMeses: input.validadeMeses ?? null,
+      ordem: input.ordem ?? 0,
+    } as any);
+
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: position.companyId,
+      acao: "criou_requisito_funcao",
+      entidade: "position_requirements",
+      dadosDepois: {
+        positionId: input.positionId,
+        categoria: input.categoria,
+        tipoSolicitacao: input.tipoSolicitacao,
+        documentoNome: input.documentoNome,
+      },
+    });
+    return { success: true };
+  }),
+
+  update: protectedProcedure.input(z.object({
+    id: z.number(),
+    legalRequirementId: z.number().optional(),
+    categoria: z.enum(["treinamento", "exame_medico", "psicossocial", "outros"]),
+    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "todos"]),
+    documentoNome: z.string().min(1),
+    descricao: z.string().optional(),
+    obrigatorio: z.boolean(),
+    validadeMeses: z.number().optional(),
+    ordem: z.number().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(positionRequirements).where(eq(positionRequirements.id, input.id)).limit(1);
+    const requirement = result[0];
+    if (!requirement) throw new Error("Requisito da funÃ§Ã£o nÃ£o encontrado");
+    const position = await getPositionByIdOrThrow(db, requirement.positionId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar requisitos por funÃ§Ã£o.");
+
+    if (input.legalRequirementId) {
+      const legalResult = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.legalRequirementId)).limit(1);
+      const legalRequirement = legalResult[0];
+      if (!legalRequirement || legalRequirement.companyId !== position.companyId) {
+        throw new Error("O requisito legal informado nÃ£o pertence Ã  mesma empresa.");
+      }
+    }
+
+    const payload = {
+      legalRequirementId: input.legalRequirementId ?? null,
+      categoria: input.categoria,
+      tipoSolicitacao: input.tipoSolicitacao,
+      documentoNome: input.documentoNome.trim(),
+      descricao: normalizeOptionalText(input.descricao) ?? null,
+      obrigatorio: input.obrigatorio,
+      validadeMeses: input.validadeMeses ?? null,
+      ordem: input.ordem ?? 0,
+    };
+
+    await db.update(positionRequirements).set(payload).where(eq(positionRequirements.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: position.companyId,
+      acao: "atualizou_requisito_funcao",
+      entidade: "position_requirements",
+      entidadeId: requirement.id,
+      dadosDepois: payload,
+    });
+    return { success: true };
+  }),
+
+  delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(positionRequirements).where(eq(positionRequirements.id, input.id)).limit(1);
+    const requirement = result[0];
+    if (!requirement) throw new Error("Requisito da funÃ§Ã£o nÃ£o encontrado");
+    const position = await getPositionByIdOrThrow(db, requirement.positionId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar requisitos por funÃ§Ã£o.");
+
+    await db.update(positionRequirements).set({ ativo: false }).where(eq(positionRequirements.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: position.companyId,
+      acao: "removeu_requisito_funcao",
+      entidade: "position_requirements",
+      entidadeId: requirement.id,
+      dadosDepois: { documentoNome: requirement.documentoNome, categoria: requirement.categoria },
     });
     return { success: true };
   }),
@@ -896,7 +1229,7 @@ const documentTemplatesRouter = router({
 
   create: superAdminProcedure.input(z.object({
     tipoSolicitacao: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]),
-    categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","outros"]).default("pessoal"),
+    categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","psicossocial","outros"]).default("pessoal"),
     nome: z.string().min(1),
     descricao: z.string().optional(),
     obrigatorio: z.boolean().default(true),
@@ -912,7 +1245,7 @@ const documentTemplatesRouter = router({
   update: superAdminProcedure.input(z.object({
     id: z.number(),
     tipoSolicitacao: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]).optional(),
-    categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","outros"]).optional(),
+    categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","psicossocial","outros"]).optional(),
     nome: z.string().min(1).optional(),
     descricao: z.string().optional(),
     obrigatorio: z.boolean().optional(),
@@ -953,7 +1286,7 @@ const requestDocUploadsRouter = router({
     requestId: z.number(),
     templateId: z.number().optional(),
     nome: z.string().min(1),
-    categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","outros"]).default("pessoal"),
+    categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","psicossocial","outros"]).default("pessoal"),
     obrigatorio: z.boolean().default(false),
     numeroDocumento: z.string().optional(),
     dataEmissao: z.string().optional(),
@@ -986,15 +1319,33 @@ const requestDocUploadsRouter = router({
     fs.writeFileSync(filePath, buffer);
 
     const fileUrl = `/uploads/${fileName}`;
+    const placeholderResult = await db.select().from(requestDocumentUploads).where(
+      and(
+        eq(requestDocumentUploads.requestId, input.requestId),
+        eq(requestDocumentUploads.nome, input.nome),
+        eq(requestDocumentUploads.categoria, input.categoria),
+        input.templateId
+          ? eq(requestDocumentUploads.templateId, input.templateId)
+          : sql`${requestDocumentUploads.templateId} IS NULL`,
+        sql`${requestDocumentUploads.fileUrl} IS NULL`
+      )
+    ).limit(1);
+    const placeholder = placeholderResult[0];
 
-    await db.insert(requestDocumentUploads).values({
+    const uploadPayload = {
       ...rest,
       dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : undefined,
       validade: input.validade ? new Date(input.validade) : undefined,
       fileUrl,
       fileKey: fileName,
       uploadedBy: ctx.user.id,
-    } as any);
+    };
+
+    if (placeholder) {
+      await db.update(requestDocumentUploads).set(uploadPayload as any).where(eq(requestDocumentUploads.id, placeholder.id));
+    } else {
+      await db.insert(requestDocumentUploads).values(uploadPayload as any);
+    }
 
     await insertAuditLog({
       userId: ctx.user.id,
@@ -1075,6 +1426,7 @@ export const appRouter = router({
   requests: requestsRouter,
   tickets: ticketsRouter,
   positions: positionsRouter,
+  positionRequirements: positionRequirementsRouter,
   worksites: worksitesRouter,
   legalRequirements: legalReqRouter,
   audit: auditRouter,

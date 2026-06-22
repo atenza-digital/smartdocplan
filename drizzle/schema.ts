@@ -121,10 +121,16 @@ export const positionRequirements = mysqlTable("position_requirements", {
   id: int("id").autoincrement().primaryKey(),
   positionId: int("positionId").notNull(),
   legalRequirementId: int("legalRequirementId"),
+  categoria: mysqlEnum("categoria", ["treinamento", "exame_medico", "psicossocial", "outros"]).default("treinamento").notNull(),
+  tipoSolicitacao: mysqlEnum("tipoSolicitacao", ["admissao", "demissao", "mudanca_funcao", "todos"]).default("todos").notNull(),
   documentoNome: varchar("documentoNome", { length: 255 }).notNull(),
+  descricao: text("descricao"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
   validadeMeses: int("validadeMeses"),
+  ordem: int("ordem").default(0).notNull(),
+  ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
 // --- EMPLOYEES (COLABORADORES) ---
@@ -279,7 +285,7 @@ export const documentTypeTemplates = mysqlTable("document_type_templates", {
   tipoSolicitacao: mysqlEnum("tipoSolicitacao", [
     "admissao", "demissao", "mudanca_funcao", "afastamento", "atestado_medico", "outros"
   ]).notNull(),
-  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
+  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "psicossocial", "outros"]).default("pessoal").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   descricao: text("descricao"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
@@ -298,7 +304,7 @@ export const requestDocumentUploads = mysqlTable("request_document_uploads", {
   requestId: int("requestId").notNull(),
   templateId: int("templateId"),
   nome: varchar("nome", { length: 255 }).notNull(),
-  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "outros"]).default("pessoal").notNull(),
+  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "psicossocial", "outros"]).default("pessoal").notNull(),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
   fileNome: varchar("fileNome", { length: 255 }),

@@ -53,6 +53,42 @@ const emptyLegalForm: LegalForm = {
   descricao: "",
 };
 
+type PositionRequirementForm = {
+  categoria: "treinamento" | "exame_medico" | "psicossocial" | "outros";
+  tipoSolicitacao: "todos" | "admissao" | "demissao" | "mudanca_funcao";
+  documentoNome: string;
+  descricao: string;
+  obrigatorio: boolean;
+  validadeMeses: string;
+  legalRequirementId: string;
+  ordem: string;
+};
+
+const emptyPositionRequirementForm: PositionRequirementForm = {
+  categoria: "treinamento",
+  tipoSolicitacao: "todos",
+  documentoNome: "",
+  descricao: "",
+  obrigatorio: true,
+  validadeMeses: "",
+  legalRequirementId: "none",
+  ordem: "0",
+};
+
+const requirementCategoryLabel: Record<string, string> = {
+  treinamento: "Treinamento",
+  exame_medico: "Exame Médico",
+  psicossocial: "Psicossocial",
+  outros: "Outros",
+};
+
+const requirementProcessLabel: Record<string, string> = {
+  todos: "Todos os processos",
+  admissao: "Admissão",
+  demissao: "Demissão",
+  mudanca_funcao: "Mudança de função",
+};
+
 export default function EmpresaConfiguracoes() {
   const { user } = useAuth();
   const companyId = user?.companyId ?? 0;
@@ -62,6 +98,11 @@ export default function EmpresaConfiguracoes() {
   const { data: cargos = [], refetch: refetchCargos } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: locais = [], refetch: refetchLocais } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: matrizLegal = [], refetch: refetchMatriz } = trpc.legalRequirements.list.useQuery({ companyId }, { enabled: companyId > 0 });
+  const [selectedCargoId, setSelectedCargoId] = useState<number | null>(null);
+  const { data: requisitosCargo = [], refetch: refetchRequisitosCargo } = trpc.positionRequirements.listByPosition.useQuery(
+    { positionId: selectedCargoId ?? 0 },
+    { enabled: (selectedCargoId ?? 0) > 0 }
+  );
 
   const [form, setForm] = useState({ razaoSocial: "", nomeFantasia: "", cnpj: "", email: "", telefone: "" });
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
@@ -71,6 +112,9 @@ export default function EmpresaConfiguracoes() {
   const [legalModal, setLegalModal] = useState(false);
   const [editingLegalId, setEditingLegalId] = useState<number | null>(null);
   const [legalForm, setLegalForm] = useState<LegalForm>(emptyLegalForm);
+  const [requirementModal, setRequirementModal] = useState(false);
+  const [editingRequirementId, setEditingRequirementId] = useState<number | null>(null);
+  const [positionRequirementForm, setPositionRequirementForm] = useState<PositionRequirementForm>(emptyPositionRequirementForm);
 
   useEffect(() => {
     if (!empresa) return;
@@ -83,6 +127,20 @@ export default function EmpresaConfiguracoes() {
       telefone: empresa.telefone ?? "",
     });
   }, [empresa]);
+
+  useEffect(() => {
+    if (cargos.length === 0) {
+      setSelectedCargoId(null);
+      return;
+    }
+
+    setSelectedCargoId((current) => {
+      if (current && cargos.some((cargo) => cargo.id === current)) {
+        return current;
+      }
+      return cargos[0]?.id ?? null;
+    });
+  }, [cargos]);
 
   const updateEmpresaMutation = trpc.companies.update.useMutation({
     onSuccess: () => toast.success("Dados da empresa atualizados!"),
@@ -135,6 +193,36 @@ export default function EmpresaConfiguracoes() {
     onSuccess: () => {
       toast.success("Requisito removido!");
       refetchMatriz();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const createPositionRequirementMutation = trpc.positionRequirements.create.useMutation({
+    onSuccess: () => {
+      toast.success("Requisito da função cadastrado!");
+      setRequirementModal(false);
+      setEditingRequirementId(null);
+      setPositionRequirementForm(emptyPositionRequirementForm);
+      refetchRequisitosCargo();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updatePositionRequirementMutation = trpc.positionRequirements.update.useMutation({
+    onSuccess: () => {
+      toast.success("Requisito da função atualizado!");
+      setRequirementModal(false);
+      setEditingRequirementId(null);
+      setPositionRequirementForm(emptyPositionRequirementForm);
+      refetchRequisitosCargo();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const deletePositionRequirementMutation = trpc.positionRequirements.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Requisito da função inativado!");
+      refetchRequisitosCargo();
     },
     onError: (error) => toast.error(error.message),
   });
@@ -203,6 +291,65 @@ export default function EmpresaConfiguracoes() {
     }
 
     createLegalMutation.mutate({ companyId, ...payload });
+  };
+
+  const openNewRequirementModal = () => {
+    if (!selectedCargoId) {
+      toast.error("Selecione uma função antes de cadastrar requisitos.");
+      return;
+    }
+
+    setEditingRequirementId(null);
+    setPositionRequirementForm(emptyPositionRequirementForm);
+    setRequirementModal(true);
+  };
+
+  const openEditRequirementModal = (item: (typeof requisitosCargo)[number]) => {
+    setEditingRequirementId(item.id);
+    setPositionRequirementForm({
+      categoria: item.categoria,
+      tipoSolicitacao: item.tipoSolicitacao,
+      documentoNome: item.documentoNome,
+      descricao: item.descricao ?? "",
+      obrigatorio: item.obrigatorio,
+      validadeMeses: item.validadeMeses ? String(item.validadeMeses) : "",
+      legalRequirementId: item.legalRequirementId ? String(item.legalRequirementId) : "none",
+      ordem: String(item.ordem ?? 0),
+    });
+    setRequirementModal(true);
+  };
+
+  const handleSavePositionRequirement = () => {
+    if (!selectedCargoId) {
+      toast.error("Selecione uma função antes de salvar.");
+      return;
+    }
+
+    if (!positionRequirementForm.documentoNome.trim()) {
+      toast.error("Informe o nome do requisito.");
+      return;
+    }
+
+    const payload = {
+      categoria: positionRequirementForm.categoria,
+      tipoSolicitacao: positionRequirementForm.tipoSolicitacao,
+      documentoNome: positionRequirementForm.documentoNome.trim(),
+      descricao: positionRequirementForm.descricao.trim() || undefined,
+      obrigatorio: positionRequirementForm.obrigatorio,
+      validadeMeses: positionRequirementForm.validadeMeses ? Number(positionRequirementForm.validadeMeses) : undefined,
+      legalRequirementId:
+        positionRequirementForm.legalRequirementId !== "none"
+          ? Number(positionRequirementForm.legalRequirementId)
+          : undefined,
+      ordem: Number(positionRequirementForm.ordem || "0"),
+    };
+
+    if (editingRequirementId) {
+      updatePositionRequirementMutation.mutate({ id: editingRequirementId, ...payload });
+      return;
+    }
+
+    createPositionRequirementMutation.mutate({ positionId: selectedCargoId, ...payload });
   };
 
   return (
@@ -316,7 +463,7 @@ export default function EmpresaConfiguracoes() {
           </TabsContent>
 
           <TabsContent value="cargos" className="mt-4">
-            <div className="max-w-2xl space-y-4">
+            <div className="max-w-5xl space-y-4">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="font-semibold text-foreground">Funções da Empresa</h3>
@@ -342,17 +489,111 @@ export default function EmpresaConfiguracoes() {
                 )}
 
                 {cargos.map((cargo) => (
-                  <Card key={cargo.id}>
+                  <Card
+                    key={cargo.id}
+                    className={`cursor-pointer border transition-colors ${
+                      cargo.id === selectedCargoId ? "border-primary bg-primary/5" : "border-border"
+                    }`}
+                    onClick={() => setSelectedCargoId(cargo.id)}
+                  >
                     <CardContent className="px-4 py-3">
-                      <p className="text-sm font-medium text-foreground">{cargo.nome}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {cargo.cbo && <span>CBO: {cargo.cbo}</span>}
-                        {cargo.descricao && <span>{cargo.descricao}</span>}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{cargo.nome}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {cargo.cbo && <span>CBO: {cargo.cbo}</span>}
+                            {cargo.descricao && <span>{cargo.descricao}</span>}
+                          </div>
+                        </div>
+                        {cargo.id === selectedCargoId && (
+                          <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
+                            Selecionada
+                          </Badge>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
                 ))}
               </div>
+
+              <Card>
+                <CardHeader className="pb-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <CardTitle className="text-base font-semibold">
+                        {cargos.find((cargo) => cargo.id === selectedCargoId)?.nome ?? "Requisitos por função"}
+                      </CardTitle>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Selecione uma função acima e vincule treinamentos, exames e itens psicossociais por processo.
+                      </p>
+                    </div>
+                    {canEdit && selectedCargoId && (
+                      <Button size="sm" onClick={openNewRequirementModal} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                        <Plus className="mr-1.5 h-4 w-4" />
+                        Novo requisito
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {!selectedCargoId ? (
+                    <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      Selecione uma função para configurar seus requisitos.
+                    </div>
+                  ) : requisitosCargo.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+                      Nenhum requisito vinculado a esta função.
+                    </div>
+                  ) : (
+                    requisitosCargo.map((item) => (
+                      <Card key={item.id}>
+                        <CardContent className="space-y-3 px-4 py-3">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <p className="text-sm font-medium text-foreground">{item.documentoNome}</p>
+                                <Badge variant="outline">{requirementCategoryLabel[item.categoria] ?? item.categoria}</Badge>
+                                <Badge variant="outline">{requirementProcessLabel[item.tipoSolicitacao] ?? item.tipoSolicitacao}</Badge>
+                                <Badge variant={item.obrigatorio ? "default" : "outline"}>
+                                  {item.obrigatorio ? "Obrigatório" : "Opcional"}
+                                </Badge>
+                              </div>
+                              {item.descricao && (
+                                <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{item.descricao}</p>
+                              )}
+                              <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                {item.validadeMeses ? <span>Validade: {item.validadeMeses} meses</span> : null}
+                                {item.norma ? <span>{item.norma}</span> : null}
+                                {item.requisitoLegal ? <span>{item.requisitoLegal}</span> : null}
+                              </div>
+                            </div>
+
+                            {canEdit && (
+                              <div className="flex shrink-0 items-center gap-1">
+                                <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditRequirementModal(item)}>
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 text-destructive hover:text-destructive"
+                                  onClick={() => {
+                                    if (window.confirm("Deseja inativar este requisito da função?")) {
+                                      deletePositionRequirementMutation.mutate({ id: item.id });
+                                    }
+                                  }}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 
@@ -643,6 +884,166 @@ export default function EmpresaConfiguracoes() {
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {createLocalMutation.isPending ? "Criando..." : "Criar local"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={requirementModal}
+        onOpenChange={(open) => {
+          setRequirementModal(open);
+          if (!open) {
+            setEditingRequirementId(null);
+            setPositionRequirementForm(emptyPositionRequirementForm);
+          }
+        }}
+      >
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{editingRequirementId ? "Editar requisito da função" : "Novo requisito da função"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Categoria *</Label>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={positionRequirementForm.categoria}
+                  onChange={(event) =>
+                    setPositionRequirementForm((current) => ({
+                      ...current,
+                      categoria: event.target.value as PositionRequirementForm["categoria"],
+                    }))
+                  }
+                >
+                  {Object.entries(requirementCategoryLabel).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Processo *</Label>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={positionRequirementForm.tipoSolicitacao}
+                  onChange={(event) =>
+                    setPositionRequirementForm((current) => ({
+                      ...current,
+                      tipoSolicitacao: event.target.value as PositionRequirementForm["tipoSolicitacao"],
+                    }))
+                  }
+                >
+                  {Object.entries(requirementProcessLabel).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Nome do requisito *</Label>
+              <Input
+                value={positionRequirementForm.documentoNome}
+                onChange={(event) =>
+                  setPositionRequirementForm((current) => ({ ...current, documentoNome: event.target.value }))
+                }
+                placeholder="Ex: ASO admissional, treinamento NR-35, avaliação psicossocial"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Requisito legal relacionado</Label>
+                <select
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  value={positionRequirementForm.legalRequirementId}
+                  onChange={(event) =>
+                    setPositionRequirementForm((current) => ({ ...current, legalRequirementId: event.target.value }))
+                  }
+                >
+                  <option value="none">Nenhum</option>
+                  {matrizLegal.map((item) => (
+                    <option key={item.id} value={String(item.id)}>
+                      {item.norma} • {item.documentoExigido}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Validade</Label>
+                  <Input
+                    type="number"
+                    value={positionRequirementForm.validadeMeses}
+                    onChange={(event) =>
+                      setPositionRequirementForm((current) => ({ ...current, validadeMeses: event.target.value }))
+                    }
+                    placeholder="Meses"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Ordem</Label>
+                  <Input
+                    type="number"
+                    value={positionRequirementForm.ordem}
+                    onChange={(event) =>
+                      setPositionRequirementForm((current) => ({ ...current, ordem: event.target.value }))
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-border bg-muted/40 p-3">
+              <label className="flex items-center gap-2 text-sm font-medium text-foreground">
+                <input
+                  type="checkbox"
+                  checked={positionRequirementForm.obrigatorio}
+                  onChange={(event) =>
+                    setPositionRequirementForm((current) => ({ ...current, obrigatorio: event.target.checked }))
+                  }
+                />
+                Item obrigatório para esta função
+              </label>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Quando obrigatório, ele já aparece com destaque na abertura da solicitação e na avaliação posterior.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label>Descrição</Label>
+              <Textarea
+                rows={5}
+                className="min-h-32 resize-y"
+                value={positionRequirementForm.descricao}
+                onChange={(event) =>
+                  setPositionRequirementForm((current) => ({ ...current, descricao: event.target.value }))
+                }
+                placeholder="Explique a aplicação, o momento do processo, exceções ou observações do requisito."
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRequirementModal(false)}>Cancelar</Button>
+            <Button
+              onClick={handleSavePositionRequirement}
+              disabled={
+                !positionRequirementForm.documentoNome.trim() ||
+                createPositionRequirementMutation.isPending ||
+                updatePositionRequirementMutation.isPending
+              }
+              className="bg-primary text-primary-foreground hover:bg-primary/90"
+            >
+              {createPositionRequirementMutation.isPending || updatePositionRequirementMutation.isPending
+                ? "Salvando..."
+                : editingRequirementId
+                  ? "Salvar alterações"
+                  : "Adicionar requisito"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -20,7 +20,7 @@ const TIPOS_LABEL: Record<string, string> = {
 const TIPOS = Object.keys(TIPOS_LABEL);
 
 const CATEGORIA_LABEL: Record<string, string> = {
-  pessoal: "Pessoal", empresa: "Empresa", treinamento: "Treinamento", exame_medico: "Exame Médico", outros: "Outros",
+  pessoal: "Pessoal", empresa: "Empresa", treinamento: "Treinamento", exame_medico: "Exame Médico", psicossocial: "Psicossocial", outros: "Outros",
 };
 
 const CATEGORIA_COLORS: Record<string, string> = {
@@ -28,6 +28,7 @@ const CATEGORIA_COLORS: Record<string, string> = {
   empresa: "bg-cyan-500/10 text-cyan-700 border-cyan-500/20",
   treinamento: "bg-green-500/10 text-green-700 border-green-500/20",
   exame_medico: "bg-orange-500/10 text-orange-700 border-orange-500/20",
+  psicossocial: "bg-fuchsia-500/10 text-fuchsia-700 border-fuchsia-500/20",
   outros: "bg-gray-500/10 text-gray-600 border-gray-500/20",
 };
 
@@ -136,7 +137,7 @@ export default function AdminDocumentos() {
                 </div>
               ) : (
                 <div className="space-y-2 mt-2">
-                  {["pessoal", "empresa", "treinamento", "exame_medico", "outros"].map(cat => {
+                  {["pessoal", "empresa", "treinamento", "exame_medico", "psicossocial", "outros"].map(cat => {
                     const docs = filtrados.filter(d => d.categoria === cat);
                     if (docs.length === 0) return null;
                     return (

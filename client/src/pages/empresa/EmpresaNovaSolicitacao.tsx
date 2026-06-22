@@ -68,8 +68,9 @@ type StepId = "company" | "process" | "person" | "hiring" | "requirements" | "re
 type PendingUpload = {
   id: string;
   templateId?: number;
+  positionRequirementId?: number;
   nome: string;
-  categoria: "pessoal" | "empresa" | "treinamento" | "exame_medico" | "outros";
+  categoria: "pessoal" | "empresa" | "treinamento" | "exame_medico" | "psicossocial" | "outros";
   fileNome: string;
   fileMime: string;
   fileTamanho: number;
@@ -79,11 +80,12 @@ type PendingUpload = {
   validade?: string;
 };
 
-const REQUEST_CATEGORY_LABELS: Record<PendingUpload["categoria"], string> = {
+const REQUEST_CATEGORY_LABELS: Record<string, string> = {
   pessoal: "Pessoal",
   empresa: "Empresa",
   treinamento: "Treinamento",
   exame_medico: "Exame Médico",
+  psicossocial: "Psicossocial",
   outros: "Outros",
 };
 
@@ -117,7 +119,12 @@ export default function EmpresaNovaSolicitacao() {
   const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
-  const [selectedUploadTarget, setSelectedUploadTarget] = useState<{ templateId?: number; nome: string; categoria: PendingUpload["categoria"] } | null>(null);
+  const [selectedUploadTarget, setSelectedUploadTarget] = useState<{
+    templateId?: number;
+    positionRequirementId?: number;
+    nome: string;
+    categoria: PendingUpload["categoria"];
+  } | null>(null);
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
   const [uploadForm, setUploadForm] = useState({ numeroDocumento: "", dataEmissao: "", validade: "" });
 
@@ -136,6 +143,10 @@ export default function EmpresaNovaSolicitacao() {
   const { data: positions = [] } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: worksites = [] } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: legalRequirements = [] } = trpc.legalRequirements.list.useQuery({ companyId }, { enabled: companyId > 0 });
+  const { data: positionRequirements = [] } = trpc.positionRequirements.listByContext.useQuery(
+    { companyId, positionId: Number(form.positionId || 0), tipoSolicitacao: form.tipo },
+    { enabled: companyId > 0 && Number(form.positionId) > 0 }
+  );
   const { data: documentTemplates = [] } = trpc.documentTemplates.listByTipo.useQuery(
     { tipoSolicitacao: form.tipo },
     { enabled: !!form.tipo }
@@ -172,7 +183,13 @@ export default function EmpresaNovaSolicitacao() {
     }
     return acc;
   }, {} as Record<number, PendingUpload[]>);
-  const pendingGeneralUploads = pendingUploads.filter((upload) => !upload.templateId);
+  const pendingUploadsByPositionRequirement = pendingUploads.reduce((acc, upload) => {
+    if (upload.positionRequirementId) {
+      acc[upload.positionRequirementId] = [...(acc[upload.positionRequirementId] || []), upload];
+    }
+    return acc;
+  }, {} as Record<number, PendingUpload[]>);
+  const pendingGeneralUploads = pendingUploads.filter((upload) => !upload.templateId && !upload.positionRequirementId);
 
   const visibleSteps = useMemo(
     () =>
@@ -232,7 +249,12 @@ export default function EmpresaNovaSolicitacao() {
       reader.readAsDataURL(file);
     });
 
-  const openUploadModal = (target: { templateId?: number; nome: string; categoria: PendingUpload["categoria"] }) => {
+  const openUploadModal = (target: {
+    templateId?: number;
+    positionRequirementId?: number;
+    nome: string;
+    categoria: PendingUpload["categoria"];
+  }) => {
     setSelectedUploadTarget(target);
     setSelectedUploadFile(null);
     setUploadForm({ numeroDocumento: "", dataEmissao: "", validade: "" });
@@ -257,6 +279,7 @@ export default function EmpresaNovaSolicitacao() {
         {
           id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           templateId: selectedUploadTarget.templateId,
+          positionRequirementId: selectedUploadTarget.positionRequirementId,
           nome: selectedUploadTarget.nome,
           categoria: selectedUploadTarget.categoria,
           fileNome: selectedUploadFile.name,
@@ -312,6 +335,14 @@ export default function EmpresaNovaSolicitacao() {
     details.push(`Checklist Docs aplicável: ${documentTemplates.length} item(ns).`);
     if (documentTemplates.length) {
       details.push(`Itens previstos: ${documentTemplates.map((item) => item.nome).join(", ")}`);
+    }
+    details.push(`Requisitos da função aplicáveis: ${positionRequirements.length} item(ns).`);
+    if (positionRequirements.length) {
+      details.push(
+        `Requisitos da função: ${positionRequirements
+          .map((item) => `${item.documentoNome} (${REQUEST_CATEGORY_LABELS[item.categoria] ?? item.categoria})`)
+          .join(", ")}`
+      );
     }
     details.push(`Arquivos preparados nesta abertura: ${pendingUploads.length}.`);
 
@@ -405,6 +436,7 @@ export default function EmpresaNovaSolicitacao() {
       const createdRequest = await createMutation.mutateAsync({
         companyId,
         employeeId: matchedEmployee?.id,
+        positionId: form.positionId ? Number(form.positionId) : undefined,
         tipo: form.tipo,
         titulo,
         descricao: buildDescription(),
@@ -943,6 +975,122 @@ export default function EmpresaNovaSolicitacao() {
           <Card className="border-border shadow-sm">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
+                <Briefcase className="h-5 w-5 text-primary" />
+                Requisitos da função selecionada
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <Alert>
+                <Briefcase className="h-4 w-4" />
+                <AlertTitle>Treinamentos, exames e psicossocial por função</AlertTitle>
+                <AlertDescription>
+                  Esses itens vêm do cadastro da função e ajudam a preparar admissões, demissões e mudanças de função com mais contexto operacional.
+                </AlertDescription>
+              </Alert>
+
+              <div className="grid gap-3 md:grid-cols-3">
+                <div className="rounded-2xl border border-border bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Itens por função</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{positionRequirements.length}</p>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Obrigatórios</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {positionRequirements.filter((item) => item.obrigatorio).length}
+                  </p>
+                </div>
+                <div className="rounded-2xl border border-border bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Uploads preparados</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">
+                    {Object.values(pendingUploadsByPositionRequirement).reduce((total, items) => total + items.length, 0)}
+                  </p>
+                </div>
+              </div>
+
+              {positionRequirements.length === 0 ? (
+                <Alert>
+                  <ShieldAlert className="h-4 w-4" />
+                  <AlertTitle>Sem requisitos vinculados à função</AlertTitle>
+                  <AlertDescription>
+                    A função selecionada ainda não possui treinamentos, exames ou itens psicossociais configurados para este processo.
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                <div className="space-y-3">
+                  {positionRequirements.map((requirement) => (
+                    <div key={requirement.id} className="rounded-2xl border border-border p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-medium text-foreground">{requirement.documentoNome}</p>
+                            <Badge variant="outline">
+                              {REQUEST_CATEGORY_LABELS[requirement.categoria] ?? requirement.categoria}
+                            </Badge>
+                            <Badge variant={requirement.obrigatorio ? "default" : "outline"}>
+                              {requirement.obrigatorio ? "Obrigatório" : "Opcional"}
+                            </Badge>
+                            <Badge variant="outline">{requirement.tipoSolicitacao}</Badge>
+                          </div>
+                          {requirement.descricao ? (
+                            <p className="text-sm text-muted-foreground">{requirement.descricao}</p>
+                          ) : null}
+                          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                            {requirement.validadeMeses ? <span>Validade sugerida: {requirement.validadeMeses} meses</span> : null}
+                            {requirement.norma ? <span>Base legal: {requirement.norma}</span> : null}
+                            {requirement.requisitoLegal ? <span>{requirement.requisitoLegal}</span> : null}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() =>
+                            openUploadModal({
+                              positionRequirementId: requirement.id,
+                              nome: requirement.documentoNome,
+                              categoria: requirement.categoria as PendingUpload["categoria"],
+                            })
+                          }
+                        >
+                          <Upload className="mr-2 h-4 w-4" />
+                          Anexar arquivo
+                        </Button>
+                      </div>
+
+                      {(pendingUploadsByPositionRequirement[requirement.id] ?? []).length > 0 ? (
+                        <div className="mt-4 space-y-2">
+                          {(pendingUploadsByPositionRequirement[requirement.id] ?? []).map((upload) => (
+                            <div
+                              key={upload.id}
+                              className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-border bg-muted/20 p-3"
+                            >
+                              <div className="space-y-1">
+                                <p className="text-sm font-medium text-foreground">{upload.fileNome}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
+                                  {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
+                                  {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                                </p>
+                              </div>
+                              <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="mt-4 text-sm text-muted-foreground">Nenhum arquivo preparado para este item ainda.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card className="border-border shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
                 <BookOpen className="h-5 w-5 text-primary" />
                 Matriz Legal ativa da empresa
               </CardTitle>
@@ -952,7 +1100,7 @@ export default function EmpresaNovaSolicitacao() {
                 <BookOpen className="h-4 w-4" />
                 <AlertTitle>Contexto legal trazido da empresa</AlertTitle>
                 <AlertDescription>
-                  A Matriz Legal entra aqui como referência da empresa selecionada. Hoje o sistema trabalha essa camada por empresa; ainda não existe regra automática por cargo neste fluxo.
+                  A Matriz Legal continua trazendo o contexto da empresa, e a função selecionada agora também pode carregar treinamentos, exames e referências psicossociais no mesmo fluxo.
                 </AlertDescription>
               </Alert>
 

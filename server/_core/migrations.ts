@@ -64,7 +64,7 @@ export async function runAutoMigrations() {
   await createTableIfMissing("document_type_templates", `(
     id INT AUTO_INCREMENT PRIMARY KEY,
     tipoSolicitacao ENUM('admissao','demissao','mudanca_funcao','afastamento','atestado_medico','outros') NOT NULL,
-    categoria ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal',
+    categoria ENUM('pessoal','empresa','treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'pessoal',
     nome VARCHAR(255) NOT NULL,
     descricao TEXT,
     obrigatorio TINYINT(1) NOT NULL DEFAULT 1,
@@ -82,7 +82,7 @@ export async function runAutoMigrations() {
     requestId INT NOT NULL,
     templateId INT,
     nome VARCHAR(255) NOT NULL,
-    categoria ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal',
+    categoria ENUM('pessoal','empresa','treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'pessoal',
     fileUrl TEXT,
     fileKey TEXT,
     fileNome VARCHAR(255),
@@ -103,13 +103,42 @@ export async function runAutoMigrations() {
   await addColumnIfMissing("request_document_uploads", "numeroDocumento", "VARCHAR(120) NULL");
   await addColumnIfMissing("request_document_uploads", "dataEmissao", "DATE NULL");
   await addColumnIfMissing("request_document_uploads", "validade", "DATE NULL");
+  await createTableIfMissing("position_requirements", `(
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    positionId INT NOT NULL,
+    legalRequirementId INT NULL,
+    categoria ENUM('treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'treinamento',
+    tipoSolicitacao ENUM('admissao','demissao','mudanca_funcao','todos') NOT NULL DEFAULT 'todos',
+    documentoNome VARCHAR(255) NOT NULL,
+    descricao TEXT NULL,
+    obrigatorio TINYINT(1) NOT NULL DEFAULT 1,
+    validadeMeses INT NULL,
+    ordem INT NOT NULL DEFAULT 0,
+    ativo TINYINT(1) NOT NULL DEFAULT 1,
+    createdAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updatedAt DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  )`);
+  await addColumnIfMissing("position_requirements", "categoria", "ENUM('treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'treinamento'");
+  await addColumnIfMissing("position_requirements", "tipoSolicitacao", "ENUM('admissao','demissao','mudanca_funcao','todos') NOT NULL DEFAULT 'todos'");
+  await addColumnIfMissing("position_requirements", "descricao", "TEXT NULL");
+  await addColumnIfMissing("position_requirements", "ordem", "INT NOT NULL DEFAULT 0");
+  await addColumnIfMissing("position_requirements", "ativo", "TINYINT(1) NOT NULL DEFAULT 1");
+  await addColumnIfMissing("position_requirements", "updatedAt", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP");
   await runStatement(
     "ajuste de enum document_type_templates.categoria",
-    "ALTER TABLE `document_type_templates` MODIFY COLUMN `categoria` ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal'"
+    "ALTER TABLE `document_type_templates` MODIFY COLUMN `categoria` ENUM('pessoal','empresa','treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'pessoal'"
   );
   await runStatement(
     "ajuste de enum request_document_uploads.categoria",
-    "ALTER TABLE `request_document_uploads` MODIFY COLUMN `categoria` ENUM('pessoal','empresa','treinamento','exame_medico','outros') NOT NULL DEFAULT 'pessoal'"
+    "ALTER TABLE `request_document_uploads` MODIFY COLUMN `categoria` ENUM('pessoal','empresa','treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'pessoal'"
+  );
+  await runStatement(
+    "ajuste de enum position_requirements.categoria",
+    "ALTER TABLE `position_requirements` MODIFY COLUMN `categoria` ENUM('treinamento','exame_medico','psicossocial','outros') NOT NULL DEFAULT 'treinamento'"
+  );
+  await runStatement(
+    "ajuste de enum position_requirements.tipoSolicitacao",
+    "ALTER TABLE `position_requirements` MODIFY COLUMN `tipoSolicitacao` ENUM('admissao','demissao','mudanca_funcao','todos') NOT NULL DEFAULT 'todos'"
   );
 
   const ensureTemplate = async (
