@@ -1,5 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
+import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -188,6 +189,10 @@ export default function AdminEmpresaDetalhe() {
                   <UserCheck className="w-3.5 h-3.5 mr-1.5" />
                   Usuários ({usuarios.length})
                 </TabsTrigger>
+                <TabsTrigger value="documentos" className="flex-1">
+                  <FileText className="w-3.5 h-3.5 mr-1.5" />
+                  Documentos
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="colaboradores">
@@ -276,6 +281,18 @@ export default function AdminEmpresaDetalhe() {
                         ))}
                       </div>
                     )}
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="documentos">
+                <Card>
+                  <CardContent className="p-4">
+                    <CompanyDocumentsManager
+                      companyId={empresaId}
+                      canEdit={true}
+                      title="Documentos da empresa"
+                      description="Gerencie Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT e CNO com alerta de validade."
+                    />
                   </CardContent>
                 </Card>
               </TabsContent>

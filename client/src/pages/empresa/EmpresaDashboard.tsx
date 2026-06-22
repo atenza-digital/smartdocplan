@@ -20,6 +20,10 @@ export default function EmpresaDashboard() {
     { companyId },
     { enabled: companyId > 0 }
   );
+  const { data: companyDocStats } = trpc.companyDocuments.statsByCompany.useQuery(
+    { companyId },
+    { enabled: companyId > 0 }
+  );
 
   const kpis = [
     {
@@ -104,6 +108,31 @@ export default function EmpresaDashboard() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Card className="border-border lg:col-span-2">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                <AlertTriangle className="h-4 w-4 text-amber-500" />
+                Alertas documentais da empresa
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Obrigatórios pendentes</p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{companyDocStats?.obrigatoriosPendentes ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Vencidos</p>
+                  <p className="mt-2 text-2xl font-semibold text-red-600">{companyDocStats?.vencidos ?? 0}</p>
+                </div>
+                <div className="rounded-lg border border-border bg-muted/40 p-4">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">A vencer em 30 dias</p>
+                  <p className="mt-2 text-2xl font-semibold text-amber-600">{companyDocStats?.aVencer ?? 0}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="border-border">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import CompanyLayout from "@/components/CompanyLayout";
+import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
 import { trpc } from "@/lib/trpc";
 import { useLocalAuth as useAuth } from "@/contexts/LocalAuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -107,8 +108,10 @@ export default function EmpresaConfiguracoes() {
   const [form, setForm] = useState({ razaoSocial: "", nomeFantasia: "", cnpj: "", email: "", telefone: "" });
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
   const [cargoModal, setCargoModal] = useState(false);
+  const [editingCargoId, setEditingCargoId] = useState<number | null>(null);
   const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
   const [localModal, setLocalModal] = useState(false);
+  const [editingLocalId, setEditingLocalId] = useState<number | null>(null);
   const [legalModal, setLegalModal] = useState(false);
   const [editingLegalId, setEditingLegalId] = useState<number | null>(null);
   const [legalForm, setLegalForm] = useState<LegalForm>(emptyLegalForm);
@@ -151,6 +154,18 @@ export default function EmpresaConfiguracoes() {
     onSuccess: () => {
       toast.success("Função cadastrada com sucesso!");
       setCargoModal(false);
+      setEditingCargoId(null);
+      setNovoCargo({ nome: "", cbo: "", descricao: "" });
+      refetchCargos();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updateCargoMutation = trpc.positions.update.useMutation({
+    onSuccess: () => {
+      toast.success("Função atualizada com sucesso!");
+      setCargoModal(false);
+      setEditingCargoId(null);
       setNovoCargo({ nome: "", cbo: "", descricao: "" });
       refetchCargos();
     },
@@ -161,6 +176,18 @@ export default function EmpresaConfiguracoes() {
     onSuccess: () => {
       toast.success("Frente / local cadastrado com sucesso!");
       setLocalModal(false);
+      setEditingLocalId(null);
+      setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+      refetchLocais();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const updateLocalMutation = trpc.worksites.update.useMutation({
+    onSuccess: () => {
+      toast.success("Frente / local atualizada com sucesso!");
+      setLocalModal(false);
+      setEditingLocalId(null);
       setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
       refetchLocais();
     },
@@ -251,6 +278,40 @@ export default function EmpresaConfiguracoes() {
       email: form.email.trim() || undefined,
       telefone: form.telefone.trim() || undefined,
     });
+  };
+
+  const openNewCargoModal = () => {
+    setEditingCargoId(null);
+    setNovoCargo({ nome: "", cbo: "", descricao: "" });
+    setCargoModal(true);
+  };
+
+  const openEditCargoModal = (cargo: (typeof cargos)[number]) => {
+    setEditingCargoId(cargo.id);
+    setNovoCargo({
+      nome: cargo.nome ?? "",
+      cbo: cargo.cbo ?? "",
+      descricao: cargo.descricao ?? "",
+    });
+    setCargoModal(true);
+  };
+
+  const openNewLocalModal = () => {
+    setEditingLocalId(null);
+    setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+    setLocalModal(true);
+  };
+
+  const openEditLocalModal = (local: (typeof locais)[number]) => {
+    setEditingLocalId(local.id);
+    setNovoLocal({
+      nome: local.nome ?? "",
+      cnos: local.cnos ?? "",
+      endereco: local.endereco ?? "",
+      cidade: local.cidade ?? "",
+      estado: local.estado ?? "",
+    });
+    setLocalModal(true);
   };
 
   const openNewLegalModal = () => {
@@ -387,6 +448,7 @@ export default function EmpresaConfiguracoes() {
           </TabsList>
 
           <TabsContent value="empresa" className="mt-4">
+            <div className="max-w-5xl space-y-4">
             <Card className="max-w-2xl">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-base font-semibold">
@@ -460,6 +522,17 @@ export default function EmpresaConfiguracoes() {
                 )}
               </CardContent>
             </Card>
+            <Card>
+              <CardContent className="p-5">
+                <CompanyDocumentsManager
+                  companyId={companyId}
+                  canEdit={canEdit}
+                  title="Documentos da empresa"
+                  description="Anexe e acompanhe Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT e CNO opcional com alerta de validade."
+                />
+              </CardContent>
+            </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="cargos" className="mt-4">
@@ -472,7 +545,7 @@ export default function EmpresaConfiguracoes() {
                   </p>
                 </div>
                 {canEdit && (
-                  <Button size="sm" onClick={() => setCargoModal(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <Button size="sm" onClick={openNewCargoModal} className="bg-primary text-primary-foreground hover:bg-primary/90">
                     <Plus className="mr-1.5 h-4 w-4" />
                     Nova Função
                   </Button>
@@ -505,11 +578,26 @@ export default function EmpresaConfiguracoes() {
                             {cargo.descricao && <span>{cargo.descricao}</span>}
                           </div>
                         </div>
-                        {cargo.id === selectedCargoId && (
-                          <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
-                            Selecionada
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-1">
+                          {canEdit && (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                openEditCargoModal(cargo);
+                              }}
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </Button>
+                          )}
+                          {cargo.id === selectedCargoId && (
+                            <Badge variant="outline" className="border-primary/20 bg-primary/10 text-primary">
+                              Selecionada
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -607,7 +695,7 @@ export default function EmpresaConfiguracoes() {
                   </p>
                 </div>
                 {canEdit && (
-                  <Button size="sm" onClick={() => setLocalModal(true)} className="bg-primary text-primary-foreground hover:bg-primary/90">
+                  <Button size="sm" onClick={openNewLocalModal} className="bg-primary text-primary-foreground hover:bg-primary/90">
                     <Plus className="mr-1.5 h-4 w-4" />
                     Novo Local
                   </Button>
@@ -626,11 +714,20 @@ export default function EmpresaConfiguracoes() {
                 {locais.map((local) => (
                   <Card key={local.id}>
                     <CardContent className="px-4 py-3">
-                      <p className="text-sm font-medium text-foreground">{local.nome}</p>
-                      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                        {local.cnos && <span>CNOS: {local.cnos}</span>}
-                        {local.cidade && <span>{local.cidade}{local.estado ? `/${local.estado}` : ""}</span>}
-                        {local.endereco && <span>{local.endereco}</span>}
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{local.nome}</p>
+                          <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                            {local.cnos && <span>CNOS: {local.cnos}</span>}
+                            {local.cidade && <span>{local.cidade}{local.estado ? `/${local.estado}` : ""}</span>}
+                            {local.endereco && <span>{local.endereco}</span>}
+                          </div>
+                        </div>
+                        {canEdit && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => openEditLocalModal(local)}>
+                            <Pencil className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
                       </div>
                     </CardContent>
                   </Card>
@@ -767,7 +864,7 @@ export default function EmpresaConfiguracoes() {
       <Dialog open={cargoModal} onOpenChange={setCargoModal}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Nova Função</DialogTitle>
+            <DialogTitle>{editingCargoId ? "Editar Função" : "Nova Função"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
@@ -800,18 +897,34 @@ export default function EmpresaConfiguracoes() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setCargoModal(false)}>Cancelar</Button>
             <Button
-              onClick={() =>
-                createCargoMutation.mutate({
-                  companyId,
+              onClick={() => {
+                const payload = {
                   nome: novoCargo.nome.trim(),
                   cbo: novoCargo.cbo.trim() || undefined,
                   descricao: novoCargo.descricao.trim() || undefined,
-                })
-              }
-              disabled={!novoCargo.nome.trim() || createCargoMutation.isPending}
+                };
+
+                if (editingCargoId) {
+                  updateCargoMutation.mutate({
+                    id: editingCargoId,
+                    ...payload,
+                  });
+                  return;
+                }
+
+                createCargoMutation.mutate({
+                  companyId,
+                  ...payload,
+                });
+              }}
+              disabled={!novoCargo.nome.trim() || createCargoMutation.isPending || updateCargoMutation.isPending}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {createCargoMutation.isPending ? "Criando..." : "Criar função"}
+              {createCargoMutation.isPending || updateCargoMutation.isPending
+                ? "Salvando..."
+                : editingCargoId
+                  ? "Salvar função"
+                  : "Criar função"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -820,7 +933,7 @@ export default function EmpresaConfiguracoes() {
       <Dialog open={localModal} onOpenChange={setLocalModal}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>Novo Local de Trabalho</DialogTitle>
+            <DialogTitle>{editingLocalId ? "Editar Frente / Local" : "Novo Local de Trabalho"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
@@ -870,20 +983,36 @@ export default function EmpresaConfiguracoes() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setLocalModal(false)}>Cancelar</Button>
             <Button
-              onClick={() =>
-                createLocalMutation.mutate({
-                  companyId,
+              onClick={() => {
+                const payload = {
                   nome: novoLocal.nome.trim(),
                   cnos: novoLocal.cnos.trim() || undefined,
                   endereco: novoLocal.endereco.trim() || undefined,
                   cidade: novoLocal.cidade.trim() || undefined,
                   estado: novoLocal.estado.trim().toUpperCase() || undefined,
-                })
-              }
-              disabled={!novoLocal.nome.trim() || createLocalMutation.isPending}
+                };
+
+                if (editingLocalId) {
+                  updateLocalMutation.mutate({
+                    id: editingLocalId,
+                    ...payload,
+                  });
+                  return;
+                }
+
+                createLocalMutation.mutate({
+                  companyId,
+                  ...payload,
+                });
+              }}
+              disabled={!novoLocal.nome.trim() || createLocalMutation.isPending || updateLocalMutation.isPending}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
-              {createLocalMutation.isPending ? "Criando..." : "Criar local"}
+              {createLocalMutation.isPending || updateLocalMutation.isPending
+                ? "Salvando..."
+                : editingLocalId
+                  ? "Salvar frente / local"
+                  : "Criar local"}
             </Button>
           </DialogFooter>
         </DialogContent>

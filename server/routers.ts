@@ -28,6 +28,15 @@ import {
   isValidPhone,
 } from "../shared/formValidation";
 
+const COMPANY_DOCUMENT_TYPES = [
+  { tipo: "cartao_cnpj", nome: "Cartão CNPJ", obrigatorio: true },
+  { tipo: "contrato_social", nome: "Contrato Social", obrigatorio: true },
+  { tipo: "pcmso", nome: "PCMSO", obrigatorio: true },
+  { tipo: "pgr", nome: "PGR", obrigatorio: true },
+  { tipo: "ltcat", nome: "LTCAT", obrigatorio: true },
+  { tipo: "cno", nome: "CNO", obrigatorio: false },
+] as const;
+
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 async function insertAuditLog(opts: {
@@ -215,6 +224,148 @@ const companiesRouter = router({
     const [total] = await db.select({ count: sql<number>`count(*)` }).from(companies);
     const [ativas] = await db.select({ count: sql<number>`count(*)` }).from(companies).where(eq(companies.status, "ativo"));
     return { total: total?.count ?? 0, ativas: ativas?.count ?? 0 };
+  }),
+});
+
+const companyDocumentsRouter = router({
+  listByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    return db
+      .select()
+      .from(companyDocuments)
+      .where(eq(companyDocuments.companyId, input.companyId))
+      .orderBy(companyDocuments.tipo, desc(companyDocuments.updatedAt));
+  }),
+
+  statsByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) {
+      return { total: 0, enviados: 0, obrigatoriosPendentes: 0, vencidos: 0, aVencer: 0 };
+    }
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) {
+      return { total: 0, enviados: 0, obrigatoriosPendentes: 0, vencidos: 0, aVencer: 0 };
+    }
+
+    const docs = await db.select().from(companyDocuments).where(eq(companyDocuments.companyId, input.companyId));
+    const today = new Date();
+    const warningDate = new Date();
+    warningDate.setDate(warningDate.getDate() + 30);
+
+    const sentTypes = new Set(docs.map((doc) => doc.tipo));
+    const obrigatoriosPendentes = COMPANY_DOCUMENT_TYPES.filter((item) => item.obrigatorio && !sentTypes.has(item.tipo)).length;
+    const vencidos = docs.filter((doc) => doc.validade && new Date(doc.validade) < today).length;
+    const aVencer = docs.filter((doc) => {
+      if (!doc.validade) return false;
+      const validade = new Date(doc.validade);
+      return validade >= today && validade <= warningDate;
+    }).length;
+
+    return {
+      total: COMPANY_DOCUMENT_TYPES.length,
+      enviados: docs.length,
+      obrigatoriosPendentes,
+      vencidos,
+      aVencer,
+    };
+  }),
+
+  create: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    tipo: z.string().min(1),
+    nome: z.string().min(1),
+    validade: z.string().optional(),
+    observacao: z.string().optional(),
+    fileNome: z.string(),
+    fileBase64: z.string(),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+
+    const fs = await import("fs");
+    const path = await import("path");
+    const uploadsDir = path.join(process.cwd(), "dist", "public", "uploads", "companies");
+    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+    const ext = input.fileNome.split(".").pop() ?? "bin";
+    const fileName = `company_${input.companyId}_${input.tipo}_${Date.now()}.${ext}`;
+    const filePath = path.join(uploadsDir, fileName);
+    const buffer = Buffer.from(input.fileBase64, "base64");
+    fs.writeFileSync(filePath, buffer);
+    const fileUrl = `/uploads/companies/${fileName}`;
+
+    await db.insert(companyDocuments).values({
+      companyId: input.companyId,
+      tipo: input.tipo.trim(),
+      nome: input.nome.trim(),
+      fileUrl,
+      fileKey: fileName,
+      validade: input.validade ? new Date(input.validade) : undefined,
+      observacao: normalizeOptionalText(input.observacao) ?? undefined,
+    } as any);
+
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "criou_documento_empresa",
+      entidade: "company_documents",
+      dadosDepois: { tipo: input.tipo, nome: input.nome, fileNome: input.fileNome },
+    });
+    return { success: true, fileUrl };
+  }),
+
+  update: protectedProcedure.input(z.object({
+    id: z.number(),
+    nome: z.string().min(1).optional(),
+    validade: z.string().optional(),
+    observacao: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
+    const doc = result[0];
+    if (!doc) throw new Error("Documento da empresa não encontrado");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+
+    const payload = {
+      nome: input.nome?.trim() ?? doc.nome,
+      validade: input.validade !== undefined ? (input.validade ? new Date(input.validade) : null) : undefined,
+      observacao: input.observacao !== undefined ? normalizeOptionalText(input.observacao) ?? null : undefined,
+    };
+    await db.update(companyDocuments).set(payload as any).where(eq(companyDocuments.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: doc.companyId,
+      acao: "atualizou_documento_empresa",
+      entidade: "company_documents",
+      entidadeId: doc.id,
+      dadosDepois: payload,
+    });
+    return { success: true };
+  }),
+
+  delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
+    const doc = result[0];
+    if (!doc) throw new Error("Documento da empresa não encontrado");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    await db.delete(companyDocuments).where(eq(companyDocuments.id, input.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: doc.companyId,
+      acao: "removeu_documento_empresa",
+      entidade: "company_documents",
+      entidadeId: doc.id,
+      dadosDepois: { tipo: doc.tipo, nome: doc.nome },
+    });
+    return { success: true };
   }),
 });
 
@@ -1422,6 +1573,7 @@ export const appRouter = router({
     }),
   }),
   companies: companiesRouter,
+  companyDocuments: companyDocumentsRouter,
   employees: employeesRouter,
   requests: requestsRouter,
   tickets: ticketsRouter,
