@@ -1,14 +1,19 @@
 import {
-  int,
-  mysqlEnum,
-  mysqlTable,
+  boolean,
+  date,
+  decimal,
+  integer,
+  pgSchema,
+  serial,
   text,
   timestamp,
   varchar,
-  decimal,
-  boolean,
-  date,
-} from "drizzle-orm/mysql-core";
+} from "drizzle-orm/pg-core";
+
+const smartdocSchema = pgSchema("smartdocplan");
+const companyStatusEnum = smartdocSchema.enum("company_status", ["ativo", "inativo", "suspenso"] as const);
+const positionRequirementCategoryEnum = smartdocSchema.enum("position_requirement_category", ["treinamento", "exame_medico", "psicossocial", "outros"] as const);
+const positionRequirementRequestTypeEnum = smartdocSchema.enum("position_requirement_request_type", ["admissao", "demissao", "mudanca_funcao", "todos"] as const);
 
 // --- USERS ---
 // Papeis da plataforma:
@@ -19,26 +24,18 @@ import {
 // company_hr        = RH da Empresa
 // company_manager   = Gestor da Empresa
 // company_viewer    = Consulta (somente leitura)
-export const users = mysqlTable("users", {
-  id: int("id").autoincrement().primaryKey(),
+export const users = smartdocSchema.table("users", {
+  id: serial("id").primaryKey(),
   openId: varchar("openId", { length: 64 }).unique(), // mantido para compat OAuth, agora opcional
   name: text("name"),
   email: varchar("email", { length: 320 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }), // autenticacao propria
   loginMethod: varchar("loginMethod", { length: 64 }).default("local"),
   ativo: boolean("ativo").default(true).notNull(),
-  role: mysqlEnum("role", [
-    "platform_admin",
-    "platform_analyst",
-    "platform_auditor",
-    "company_admin",
-    "company_hr",
-    "company_manager",
-    "company_viewer",
-  ]).default("company_viewer").notNull(),
-  companyId: int("companyId"), // null = usuario interno da plataforma
+  role: text("role").default("company_viewer").notNull(),
+  companyId: integer("companyId"), // null = usuario interno da plataforma
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
 
@@ -46,26 +43,26 @@ export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // --- COMPANIES ---
-export const companies = mysqlTable("companies", {
-  id: int("id").autoincrement().primaryKey(),
+export const companies = smartdocSchema.table("companies", {
+  id: serial("id").primaryKey(),
   razaoSocial: varchar("razaoSocial", { length: 255 }).notNull(),
   nomeFantasia: varchar("nomeFantasia", { length: 255 }),
   cnpj: varchar("cnpj", { length: 18 }).unique(),
   email: varchar("email", { length: 320 }),
   telefone: varchar("telefone", { length: 20 }),
   logoUrl: text("logoUrl"),
-  status: mysqlEnum("status", ["ativo", "inativo", "suspenso"]).default("ativo").notNull(),
+  status: companyStatusEnum("status").default("ativo").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type Company = typeof companies.$inferSelect;
 export type InsertCompany = typeof companies.$inferInsert;
 
 // --- COMPANY DOCUMENTS ---
-export const companyDocuments = mysqlTable("company_documents", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(),
+export const companyDocuments = smartdocSchema.table("company_documents", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
   tipo: varchar("tipo", { length: 100 }).notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   fileUrl: text("fileUrl"),
@@ -73,13 +70,13 @@ export const companyDocuments = mysqlTable("company_documents", {
   validade: date("validade"),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 // --- WORKSITES (OBRAS/CNOs) ---
-export const worksites = mysqlTable("worksites", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(),
+export const worksites = smartdocSchema.table("worksites", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   cnos: varchar("cnos", { length: 30 }),
   endereco: text("endereco"),
@@ -87,15 +84,15 @@ export const worksites = mysqlTable("worksites", {
   estado: varchar("estado", { length: 2 }),
   dataInicio: date("dataInicio"),
   dataFim: date("dataFim"),
-  status: mysqlEnum("status", ["ativo", "concluido", "cancelado"]).default("ativo").notNull(),
+  status: text("status").default("ativo").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 // --- POSITIONS (CARGOS) ---
 // Cargos sao por empresa (companyId obrigatorio)
-export const positions = mysqlTable("positions", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(),
+export const positions = smartdocSchema.table("positions", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   descricao: text("descricao"),
   cbo: varchar("cbo", { length: 20 }),
@@ -104,118 +101,94 @@ export const positions = mysqlTable("positions", {
 
 // --- LEGAL REQUIREMENTS (MATRIZ NRs) ---
 // Matriz legal e por empresa (companyId obrigatorio)
-export const legalRequirements = mysqlTable("legal_requirements", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(), // vinculado à empresa
+export const legalRequirements = smartdocSchema.table("legal_requirements", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(), // vinculado Ã  empresa
   norma: varchar("norma", { length: 50 }).notNull(),
   requisito: varchar("requisito", { length: 255 }).notNull(),
   documentoExigido: varchar("documentoExigido", { length: 255 }).notNull(),
-  validadeMeses: int("validadeMeses"),
+  validadeMeses: integer("validadeMeses"),
   descricao: text("descricao"),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 // --- POSITION REQUIREMENTS (DOCUMENTOS POR CARGO) ---
-export const positionRequirements = mysqlTable("position_requirements", {
-  id: int("id").autoincrement().primaryKey(),
-  positionId: int("positionId").notNull(),
-  legalRequirementId: int("legalRequirementId"),
-  categoria: mysqlEnum("categoria", ["treinamento", "exame_medico", "psicossocial", "outros"]).default("treinamento").notNull(),
-  tipoSolicitacao: mysqlEnum("tipoSolicitacao", ["admissao", "demissao", "mudanca_funcao", "todos"]).default("todos").notNull(),
+export const positionRequirements = smartdocSchema.table("position_requirements", {
+  id: serial("id").primaryKey(),
+  positionId: integer("positionId").notNull(),
+  legalRequirementId: integer("legalRequirementId"),
+  categoria: positionRequirementCategoryEnum("categoria").default("treinamento").notNull(),
+  tipoSolicitacao: positionRequirementRequestTypeEnum("tipoSolicitacao").default("todos").notNull(),
   documentoNome: varchar("documentoNome", { length: 255 }).notNull(),
   descricao: text("descricao"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
-  validadeMeses: int("validadeMeses"),
-  ordem: int("ordem").default(0).notNull(),
+  validadeMeses: integer("validadeMeses"),
+  ordem: integer("ordem").default(0).notNull(),
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 // --- EMPLOYEES (COLABORADORES) ---
-export const employees = mysqlTable("employees", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(),
+export const employees = smartdocSchema.table("employees", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   cpf: varchar("cpf", { length: 14 }).notNull(),
   dataNascimento: date("dataNascimento"),
-  positionId: int("positionId"),
-  worksiteId: int("worksiteId"),
+  positionId: integer("positionId"),
+  worksiteId: integer("worksiteId"),
   dataAdmissao: date("dataAdmissao"),
   salario: decimal("salario", { precision: 10, scale: 2 }),
-  status: mysqlEnum("status", ["ativo", "afastado", "desligado"]).default("ativo").notNull(),
+  status: text("status").default("ativo").notNull(),
   email: varchar("email", { length: 320 }),
   telefone: varchar("telefone", { length: 20 }),
-  scoreConformidade: int("scoreConformidade").default(100),
-  criadoPor: int("criadoPor"), // userId do analista interno que cadastrou
+  scoreConformidade: integer("scoreConformidade").default(100),
+  criadoPor: integer("criadoPor"), // userId do analista interno que cadastrou
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
 export type Employee = typeof employees.$inferSelect;
 export type InsertEmployee = typeof employees.$inferInsert;
 
 // --- EMPLOYEE DOCUMENTS (DOSSIE DIGITAL) ---
-export const employeeDocuments = mysqlTable("employee_documents", {
-  id: int("id").autoincrement().primaryKey(),
-  employeeId: int("employeeId").notNull(),
-  companyId: int("companyId").notNull(),
-  categoria: mysqlEnum("categoria", [
-    "pessoal",
-    "contratual",
-    "exame_medico",
-    "treinamento",
-    "advertencia",
-    "afastamento",
-    "atestado",
-    "opcional",
-  ]).notNull(),
+export const employeeDocuments = smartdocSchema.table("employee_documents", {
+  id: serial("id").primaryKey(),
+  employeeId: integer("employeeId").notNull(),
+  companyId: integer("companyId").notNull(),
+  categoria: text("categoria").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   tipo: varchar("tipo", { length: 100 }),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
   validade: date("validade"),
-  versao: int("versao").default(1).notNull(),
+  versao: integer("versao").default(1).notNull(),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
-  status: mysqlEnum("status", ["valido", "vencido", "pendente", "a_vencer"]).default("valido").notNull(),
+  status: text("status").default("valido").notNull(),
   observacao: text("observacao"),
-  uploadedBy: int("uploadedBy"),
+  uploadedBy: integer("uploadedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
-// --- REQUESTS (SOLICITACÕES DE RH) ---
-export const requests = mysqlTable("requests", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(),
-  employeeId: int("employeeId"),
-  tipo: mysqlEnum("tipo", [
-    "admissao",
-    "demissao",
-    "mudanca_funcao",
-    "afastamento",
-    "atestado_medico",
-    "outros",
-  ]).notNull(),
+// --- REQUESTS (SOLICITACÃ•ES DE RH) ---
+export const requests = smartdocSchema.table("requests", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  employeeId: integer("employeeId"),
+  tipo: text("tipo").notNull(),
   titulo: varchar("titulo", { length: 255 }).notNull(),
   descricao: text("descricao"),
-  status: mysqlEnum("status", [
-    "nova",
-    "em_analise",
-    "aguardando_correcao",
-    "aguardando_documentos",
-    "aprovado",
-    "concluido",
-    "rejeitado",
-  ]).default("nova").notNull(),
-  prioridade: mysqlEnum("prioridade", ["baixa", "media", "alta", "urgente"]).default("media").notNull(),
+  status: text("status").default("nova").notNull(),
+  prioridade: text("prioridade").default("media").notNull(),
   checklistCompleto: boolean("checklistCompleto").default(false).notNull(),
-  criadoPor: int("criadoPor").notNull(),
-  responsavelId: int("responsavelId"),
+  criadoPor: integer("criadoPor").notNull(),
+  responsavelId: integer("responsavelId"),
   observacoes: text("observacoes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   concluidoAt: timestamp("concluidoAt"),
 });
 
@@ -223,44 +196,31 @@ export type Request = typeof requests.$inferSelect;
 export type InsertRequest = typeof requests.$inferInsert;
 
 // --- REQUEST DOCUMENTS ---
-export const requestDocuments = mysqlTable("request_documents", {
-  id: int("id").autoincrement().primaryKey(),
-  requestId: int("requestId").notNull(),
+export const requestDocuments = smartdocSchema.table("request_documents", {
+  id: serial("id").primaryKey(),
+  requestId: integer("requestId").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   tipo: varchar("tipo", { length: 100 }),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
   obrigatorio: boolean("obrigatorio").default(false).notNull(),
-  uploadedBy: int("uploadedBy"),
+  uploadedBy: integer("uploadedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
 // --- TICKETS (CHAMADOS) ---
-export const tickets = mysqlTable("tickets", {
-  id: int("id").autoincrement().primaryKey(),
-  companyId: int("companyId").notNull(),
-  tipo: mysqlEnum("tipo", [
-    "criacao_usuario",
-    "bloqueio_usuario",
-    "alteracao_acesso",
-    "suporte_tecnico",
-    "duvida",
-    "outros",
-  ]).notNull(),
+export const tickets = smartdocSchema.table("tickets", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  tipo: text("tipo").notNull(),
   titulo: varchar("titulo", { length: 255 }).notNull(),
   descricao: text("descricao"),
-  status: mysqlEnum("status", [
-    "aberto",
-    "em_atendimento",
-    "aguardando_cliente",
-    "resolvido",
-    "fechado",
-  ]).default("aberto").notNull(),
-  prioridade: mysqlEnum("prioridade", ["baixa", "media", "alta", "urgente"]).default("media").notNull(),
-  criadoPor: int("criadoPor").notNull(),
-  responsavelId: int("responsavelId"),
+  status: text("status").default("aberto").notNull(),
+  prioridade: text("prioridade").default("media").notNull(),
+  criadoPor: integer("criadoPor").notNull(),
+  responsavelId: integer("responsavelId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   resolvidoAt: timestamp("resolvidoAt"),
 });
 
@@ -268,58 +228,56 @@ export type Ticket = typeof tickets.$inferSelect;
 export type InsertTicket = typeof tickets.$inferInsert;
 
 // --- AUDIT LOGS ---
-export const auditLogs = mysqlTable("audit_logs", {
-  id: int("id").autoincrement().primaryKey(),
-  userId: int("userId"),
-  companyId: int("companyId"),
+export const auditLogs = smartdocSchema.table("audit_logs", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId"),
+  companyId: integer("companyId"),
   action: varchar("action", { length: 255 }).notNull(),
   entity: varchar("entity", { length: 100 }),
-  entityId: int("entityId"),
+  entityId: integer("entityId"),
   details: text("details"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
-// --- DOCUMENT TYPE TEMPLATES (admin configura quais docs exigir por tipo de solicitação) ---
-export const documentTypeTemplates = mysqlTable("document_type_templates", {
-  id: int("id").autoincrement().primaryKey(),
-  tipoSolicitacao: mysqlEnum("tipoSolicitacao", [
-    "admissao", "demissao", "mudanca_funcao", "afastamento", "atestado_medico", "outros"
-  ]).notNull(),
-  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "psicossocial", "outros"]).default("pessoal").notNull(),
+// --- DOCUMENT TYPE TEMPLATES (admin configura quais docs exigir por tipo de solicitaÃ§Ã£o) ---
+export const documentTypeTemplates = smartdocSchema.table("document_type_templates", {
+  id: serial("id").primaryKey(),
+  tipoSolicitacao: text("tipoSolicitacao").notNull(),
+  categoria: text("categoria").default("pessoal").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   descricao: text("descricao"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
-  sexo: mysqlEnum("sexo", ["todos", "masculino", "feminino"]).default("todos").notNull(),
+  sexo: text("sexo").default("todos").notNull(),
   ativo: boolean("ativo").default(true).notNull(),
-  ordem: int("ordem").default(0).notNull(),
-  criadoPor: int("criadoPor"),
+  ordem: integer("ordem").default(0).notNull(),
+  criadoPor: integer("criadoPor"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 export type DocumentTypeTemplate = typeof documentTypeTemplates.$inferSelect;
 
-// --- REQUEST DOCUMENT UPLOADS (uploads reais vinculados a solicitações) ---
-export const requestDocumentUploads = mysqlTable("request_document_uploads", {
-  id: int("id").autoincrement().primaryKey(),
-  requestId: int("requestId").notNull(),
-  templateId: int("templateId"),
+// --- REQUEST DOCUMENT UPLOADS (uploads reais vinculados a solicitaÃ§Ãµes) ---
+export const requestDocumentUploads = smartdocSchema.table("request_document_uploads", {
+  id: serial("id").primaryKey(),
+  requestId: integer("requestId").notNull(),
+  templateId: integer("templateId"),
   nome: varchar("nome", { length: 255 }).notNull(),
-  categoria: mysqlEnum("categoria", ["pessoal", "empresa", "treinamento", "exame_medico", "psicossocial", "outros"]).default("pessoal").notNull(),
+  categoria: text("categoria").default("pessoal").notNull(),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
   fileNome: varchar("fileNome", { length: 255 }),
-  fileTamanho: int("fileTamanho"),
+  fileTamanho: integer("fileTamanho"),
   fileMime: varchar("fileMime", { length: 100 }),
   numeroDocumento: varchar("numeroDocumento", { length: 120 }),
   dataEmissao: date("dataEmissao"),
   validade: date("validade"),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),
-  status: mysqlEnum("status", ["pendente", "aprovado", "reprovado"]).default("pendente").notNull(),
+  status: text("status").default("pendente").notNull(),
   motivoReprovacao: text("motivoReprovacao"),
-  analisadoPor: int("analisadoPor"),
+  analisadoPor: integer("analisadoPor"),
   analisadoAt: timestamp("analisadoAt"),
-  uploadedBy: int("uploadedBy"),
+  uploadedBy: integer("uploadedBy"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 export type RequestDocumentUpload = typeof requestDocumentUploads.$inferSelect;
