@@ -1,9 +1,9 @@
 # docker-compose.yml para producao com Traefik (SSL automatico via Let's Encrypt)
-# Imagem pre-compilada via GitHub Actions: ghcr.io/ewerton-atenza/smartdocplan:latest
+# Imagem pre-compilada via GitHub Actions: ghcr.io/atenza-digital/smartdocplan:latest
 
 services:
   app:
-    image: ghcr.io/ewerton-atenza/smartdocplan:latest
+    image: ghcr.io/atenza-digital/smartdocplan:latest
     container_name: smartdocplan-app
     restart: unless-stopped
     environment:
