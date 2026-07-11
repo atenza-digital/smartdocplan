@@ -16,6 +16,10 @@ export async function runAutoMigrations() {
     console.warn("[Migration] Conexão direta indisponível.");
     return;
   }
+  if (typeof conn.execute !== "function") {
+    console.log("[Migration] PostgreSQL detectado; migrações legadas de MySQL ignoradas.");
+    return;
+  }
 
   console.log("[Migration] Iniciando migrações automáticas...");
 
