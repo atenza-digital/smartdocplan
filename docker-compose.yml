@@ -1,28 +1,33 @@
-# docker-compose.yml para producao com Traefik (SSL automatico via Let's Encrypt)
-# Imagem pre-compilada via GitHub Actions: ghcr.io/atenza-digital/smartdocplan:latest
+# docker-compose.yml para produção com Traefik (SSL automático via Let's Encrypt)
+# Imagem publicada via GitHub Actions e consumida pelo deploy automatizado
 
 services:
   app:
-    image: ghcr.io/atenza-digital/smartdocplan:latest
+    image: ${APP_IMAGE:-ghcr.io/atenza-digital/smartdocplan:latest}
     container_name: smartdocplan-app
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      NODE_ENV: production
-      PORT: "5000"
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: ${APP_PORT:-5000}
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
+    ports:
+      - "${APP_BIND_IP:-127.0.0.1}:${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"
     networks:
       - smartdocplan_net
+      - database_net
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.smartdocplan.rule=Host(`srv1450720.hstgr.cloud`)"
-      - "traefik.http.routers.smartdocplan.entrypoints=websecure"
+      - "traefik.enable=${TRAEFIK_ENABLE:-true}"
+      - "traefik.http.routers.smartdocplan.rule=Host(`${APP_HOST:-srv1450720.hstgr.cloud}`)"
+      - "traefik.http.routers.smartdocplan.entrypoints=${TRAEFIK_ENTRYPOINTS:-websecure}"
       - "traefik.http.routers.smartdocplan.tls=true"
-      - "traefik.http.routers.smartdocplan.tls.certresolver=letsencrypt"
-      - "traefik.http.services.smartdocplan.loadbalancer.server.port=5000"
-      - "traefik.docker.network=smartdocplan_net"
+      - "traefik.http.routers.smartdocplan.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
+      - "traefik.http.services.smartdocplan.loadbalancer.server.port=${APP_PORT:-5000}"
+      - "traefik.docker.network=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:5000/api/trpc/system.health?input=%7B%22timestamp%22%3A0%7D"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${APP_PORT:-5000}/api/trpc/system.health?input=%7B%22timestamp%22%3A0%7D"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -31,4 +36,7 @@ services:
 networks:
   smartdocplan_net:
     external: true
-    name: smartdocplan_net
+    name: ${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}
+  database_net:
+    external: true
+    name: ${DB_DOCKER_NETWORK:-postgresql-evkn_default}

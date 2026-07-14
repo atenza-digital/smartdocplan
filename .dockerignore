@@ -1,0 +1,16 @@
+.git
+.github
+.codex_tmp
+.vscode
+node_modules
+dist
+coverage
+docs
+tmp
+*.log
+Dockerfile*
+docker-compose*.yml
+.env
+.env.*
+!.env.vps.example
+README.MD

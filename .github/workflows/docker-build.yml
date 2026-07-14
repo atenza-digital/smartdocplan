@@ -1,24 +1,72 @@
-name: Build & Push Docker Image
+name: CI/CD
 
 on:
+  pull_request:
+    branches: [main]
   push:
     branches: [main]
   workflow_dispatch:
 
-env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: smartdocplan-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-push:
+  validate:
+    name: Check, test and build
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.4.1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        run: pnpm check
+
+      - name: Run tests
+        run: pnpm test
+
+      - name: Build application
+        run: pnpm build
+
+  docker:
+    name: Build and publish Docker image
+    runs-on: ubuntu-latest
+    needs: validate
+    if: github.event_name != 'pull_request'
+    outputs:
+      image_ref: ${{ steps.meta.outputs.image_ref }}
+      image_latest: ${{ steps.meta.outputs.image_latest }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute image metadata
+        id: meta
+        shell: bash
+        run: |
+          IMAGE_REPO="ghcr.io/$(echo "${GITHUB_REPOSITORY}" | tr '[:upper:]' '[:lower:]')"
+          echo "image_ref=${IMAGE_REPO}:${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+          echo "image_latest=${IMAGE_REPO}:latest" >> "$GITHUB_OUTPUT"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
@@ -31,12 +79,107 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build and push
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
+            ${{ steps.meta.outputs.image_latest }}
+            ${{ steps.meta.outputs.image_ref }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy-homolog:
+    name: Deploy to VPS homologation
+    runs-on: ubuntu-latest
+    needs: docker
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    environment:
+      name: homologacao
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy compose file to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          source: "docker-compose.yml"
+          target: ${{ vars.DEPLOY_PATH }}
+          overwrite: true
+
+      - name: Deploy on VPS
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          APP_IMAGE: ${{ needs.docker.outputs.image_ref }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_TOKEN: ${{ secrets.GHCR_TOKEN }}
+          VPS_APP_ENV_B64: ${{ secrets.VPS_APP_ENV_B64 }}
+          APP_HOST: ${{ vars.APP_HOST }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          APP_HOST_PORT: ${{ vars.APP_HOST_PORT }}
+          APP_BIND_IP: ${{ vars.APP_BIND_IP }}
+          DB_DOCKER_NETWORK: ${{ vars.DB_DOCKER_NETWORK }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          TRAEFIK_ENABLE: ${{ vars.TRAEFIK_ENABLE }}
+          TRAEFIK_ENTRYPOINTS: ${{ vars.TRAEFIK_ENTRYPOINTS }}
+          TRAEFIK_CERTRESOLVER: ${{ vars.TRAEFIK_CERTRESOLVER }}
+          TRAEFIK_DOCKER_NETWORK: ${{ vars.TRAEFIK_DOCKER_NETWORK }}
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          envs: APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN,VPS_APP_ENV_B64,APP_HOST,APP_PORT,APP_HOST_PORT,APP_BIND_IP,DB_DOCKER_NETWORK,DEPLOY_PATH,TRAEFIK_ENABLE,TRAEFIK_ENTRYPOINTS,TRAEFIK_CERTRESOLVER,TRAEFIK_DOCKER_NETWORK
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            DEPLOY_PATH="${DEPLOY_PATH:-/docker/smartdocplan}"
+            mkdir -p "$DEPLOY_PATH"
+
+            printf '%s' "$VPS_APP_ENV_B64" | base64 -d > "$DEPLOY_PATH/.env"
+            cat <<EOF >> "$DEPLOY_PATH/.env"
+            APP_IMAGE=${APP_IMAGE}
+            APP_HOST=${APP_HOST:-srv1450720.hstgr.cloud}
+            APP_PORT=${APP_PORT:-5000}
+            APP_HOST_PORT=${APP_HOST_PORT:-8080}
+            APP_BIND_IP=${APP_BIND_IP:-127.0.0.1}
+            DB_DOCKER_NETWORK=${DB_DOCKER_NETWORK:-postgresql-evkn_default}
+            TRAEFIK_ENABLE=${TRAEFIK_ENABLE:-true}
+            TRAEFIK_ENTRYPOINTS=${TRAEFIK_ENTRYPOINTS:-websecure}
+            TRAEFIK_CERTRESOLVER=${TRAEFIK_CERTRESOLVER:-letsencrypt}
+            TRAEFIK_DOCKER_NETWORK=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}
+            EOF
+
+            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
+
+            NETWORK_NAME="${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}"
+            docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || docker network create "$NETWORK_NAME"
+            DB_NETWORK_NAME="${DB_DOCKER_NETWORK:-postgresql-evkn_default}"
+            docker network inspect "$DB_NETWORK_NAME" >/dev/null 2>&1 || docker network create "$DB_NETWORK_NAME"
+
+            cd "$DEPLOY_PATH"
+            docker compose -f docker-compose.yml pull
+            docker compose -f docker-compose.yml up -d --remove-orphans
+
+            ATTEMPTS=0
+            STATUS=""
+            until [ "$ATTEMPTS" -ge 30 ]; do
+              STATUS="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' smartdocplan-app 2>/dev/null || true)"
+              if [ "$STATUS" = "healthy" ]; then
+                break
+              fi
+              ATTEMPTS=$((ATTEMPTS + 1))
+              sleep 10
+            done
+
+            if [ "$STATUS" != "healthy" ]; then
+              echo "Container did not become healthy. Current status: ${STATUS:-unknown}"
+              docker compose -f docker-compose.yml logs --tail=200
+              exit 1
+            fi
+
+            docker image prune -af --filter "until=168h" || true

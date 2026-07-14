@@ -58,10 +58,10 @@ async function insertAuditLog(opts: {
       entityId: opts.entidadeId ?? null,
       details: opts.dadosDepois ? JSON.stringify(opts.dadosDepois) : null,
     } as any);
-  } catch { /* nÃ£o bloquear a operaÃ§Ã£o principal */ }
+  } catch { /* não bloquear a operação principal */ }
 }
 
-/** Verifica se o usuÃ¡rio Ã© da plataforma (admin, analista ou auditor) */
+/** Verifica se o usuário é da plataforma (admin, analista ou auditor) */
 function canAccessCompany(userRole: string, userCompanyId: number | null | undefined, targetCompanyId: number) {
   if (isPlatformUser(userRole)) return true;
   return userCompanyId === targetCompanyId;
@@ -92,7 +92,7 @@ function normalizeCompanyPayload(input: {
   if (input.cnpj !== undefined) {
     const cnpj = normalizeOptionalText(input.cnpj);
     if (cnpj) {
-      if (!isValidCnpj(cnpj)) throw new Error("Informe um CNPJ vÃ¡lido.");
+      if (!isValidCnpj(cnpj)) throw new Error("Informe um CNPJ válido.");
       payload.cnpj = formatCnpj(cnpj);
     } else {
       payload.cnpj = null;
@@ -104,7 +104,7 @@ function normalizeCompanyPayload(input: {
   if (input.telefone !== undefined) {
     const telefone = normalizeOptionalText(input.telefone);
     if (telefone) {
-      if (!isValidPhone(telefone)) throw new Error("Informe um telefone vÃ¡lido com DDD.");
+      if (!isValidPhone(telefone)) throw new Error("Informe um telefone válido com DDD.");
       payload.telefone = formatPhone(telefone);
     } else {
       payload.telefone = null;
@@ -126,28 +126,28 @@ function assertMinimumEmployeeAge(dataNascimento?: string) {
 async function getEmployeeByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
   const result = await db!.select().from(employees).where(eq(employees.id, id)).limit(1);
   const employee = result[0];
-  if (!employee) throw new Error("Colaborador nÃ£o encontrado");
+  if (!employee) throw new Error("Colaborador não encontrado");
   return employee;
 }
 
 async function getPositionByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
   const result = await db!.select().from(positions).where(eq(positions.id, id)).limit(1);
   const position = result[0];
-  if (!position) throw new Error("FunÃ§Ã£o nÃ£o encontrada");
+  if (!position) throw new Error("Função não encontrada");
   return position;
 }
 
 async function getRequestByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
   const result = await db!.select().from(requests).where(eq(requests.id, id)).limit(1);
   const request = result[0];
-  if (!request) throw new Error("SolicitaÃ§Ã£o nÃ£o encontrada");
+  if (!request) throw new Error("Solicitação não encontrada");
   return request;
 }
 
 async function getTicketByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
   const result = await db!.select().from(tickets).where(eq(tickets.id, id)).limit(1);
   const ticket = result[0];
-  if (!ticket) throw new Error("Chamado nÃ£o encontrado");
+  if (!ticket) throw new Error("Chamado não encontrado");
   return ticket;
 }
 
@@ -159,7 +159,7 @@ const companiesRouter = router({
     if (isPlatformUser(ctx.user.role)) {
       return db.select().from(companies).orderBy(desc(companies.createdAt));
     }
-    // UsuÃ¡rio de empresa sÃ³ vÃª a prÃ³pria empresa
+    // Usuário de empresa só vê a própria empresa
     if (!ctx.user.companyId) return [];
     return db.select().from(companies).where(eq(companies.id, ctx.user.companyId));
   }),
@@ -406,14 +406,14 @@ const employeesRouter = router({
     telefone: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode cadastrar colaboradores.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar colaboradores.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     if (!isValidCpf(input.cpf)) {
-      throw new Error("Informe um CPF vÃ¡lido.");
+      throw new Error("Informe um CPF válido.");
     }
     if (input.telefone && !isValidPhone(input.telefone)) {
-      throw new Error("Informe um telefone vÃ¡lido com DDD.");
+      throw new Error("Informe um telefone válido com DDD.");
     }
     assertMinimumEmployeeAge(input.dataNascimento);
     await db.insert(employees).values({
@@ -448,10 +448,10 @@ const employeesRouter = router({
     if (!db) throw new Error("DB unavailable");
     const employee = await getEmployeeByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar colaboradores.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar colaboradores.");
     const { id, ...data } = input;
     if (data.telefone && !isValidPhone(data.telefone)) {
-      throw new Error("Informe um telefone vÃ¡lido com DDD.");
+      throw new Error("Informe um telefone válido com DDD.");
     }
     const payload = {
       ...data,
@@ -497,7 +497,7 @@ const requestsRouter = router({
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    // companyId = 0 significa "todas" â€” apenas para platform users
+    // companyId = 0 significa "todas" — apenas para platform users
     if (input.companyId === 0) {
       if (!isPlatformUser(ctx.user.role)) return [];
       const conditions = [];
@@ -532,7 +532,7 @@ const requestsRouter = router({
     prioridade: z.enum(["baixa","media","alta","urgente"]).default("media"),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canCreateRequests(ctx.user.role), "Seu perfil nÃ£o pode abrir solicitaÃ§Ãµes.");
+    assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode abrir solicitações.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const { positionId, ...requestData } = input;
@@ -597,7 +597,7 @@ const requestsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const request = await getRequestByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
-    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil nÃ£o pode alterar o status da solicitaÃ§Ã£o.");
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status da solicitação.");
     const updateData: Record<string, unknown> = { status: input.status };
     if (input.observacoes) updateData.observacoes = input.observacoes;
     if (input.status === "concluido") updateData.concluidoAt = new Date();
@@ -670,7 +670,7 @@ const ticketsRouter = router({
     prioridade: z.enum(["baixa","media","alta","urgente"]).default("media"),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canCreateTickets(ctx.user.role), "Seu perfil nÃ£o pode abrir chamados.");
+    assertAccess(canCreateTickets(ctx.user.role), "Seu perfil não pode abrir chamados.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(tickets).values({ ...input, criadoPor: ctx.user.id });
@@ -686,7 +686,7 @@ const ticketsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const ticket = await getTicketByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId), "Acesso negado");
-    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil nÃ£o pode alterar o status do chamado.");
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status do chamado.");
     const updateData: Record<string, unknown> = { status: input.status };
     if (input.status === "resolvido" || input.status === "fechado") updateData.resolvidoAt = new Date();
     await db.update(tickets).set(updateData).where(eq(tickets.id, input.id));
@@ -728,7 +728,7 @@ const positionsRouter = router({
     cbo: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode cadastrar cargos.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar cargos.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(positions).values({
@@ -757,7 +757,7 @@ const positionsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const position = await getPositionByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar cargos.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar cargos.");
 
     const payload = {
       nome: input.nome.trim(),
@@ -798,7 +798,7 @@ const worksitesRouter = router({
     dataFim: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode cadastrar frentes de trabalho.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar frentes de trabalho.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(worksites).values({
@@ -831,9 +831,9 @@ const worksitesRouter = router({
     if (!db) throw new Error("DB unavailable");
     const result = await db.select().from(worksites).where(eq(worksites.id, input.id)).limit(1);
     const worksite = result[0];
-    if (!worksite) throw new Error("Frente / local nÃ£o encontrado");
+    if (!worksite) throw new Error("Frente / local não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, worksite.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar frentes de trabalho.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar frentes de trabalho.");
 
     const payload = {
       nome: input.nome.trim(),
@@ -956,13 +956,13 @@ const positionRequirementsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const position = await getPositionByIdOrThrow(db, input.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar requisitos por funÃ§Ã£o.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
 
     if (input.legalRequirementId) {
       const legalResult = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.legalRequirementId)).limit(1);
       const legalRequirement = legalResult[0];
       if (!legalRequirement || legalRequirement.companyId !== position.companyId) {
-        throw new Error("O requisito legal informado nÃ£o pertence Ã  mesma empresa.");
+        throw new Error("O requisito legal informado não pertence à mesma empresa.");
       }
     }
 
@@ -1008,16 +1008,16 @@ const positionRequirementsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const result = await db.select().from(positionRequirements).where(eq(positionRequirements.id, input.id)).limit(1);
     const requirement = result[0];
-    if (!requirement) throw new Error("Requisito da funÃ§Ã£o nÃ£o encontrado");
+    if (!requirement) throw new Error("Requisito da função não encontrado");
     const position = await getPositionByIdOrThrow(db, requirement.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar requisitos por funÃ§Ã£o.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
 
     if (input.legalRequirementId) {
       const legalResult = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.legalRequirementId)).limit(1);
       const legalRequirement = legalResult[0];
       if (!legalRequirement || legalRequirement.companyId !== position.companyId) {
-        throw new Error("O requisito legal informado nÃ£o pertence Ã  mesma empresa.");
+        throw new Error("O requisito legal informado não pertence à mesma empresa.");
       }
     }
 
@@ -1049,10 +1049,10 @@ const positionRequirementsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const result = await db.select().from(positionRequirements).where(eq(positionRequirements.id, input.id)).limit(1);
     const requirement = result[0];
-    if (!requirement) throw new Error("Requisito da funÃ§Ã£o nÃ£o encontrado");
+    if (!requirement) throw new Error("Requisito da função não encontrado");
     const position = await getPositionByIdOrThrow(db, requirement.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar requisitos por funÃ§Ã£o.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
 
     await db.update(positionRequirements).set({ ativo: false }).where(eq(positionRequirements.id, input.id));
     await insertAuditLog({
@@ -1088,7 +1088,7 @@ const legalReqRouter = router({
     descricao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar a matriz legal.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(legalRequirements).values({
@@ -1120,9 +1120,9 @@ const legalReqRouter = router({
     if (!db) throw new Error("DB unavailable");
     const result = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.id)).limit(1);
     const requirement = result[0];
-    if (!requirement) throw new Error("Requisito legal nÃƒÂ£o encontrado");
+    if (!requirement) throw new Error("Requisito legal não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, requirement.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃƒÂ£o pode editar a matriz legal.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
 
     const payload = {
       norma: input.norma.trim(),
@@ -1149,9 +1149,9 @@ const legalReqRouter = router({
     if (!db) throw new Error("DB unavailable");
     const result = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.id)).limit(1);
     const requirement = result[0];
-    if (!requirement) throw new Error("Requisito legal nÃ£o encontrado");
+    if (!requirement) throw new Error("Requisito legal não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, requirement.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode editar a matriz legal.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
     await db.update(legalRequirements).set({ ativo: false }).where(eq(legalRequirements.id, input.id));
     await insertAuditLog({
       userId: ctx.user.id,
@@ -1189,12 +1189,12 @@ const auditRouter = router({
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(auditLogs.createdAt))
       .limit(input.limit);
-    // Enriquecer com nome do usuÃ¡rio
+    // Enriquecer com nome do usuário
     return rows;
   }),
 });
 
-// â”€â”€â”€ USERS ROUTER (gestÃ£o de usuÃ¡rios das empresas) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// USERS ROUTER (gestão de usuários das empresas)
 const usersRouter = router({
   create: superAdminProcedure.input(z.object({
     name: z.string().min(1),
@@ -1304,7 +1304,7 @@ const employeeDocsRouter = router({
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil nÃ£o pode enviar documentos de colaboradores.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     await db.insert(employeeDocuments).values({
@@ -1360,7 +1360,7 @@ const dashboardRouter = router({
 
 // â”€â”€â”€ APP ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const documentTemplatesRouter = router({
-  // Listar templates por tipo de solicitaÃ§Ã£o
+  // Listar templates por tipo de solicitação
   listByTipo: protectedProcedure.input(z.object({
     tipoSolicitacao: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]),
   })).query(async ({ input }) => {
@@ -1421,7 +1421,7 @@ const documentTemplatesRouter = router({
 
 // â”€â”€â”€ REQUEST DOCUMENT UPLOADS ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const requestDocUploadsRouter = router({
-  // Listar uploads de uma solicitaÃ§Ã£o
+  // Listar uploads de uma solicitação
   listByRequest: protectedProcedure.input(z.object({ requestId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
@@ -1432,7 +1432,7 @@ const requestDocUploadsRouter = router({
       .orderBy(requestDocumentUploads.categoria, requestDocumentUploads.nome);
   }),
 
-  // Upload de documento (base64) â€” empresa faz upload
+  // Upload de documento (base64) — empresa faz upload
   upload: protectedProcedure.input(z.object({
     requestId: z.number(),
     templateId: z.number().optional(),
@@ -1453,7 +1453,7 @@ const requestDocUploadsRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
     assertAccess(
       canCreateRequests(ctx.user.role) || canManageRequestWorkflow(ctx.user.role),
-      "Seu perfil nÃ£o pode enviar documentos da solicitaÃ§Ã£o."
+      "Seu perfil não pode enviar documentos da solicitação."
     );
 
     // Salvar arquivo em disco local (simples, sem S3)
@@ -1525,7 +1525,7 @@ const requestDocUploadsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
-    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil nÃ£o pode avaliar documentos.");
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode avaliar documentos.");
     await db.update(requestDocumentUploads).set({
       status: input.status,
       motivoReprovacao: input.motivoReprovacao ?? null,
@@ -1545,12 +1545,12 @@ const requestDocUploadsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const result = await db.select().from(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id)).limit(1);
     const upload = result[0];
-    if (!upload) throw new Error("Documento nÃ£o encontrado");
+    if (!upload) throw new Error("Documento não encontrado");
     const request = await getRequestByIdOrThrow(db, upload.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
     assertAccess(
       canCreateRequests(ctx.user.role) || canManageRequestWorkflow(ctx.user.role),
-      "Seu perfil nÃ£o pode excluir documentos da solicitaÃ§Ã£o."
+      "Seu perfil não pode excluir documentos da solicitação."
     );
     await db.delete(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
     return { success: true };
@@ -1565,7 +1565,7 @@ export const appRouter = router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
-      // Limpar o cookie com todas as variantes para garantir remoÃ§Ã£o
+      // Limpar o cookie com todas as variantes para garantir remoção
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: 0 });
       ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", maxAge: 0 });
       ctx.res.clearCookie(COOKIE_NAME, { httpOnly: true, path: "/", secure: true, sameSite: "none", maxAge: 0 });
