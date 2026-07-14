@@ -27,7 +27,7 @@ services:
       - "traefik.http.services.smartdocplan.loadbalancer.server.port=${APP_PORT:-5000}"
       - "traefik.docker.network=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}"
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:${APP_PORT:-5000}/api/trpc/system.health?input=%7B%22timestamp%22%3A0%7D"]
+      test: ["CMD", "wget", "-qO-", "http://localhost:${APP_PORT:-5000}/api/trpc/system.health?input=%7B%22json%22%3A%7B%22timestamp%22%3A0%7D%7D"]
       interval: 30s
       timeout: 10s
       retries: 5

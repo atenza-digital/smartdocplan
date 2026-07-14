@@ -138,20 +138,19 @@ jobs:
             DEPLOY_PATH="${DEPLOY_PATH:-/docker/smartdocplan}"
             mkdir -p "$DEPLOY_PATH"
 
-            printf '%s' "$VPS_APP_ENV_B64" | base64 -d > "$DEPLOY_PATH/.env"
-            printf '\n' >> "$DEPLOY_PATH/.env"
-            cat <<EOF >> "$DEPLOY_PATH/.env"
-            APP_IMAGE=${APP_IMAGE}
-            APP_HOST=${APP_HOST:-srv1450720.hstgr.cloud}
-            APP_PORT=${APP_PORT:-5000}
-            APP_HOST_PORT=${APP_HOST_PORT:-8080}
-            APP_BIND_IP=${APP_BIND_IP:-127.0.0.1}
-            DB_DOCKER_NETWORK=${DB_DOCKER_NETWORK:-postgresql-evkn_default}
-            TRAEFIK_ENABLE=${TRAEFIK_ENABLE:-true}
-            TRAEFIK_ENTRYPOINTS=${TRAEFIK_ENTRYPOINTS:-websecure}
-            TRAEFIK_CERTRESOLVER=${TRAEFIK_CERTRESOLVER:-letsencrypt}
-            TRAEFIK_DOCKER_NETWORK=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}
-            EOF
+            printf '%s' "$VPS_APP_ENV_B64" | base64 -d | tr -d '\r' > "$DEPLOY_PATH/.env"
+            printf '%s\n' \
+              "APP_IMAGE=${APP_IMAGE}" \
+              "APP_HOST=${APP_HOST:-srv1450720.hstgr.cloud}" \
+              "APP_PORT=${APP_PORT:-5000}" \
+              "APP_HOST_PORT=${APP_HOST_PORT:-8080}" \
+              "APP_BIND_IP=${APP_BIND_IP:-127.0.0.1}" \
+              "DB_DOCKER_NETWORK=${DB_DOCKER_NETWORK:-postgresql-evkn_default}" \
+              "TRAEFIK_ENABLE=${TRAEFIK_ENABLE:-true}" \
+              "TRAEFIK_ENTRYPOINTS=${TRAEFIK_ENTRYPOINTS:-websecure}" \
+              "TRAEFIK_CERTRESOLVER=${TRAEFIK_CERTRESOLVER:-letsencrypt}" \
+              "TRAEFIK_DOCKER_NETWORK=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}" \
+              >> "$DEPLOY_PATH/.env"
 
             echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
 
