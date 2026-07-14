@@ -139,6 +139,7 @@ jobs:
             mkdir -p "$DEPLOY_PATH"
 
             printf '%s' "$VPS_APP_ENV_B64" | base64 -d > "$DEPLOY_PATH/.env"
+            printf '\n' >> "$DEPLOY_PATH/.env"
             cat <<EOF >> "$DEPLOY_PATH/.env"
             APP_IMAGE=${APP_IMAGE}
             APP_HOST=${APP_HOST:-srv1450720.hstgr.cloud}
