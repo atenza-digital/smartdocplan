@@ -131,7 +131,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
           envs: APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN,VPS_APP_ENV_B64,APP_HOST,APP_PORT,APP_HOST_PORT,APP_BIND_IP,DB_DOCKER_NETWORK,DEPLOY_PATH,TRAEFIK_ENABLE,TRAEFIK_ENTRYPOINTS,TRAEFIK_CERTRESOLVER,TRAEFIK_DOCKER_NETWORK
-          script_stop: true
           script: |
             set -euo pipefail
 
