@@ -31,6 +31,8 @@ import {
 import { cn } from "@/lib/utils";
 import { canSeeCompanySettings } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
+import NotificationCenter from "@/components/NotificationCenter";
+import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
 const SIDEBAR_STORAGE_KEY = "smartdocplan-company-sidebar-collapsed";
 
@@ -60,7 +62,7 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, effectiveCompanyId } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -211,6 +213,8 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            <PlatformCompanyScopeSwitch companyView />
+            <NotificationCenter />
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="text-muted-foreground">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>
@@ -247,7 +251,14 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          {user?.role === "platform_admin" && !effectiveCompanyId ? (
+            <div className="mb-4 rounded-xl border border-dashed border-border bg-card px-4 py-3 text-sm text-muted-foreground">
+              Selecione uma empresa no topo para operar nesta visão.
+            </div>
+          ) : null}
+          {children}
+        </main>
       </div>
     </div>
   );

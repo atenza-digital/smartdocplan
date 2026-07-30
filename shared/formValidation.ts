@@ -28,6 +28,14 @@ export function normalizeTextSearch(value: string) {
     .trim();
 }
 
+export function hasFullName(value: string) {
+  const parts = value
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  return parts.length >= 2;
+}
+
 export function onlyDigits(value: string) {
   return value.replace(/\D/g, "");
 }

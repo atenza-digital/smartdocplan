@@ -34,6 +34,8 @@ import {
 import { cn } from "@/lib/utils";
 import { canManagePlatformSettings } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
+import NotificationCenter from "@/components/NotificationCenter";
+import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
 const SIDEBAR_STORAGE_KEY = "smartdocplan-admin-sidebar-collapsed";
 
@@ -216,6 +218,8 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            <PlatformCompanyScopeSwitch />
+            <NotificationCenter />
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="text-muted-foreground">
               {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
             </Button>

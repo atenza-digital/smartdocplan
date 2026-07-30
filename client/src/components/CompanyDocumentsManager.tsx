@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { AlertTriangle, CalendarClock, CheckCircle2, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
+import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 
 const COMPANY_DOCUMENT_TYPES = [
@@ -22,6 +22,7 @@ const COMPANY_DOCUMENT_TYPES = [
 type UploadForm = {
   tipo: string;
   nome: string;
+  dataEmissao: string;
   validade: string;
   observacao: string;
 };
@@ -29,6 +30,7 @@ type UploadForm = {
 type EditForm = {
   id: number;
   nome: string;
+  dataEmissao: string;
   validade: string;
   observacao: string;
 };
@@ -77,7 +79,7 @@ export default function CompanyDocumentsManager({
 
   const [uploadTarget, setUploadTarget] = useState<(typeof COMPANY_DOCUMENT_TYPES)[number] | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [uploadForm, setUploadForm] = useState<UploadForm>({ tipo: "", nome: "", validade: "", observacao: "" });
+  const [uploadForm, setUploadForm] = useState<UploadForm>({ tipo: "", nome: "", dataEmissao: "", validade: "", observacao: "" });
   const [editForm, setEditForm] = useState<EditForm | null>(null);
 
   const createMutation = trpc.companyDocuments.create.useMutation({
@@ -87,7 +89,7 @@ export default function CompanyDocumentsManager({
       await utils.companyDocuments.statsByCompany.invalidate({ companyId });
       setUploadTarget(null);
       setSelectedFile(null);
-      setUploadForm({ tipo: "", nome: "", validade: "", observacao: "" });
+      setUploadForm({ tipo: "", nome: "", dataEmissao: "", validade: "", observacao: "" });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -132,7 +134,7 @@ export default function CompanyDocumentsManager({
   const handleOpenUpload = (target: (typeof COMPANY_DOCUMENT_TYPES)[number]) => {
     setUploadTarget(target);
     setSelectedFile(null);
-    setUploadForm({ tipo: target.tipo, nome: target.nome, validade: "", observacao: "" });
+    setUploadForm({ tipo: target.tipo, nome: target.nome, dataEmissao: "", validade: "", observacao: "" });
   };
 
   const handleUpload = async () => {
@@ -149,6 +151,7 @@ export default function CompanyDocumentsManager({
       companyId,
       tipo: uploadForm.tipo,
       nome: uploadForm.nome.trim() || uploadTarget.nome,
+      dataEmissao: uploadForm.dataEmissao || undefined,
       validade: uploadForm.validade || undefined,
       observacao: uploadForm.observacao.trim() || undefined,
       fileNome: selectedFile.name,
@@ -218,13 +221,20 @@ export default function CompanyDocumentsManager({
                       <div className="space-y-1 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">{latest.nome}</p>
                         <p>Última atualização: {formatDate(latest.updatedAt) ?? "-"}</p>
+                        {latest.dataEmissao ? <p>Emissão: {formatDate(latest.dataEmissao)}</p> : null}
                         {latest.validade ? <p>Validade: {formatDate(latest.validade)}</p> : null}
                         {latest.observacao ? <p className="whitespace-pre-wrap">{latest.observacao}</p> : null}
                         {latest.fileUrl ? (
-                          <a href={latest.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
-                            <FileText className="h-3.5 w-3.5" />
-                            Ver arquivo
-                          </a>
+                          <div className="flex flex-wrap items-center gap-3">
+                            <a href={latest.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+                              <FileText className="h-3.5 w-3.5" />
+                              Ver arquivo
+                            </a>
+                            <a href={latest.fileUrl} download={latest.nome} className="inline-flex items-center gap-1 text-primary hover:underline">
+                              <Download className="h-3.5 w-3.5" />
+                              Download
+                            </a>
+                          </div>
                         ) : null}
                       </div>
                     ) : (
@@ -250,6 +260,7 @@ export default function CompanyDocumentsManager({
                               setEditForm({
                                 id: latest.id,
                                 nome: latest.nome,
+                                dataEmissao: latest.dataEmissao ? new Date(latest.dataEmissao).toISOString().slice(0, 10) : "",
                                 validade: latest.validade ? new Date(latest.validade).toISOString().slice(0, 10) : "",
                                 observacao: latest.observacao ?? "",
                               })
@@ -290,9 +301,14 @@ export default function CompanyDocumentsManager({
                             </p>
                           </div>
                           {doc.fileUrl ? (
-                            <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
-                              Abrir
-                            </a>
+                            <div className="flex items-center gap-3">
+                              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">
+                                Abrir
+                              </a>
+                              <a href={doc.fileUrl} download={doc.nome} className="text-primary hover:underline">
+                                Download
+                              </a>
+                            </div>
                           ) : null}
                         </div>
                       ))}
@@ -334,6 +350,10 @@ export default function CompanyDocumentsManager({
               <Input type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
             </div>
             <div className="space-y-1.5">
+              <Label>Data de emissão</Label>
+              <Input type="date" value={uploadForm.dataEmissao} onChange={(event) => setUploadForm((current) => ({ ...current, dataEmissao: event.target.value }))} />
+            </div>
+            <div className="space-y-1.5">
               <Label>Validade</Label>
               <Input type="date" value={uploadForm.validade} onChange={(event) => setUploadForm((current) => ({ ...current, validade: event.target.value }))} />
             </div>
@@ -369,6 +389,10 @@ export default function CompanyDocumentsManager({
                 <Input value={editForm.nome} onChange={(event) => setEditForm((current) => (current ? { ...current, nome: event.target.value } : current))} />
               </div>
               <div className="space-y-1.5">
+                <Label>Data de emissão</Label>
+                <Input type="date" value={editForm.dataEmissao} onChange={(event) => setEditForm((current) => (current ? { ...current, dataEmissao: event.target.value } : current))} />
+              </div>
+              <div className="space-y-1.5">
                 <Label>Validade</Label>
                 <Input type="date" value={editForm.validade} onChange={(event) => setEditForm((current) => (current ? { ...current, validade: event.target.value } : current))} />
               </div>
@@ -391,6 +415,7 @@ export default function CompanyDocumentsManager({
                 updateMutation.mutate({
                   id: editForm.id,
                   nome: editForm.nome.trim(),
+                  dataEmissao: editForm.dataEmissao || undefined,
                   validade: editForm.validade || undefined,
                   observacao: editForm.observacao.trim() || undefined,
                 });

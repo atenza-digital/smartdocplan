@@ -35,6 +35,7 @@ import { canCreateRequests, canManageCompanyData } from "@shared/permissions";
 import {
   formatCpf,
   getBirthDateMax,
+  hasFullName,
   isAtLeastYearsOld,
   isValidCpf,
   normalizeCpf,
@@ -90,7 +91,7 @@ const REQUEST_CATEGORY_LABELS: Record<string, string> = {
 };
 
 export default function EmpresaNovaSolicitacao() {
-  const { user } = useAuth();
+  const { user, effectiveCompanyId } = useAuth();
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
   const canCreate = canCreateRequests(user?.role ?? null);
@@ -99,7 +100,7 @@ export default function EmpresaNovaSolicitacao() {
   const listRoute = isPlatformAdmin ? "/admin/solicitacoes" : "/empresa/solicitacoes";
   const LayoutComponent = isPlatformAdmin ? AdminLayout : CompanyLayout;
 
-  const [selectedCompanyId, setSelectedCompanyId] = useState(user?.companyId ? String(user.companyId) : "");
+  const [selectedCompanyId, setSelectedCompanyId] = useState(effectiveCompanyId ? String(effectiveCompanyId) : "");
   const [currentStep, setCurrentStep] = useState<StepId>(isPlatformAdmin ? "company" : "process");
   const [form, setForm] = useState({
     tipo: "admissao" as ProcessType,
@@ -129,12 +130,16 @@ export default function EmpresaNovaSolicitacao() {
   const [uploadForm, setUploadForm] = useState({ numeroDocumento: "", dataEmissao: "", validade: "" });
 
   useEffect(() => {
-    if (!isPlatformAdmin && user?.companyId) {
-      setSelectedCompanyId(String(user.companyId));
+    if (!isPlatformAdmin && effectiveCompanyId) {
+      setSelectedCompanyId(String(effectiveCompanyId));
+      return;
     }
-  }, [isPlatformAdmin, user?.companyId]);
+    if (isPlatformAdmin && effectiveCompanyId) {
+      setSelectedCompanyId(String(effectiveCompanyId));
+    }
+  }, [effectiveCompanyId, isPlatformAdmin]);
 
-  const companyId = isPlatformAdmin ? Number(selectedCompanyId || 0) : user?.companyId ?? 0;
+  const companyId = isPlatformAdmin ? Number(selectedCompanyId || effectiveCompanyId || 0) : effectiveCompanyId ?? 0;
   const maxBirthDate = getBirthDateMax(12);
 
   const { data: companies = [] } = trpc.companies.list.useQuery(undefined, { enabled: isPlatformAdmin });
@@ -377,6 +382,10 @@ export default function EmpresaNovaSolicitacao() {
 
       if (!form.nome.trim()) {
         return "Informe o nome da pessoa.";
+      }
+
+      if (!hasFullName(form.nome)) {
+        return "Informe nome e sobrenome da pessoa.";
       }
 
       if (!form.positionId) {

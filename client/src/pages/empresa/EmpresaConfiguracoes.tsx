@@ -91,11 +91,15 @@ const requirementProcessLabel: Record<string, string> = {
 };
 
 export default function EmpresaConfiguracoes() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
-  const canEdit = ["company_admin", "company_hr"].includes(user?.role ?? "");
+  const { user, effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
+  const canEdit = ["platform_admin", "company_admin", "company_hr"].includes(user?.role ?? "");
 
   const { data: empresa } = trpc.companies.get.useQuery({ id: companyId }, { enabled: companyId > 0 });
+  const { data: companyUpdateRequests = [], refetch: refetchCompanyUpdateRequests } = trpc.companyUpdateRequests.listByCompany.useQuery(
+    { companyId },
+    { enabled: companyId > 0 }
+  );
   const { data: cargos = [], refetch: refetchCargos } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: locais = [], refetch: refetchLocais } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: matrizLegal = [], refetch: refetchMatriz } = trpc.legalRequirements.list.useQuery({ companyId }, { enabled: companyId > 0 });
@@ -145,8 +149,11 @@ export default function EmpresaConfiguracoes() {
     });
   }, [cargos]);
 
-  const updateEmpresaMutation = trpc.companies.update.useMutation({
-    onSuccess: () => toast.success("Dados da empresa atualizados!"),
+  const updateEmpresaMutation = trpc.companyUpdateRequests.create.useMutation({
+    onSuccess: () => {
+      toast.success("Solicitação enviada para aprovação da SmartDocPlan.");
+      refetchCompanyUpdateRequests();
+    },
     onError: (error) => toast.error(error.message),
   });
 
@@ -271,7 +278,7 @@ export default function EmpresaConfiguracoes() {
     }
 
     updateEmpresaMutation.mutate({
-      id: companyId,
+      companyId,
       razaoSocial: form.razaoSocial.trim(),
       nomeFantasia: form.nomeFantasia.trim() || undefined,
       cnpj: form.cnpj.trim() || undefined,
@@ -450,6 +457,34 @@ export default function EmpresaConfiguracoes() {
           <TabsContent value="empresa" className="mt-4">
             <div className="max-w-5xl space-y-4">
             <Card className="max-w-2xl">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base font-semibold">Atualizações cadastrais</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  As alterações feitas nesta visão são enviadas para aprovação da SmartDocPlan antes de atualizar o cadastro oficial.
+                </p>
+                {companyUpdateRequests.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma solicitação registrada até o momento.</p>
+                ) : (
+                  <div className="space-y-2">
+                    {companyUpdateRequests.slice(0, 3).map((item) => (
+                      <div key={item.id} className="rounded-lg border border-border px-3 py-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium">Solicitação #{item.id}</p>
+                          <Badge variant="outline">{item.status}</Badge>
+                        </div>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {new Date(item.createdAt).toLocaleString("pt-BR")}
+                        </p>
+                        {item.motivo && <p className="mt-1 text-xs text-muted-foreground">{item.motivo}</p>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+            <Card className="max-w-2xl">
               <CardHeader className="pb-4">
                 <CardTitle className="flex items-center gap-2 text-base font-semibold">
                   <Building2 className="h-4 w-4 text-primary" />
@@ -516,7 +551,7 @@ export default function EmpresaConfiguracoes() {
                       disabled={updateEmpresaMutation.isPending}
                       className="bg-primary text-primary-foreground hover:bg-primary/90"
                     >
-                      {updateEmpresaMutation.isPending ? "Salvando..." : "Salvar alterações"}
+                      {updateEmpresaMutation.isPending ? "Enviando..." : "Enviar para aprovação"}
                     </Button>
                   </div>
                 )}

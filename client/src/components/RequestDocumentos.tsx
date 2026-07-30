@@ -16,6 +16,7 @@ import {
   Trash2,
   AlertCircle,
   CalendarDays,
+  Download,
   Hash,
   Plus,
 } from "lucide-react";
@@ -566,11 +567,18 @@ function DocItem({
             </Button>
           )}
           {doc.fileUrl && (
-            <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
-              <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="Visualizar">
-                <Eye className="h-3 w-3" />
-              </Button>
-            </a>
+            <>
+              <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer">
+                <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="Visualizar">
+                  <Eye className="h-3 w-3" />
+                </Button>
+              </a>
+              <a href={doc.fileUrl} download={doc.fileNome || doc.nome}>
+                <Button type="button" variant="ghost" size="icon" className="h-6 w-6" title="Download">
+                  <Download className="h-3 w-3" />
+                </Button>
+              </a>
+            </>
           )}
           {canReview && doc.status === "pendente" && doc.fileUrl && (
             <Button type="button" variant="ghost" size="icon" className="h-6 w-6 text-primary" title="Avaliar" onClick={onAvaliar}>

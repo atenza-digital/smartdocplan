@@ -8,8 +8,8 @@ import { AlertTriangle, CheckCircle2, Clock, Users, FolderOpen } from "lucide-re
 import { Link } from "wouter";
 
 export default function EmpresaPendencias() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
+  const { effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
 
   const { data: colaboradores = [], isLoading } = trpc.employees.list.useQuery(
     { companyId, status: "ativo" },

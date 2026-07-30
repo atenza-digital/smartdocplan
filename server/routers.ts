@@ -15,13 +15,15 @@ import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
-  legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads
+  legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads,
+  companyUpdateRequests, userNotifications
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql } from "drizzle-orm";
 import {
   formatCnpj,
   formatCpf,
   formatPhone,
+  hasFullName,
   isAtLeastYearsOld,
   isValidCnpj,
   isValidCpf,
@@ -116,10 +118,49 @@ function normalizeCompanyPayload(input: {
   return payload;
 }
 
+function parseJsonText<T>(value: string): T | null {
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return null;
+  }
+}
+
+async function createNotifications(opts: {
+  userIds: number[];
+  companyId?: number | null;
+  tipo?: string;
+  titulo: string;
+  mensagem?: string | null;
+  link?: string | null;
+}) {
+  if (!opts.userIds.length) return;
+  const db = await getDb();
+  if (!db) return;
+  const uniqueUserIds = Array.from(new Set(opts.userIds));
+  await db.insert(userNotifications).values(
+    uniqueUserIds.map((userId) => ({
+      userId,
+      companyId: opts.companyId ?? null,
+      tipo: opts.tipo ?? "geral",
+      titulo: opts.titulo,
+      mensagem: opts.mensagem ?? null,
+      link: opts.link ?? null,
+    })) as any,
+  );
+}
+
 function assertMinimumEmployeeAge(dataNascimento?: string) {
   if (!dataNascimento) return;
   if (!isAtLeastYearsOld(dataNascimento, 12)) {
     throw new Error("A pessoa deve ter pelo menos 12 anos completos.");
+  }
+}
+
+function assertFullName(value?: string) {
+  if (!value) return;
+  if (!hasFullName(value)) {
+    throw new Error("Informe o nome completo com nome e sobrenome.");
   }
 }
 
@@ -227,6 +268,235 @@ const companiesRouter = router({
   }),
 });
 
+const companyUpdateRequestsRouter = router({
+  listByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+
+    const items = await db
+      .select({
+        id: companyUpdateRequests.id,
+        companyId: companyUpdateRequests.companyId,
+        requestedBy: companyUpdateRequests.requestedBy,
+        requestedByName: users.name,
+        status: companyUpdateRequests.status,
+        payload: companyUpdateRequests.payload,
+        motivo: companyUpdateRequests.motivo,
+        reviewedBy: companyUpdateRequests.reviewedBy,
+        reviewedAt: companyUpdateRequests.reviewedAt,
+        createdAt: companyUpdateRequests.createdAt,
+        updatedAt: companyUpdateRequests.updatedAt,
+      })
+      .from(companyUpdateRequests)
+      .leftJoin(users, eq(users.id, companyUpdateRequests.requestedBy))
+      .where(eq(companyUpdateRequests.companyId, input.companyId))
+      .orderBy(desc(companyUpdateRequests.createdAt));
+
+    return items.map((item) => ({
+      ...item,
+      payload: parseJsonText<Record<string, unknown>>(item.payload) ?? {},
+    }));
+  }),
+
+  create: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    razaoSocial: z.string().min(1),
+    nomeFantasia: z.string().optional(),
+    cnpj: z.string().optional(),
+    email: z.string().email().optional(),
+    telefone: z.string().optional(),
+    motivo: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode solicitar alteração cadastral.");
+
+    const company = await db.select().from(companies).where(eq(companies.id, input.companyId)).limit(1);
+    const currentCompany = company[0];
+    if (!currentCompany) throw new Error("Empresa não encontrada");
+
+    const payload = normalizeCompanyPayload({
+      razaoSocial: input.razaoSocial,
+      nomeFantasia: input.nomeFantasia,
+      cnpj: input.cnpj,
+      email: input.email,
+      telefone: input.telefone,
+    });
+
+    const [created] = await db.insert(companyUpdateRequests).values({
+      companyId: input.companyId,
+      requestedBy: ctx.user.id,
+      status: "pendente",
+      payload: JSON.stringify(payload),
+      motivo: normalizeOptionalText(input.motivo) ?? null,
+    } as any).returning({ id: companyUpdateRequests.id });
+
+    const adminUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.role, "platform_admin"), eq(users.ativo, true)));
+
+    await createNotifications({
+      userIds: adminUsers.map((item) => item.id),
+      companyId: input.companyId,
+      tipo: "company_update_request",
+      titulo: "Atualização cadastral aguardando aprovação",
+      mensagem: `${ctx.user.name ?? "Usuário"} enviou uma solicitação para ${currentCompany.razaoSocial}.`,
+      link: `/admin/empresas/${input.companyId}`,
+    });
+
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "solicitou_atualizacao_empresa",
+      entidade: "company_update_requests",
+      entidadeId: created?.id ?? null,
+      dadosDepois: payload,
+    });
+
+    return { success: true };
+  }),
+
+  approve: superAdminProcedure.input(z.object({
+    requestId: z.number(),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(companyUpdateRequests).where(eq(companyUpdateRequests.id, input.requestId)).limit(1);
+    const request = result[0];
+    if (!request) throw new Error("Solicitação não encontrada");
+    if (request.status !== "pendente") throw new Error("Essa solicitação já foi tratada.");
+
+    const payload = parseJsonText<Record<string, unknown>>(request.payload);
+    if (!payload) throw new Error("Payload da solicitação inválido.");
+
+    await db.update(companies).set({
+      ...(payload as any),
+      updatedAt: new Date(),
+    }).where(eq(companies.id, request.companyId));
+
+    await db.update(companyUpdateRequests).set({
+      status: "aprovada",
+      reviewedBy: ctx.user.id,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    } as any).where(eq(companyUpdateRequests.id, request.id));
+
+    const companyUsers = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(and(
+        eq(users.companyId, request.companyId),
+        eq(users.ativo, true),
+        or(eq(users.role, "company_admin"), eq(users.role, "company_hr"))
+      ));
+
+    await createNotifications({
+      userIds: [request.requestedBy, ...companyUsers.map((item) => item.id)],
+      companyId: request.companyId,
+      tipo: "company_update_request_approved",
+      titulo: "Atualização cadastral aprovada",
+      mensagem: "A SmartDocPlan aprovou a atualização cadastral da empresa.",
+      link: "/empresa/configuracoes",
+    });
+
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: request.companyId,
+      acao: "aprovou_atualizacao_empresa",
+      entidade: "company_update_requests",
+      entidadeId: request.id,
+      dadosDepois: payload,
+    });
+
+    return { success: true };
+  }),
+
+  reject: superAdminProcedure.input(z.object({
+    requestId: z.number(),
+    motivo: z.string().min(3),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const result = await db.select().from(companyUpdateRequests).where(eq(companyUpdateRequests.id, input.requestId)).limit(1);
+    const request = result[0];
+    if (!request) throw new Error("Solicitação não encontrada");
+    if (request.status !== "pendente") throw new Error("Essa solicitação já foi tratada.");
+
+    await db.update(companyUpdateRequests).set({
+      status: "rejeitada",
+      motivo: input.motivo.trim(),
+      reviewedBy: ctx.user.id,
+      reviewedAt: new Date(),
+      updatedAt: new Date(),
+    } as any).where(eq(companyUpdateRequests.id, request.id));
+
+    await createNotifications({
+      userIds: [request.requestedBy],
+      companyId: request.companyId,
+      tipo: "company_update_request_rejected",
+      titulo: "Atualização cadastral devolvida",
+      mensagem: input.motivo.trim(),
+      link: "/empresa/configuracoes",
+    });
+
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: request.companyId,
+      acao: "rejeitou_atualizacao_empresa",
+      entidade: "company_update_requests",
+      entidadeId: request.id,
+      dadosDepois: { motivo: input.motivo.trim() },
+    });
+
+    return { success: true };
+  }),
+});
+
+const notificationsRouter = router({
+  list: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return [];
+    return db
+      .select()
+      .from(userNotifications)
+      .where(eq(userNotifications.userId, ctx.user.id))
+      .orderBy(desc(userNotifications.createdAt));
+  }),
+
+  unreadCount: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return { total: 0 };
+    const [countRow] = await db
+      .select({ total: sql<number>`count(*)` })
+      .from(userNotifications)
+      .where(and(eq(userNotifications.userId, ctx.user.id), sql`${userNotifications.lidaAt} IS NULL`));
+    return { total: countRow?.total ?? 0 };
+  }),
+
+  markRead: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.update(userNotifications).set({ lidaAt: new Date() } as any).where(and(
+      eq(userNotifications.id, input.id),
+      eq(userNotifications.userId, ctx.user.id),
+    ));
+    return { success: true };
+  }),
+
+  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    await db.update(userNotifications).set({ lidaAt: new Date() } as any).where(and(
+      eq(userNotifications.userId, ctx.user.id),
+      sql`${userNotifications.lidaAt} IS NULL`,
+    ));
+    return { success: true };
+  }),
+});
+
 const companyDocumentsRouter = router({
   listByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -275,6 +545,7 @@ const companyDocumentsRouter = router({
     companyId: z.number(),
     tipo: z.string().min(1),
     nome: z.string().min(1),
+    dataEmissao: z.string().optional(),
     validade: z.string().optional(),
     observacao: z.string().optional(),
     fileNome: z.string(),
@@ -303,6 +574,7 @@ const companyDocumentsRouter = router({
       nome: input.nome.trim(),
       fileUrl,
       fileKey: fileName,
+      dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : undefined,
       validade: input.validade ? new Date(input.validade) : undefined,
       observacao: normalizeOptionalText(input.observacao) ?? undefined,
     } as any);
@@ -320,6 +592,7 @@ const companyDocumentsRouter = router({
   update: protectedProcedure.input(z.object({
     id: z.number(),
     nome: z.string().min(1).optional(),
+    dataEmissao: z.string().optional(),
     validade: z.string().optional(),
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
@@ -333,6 +606,7 @@ const companyDocumentsRouter = router({
 
     const payload = {
       nome: input.nome?.trim() ?? doc.nome,
+      dataEmissao: input.dataEmissao !== undefined ? (input.dataEmissao ? new Date(input.dataEmissao) : null) : undefined,
       validade: input.validade !== undefined ? (input.validade ? new Date(input.validade) : null) : undefined,
       observacao: input.observacao !== undefined ? normalizeOptionalText(input.observacao) ?? null : undefined,
     };
@@ -374,12 +648,16 @@ const employeesRouter = router({
   list: protectedProcedure.input(z.object({
     companyId: z.number(),
     status: z.enum(["ativo", "afastado", "desligado"]).optional(),
+    positionId: z.number().optional(),
+    worksiteId: z.number().optional(),
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
     const conditions = [eq(employees.companyId, input.companyId)];
     if (input.status) conditions.push(eq(employees.status, input.status));
+    if (input.positionId) conditions.push(eq(employees.positionId, input.positionId));
+    if (input.worksiteId) conditions.push(eq(employees.worksiteId, input.worksiteId));
     return db.select().from(employees).where(and(...conditions)).orderBy(employees.nome);
   }),
 
@@ -409,6 +687,7 @@ const employeesRouter = router({
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar colaboradores.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    assertFullName(input.nome);
     if (!isValidCpf(input.cpf)) {
       throw new Error("Informe um CPF válido.");
     }
@@ -450,8 +729,12 @@ const employeesRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar colaboradores.");
     const { id, ...data } = input;
+    assertFullName(data.nome);
     if (data.telefone && !isValidPhone(data.telefone)) {
       throw new Error("Informe um telefone válido com DDD.");
+    }
+    if (data.status && data.status !== employee.status && ctx.user.role !== "platform_admin") {
+      throw new Error("Somente o administrador SmartDocPlan pode inativar ou alterar o status do colaborador.");
     }
     const payload = {
       ...data,
@@ -494,6 +777,7 @@ const requestsRouter = router({
     companyId: z.number(),
     status: z.enum(["nova","em_analise","aguardando_correcao","aguardando_documentos","aprovado","concluido","rejeitado"]).optional(),
     tipo: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]).optional(),
+    employeeId: z.number().optional(),
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
@@ -503,12 +787,14 @@ const requestsRouter = router({
       const conditions = [];
       if (input.status) conditions.push(eq(requests.status, input.status));
       if (input.tipo) conditions.push(eq(requests.tipo, input.tipo));
+      if (input.employeeId) conditions.push(eq(requests.employeeId, input.employeeId));
       return db.select().from(requests).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(requests.createdAt));
     }
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
     const conditions = [eq(requests.companyId, input.companyId)] as any[];
     if (input.status) conditions.push(eq(requests.status, input.status));
     if (input.tipo) conditions.push(eq(requests.tipo, input.tipo));
+    if (input.employeeId) conditions.push(eq(requests.employeeId, input.employeeId));
     return db.select().from(requests).where(and(...conditions)).orderBy(desc(requests.createdAt));
   }),
 
@@ -1299,6 +1585,7 @@ const employeeDocsRouter = router({
     tipo: z.string().optional(),
     fileUrl: z.string().optional(),
     fileKey: z.string().optional(),
+    dataEmissao: z.string().optional(),
     validade: z.string().optional(),
     obrigatorio: z.boolean().default(true),
     observacao: z.string().optional(),
@@ -1309,6 +1596,7 @@ const employeeDocsRouter = router({
     if (!db) throw new Error("DB unavailable");
     await db.insert(employeeDocuments).values({
       ...input,
+      dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : undefined,
       validade: input.validade ? new Date(input.validade) : undefined,
       uploadedBy: ctx.user.id,
     } as any);
@@ -1573,8 +1861,10 @@ export const appRouter = router({
     }),
   }),
   companies: companiesRouter,
+  companyUpdateRequests: companyUpdateRequestsRouter,
   companyDocuments: companyDocumentsRouter,
   employees: employeesRouter,
+  notifications: notificationsRouter,
   requests: requestsRouter,
   tickets: ticketsRouter,
   positions: positionsRouter,

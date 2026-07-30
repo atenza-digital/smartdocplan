@@ -1,6 +1,8 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
 import { isCompanyUser, isPlatformUser } from "@shared/permissions";
 
+const COMPANY_SCOPE_STORAGE_KEY = "smartdocplan-platform-company-scope";
+
 export type LocalUser = {
   id: number;
   name: string | null;
@@ -22,12 +24,25 @@ type AuthContextType = AuthState & {
   isAuthenticated: boolean;
   isPlatformUser: boolean;
   isCompanyUser: boolean;
+  effectiveCompanyId: number | null;
+  scopedCompanyId: number | null;
+  setScopedCompanyId: (companyId: number | null) => void;
 };
 
 const LocalAuthContext = createContext<AuthContextType | null>(null);
 
 export function LocalAuthProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<AuthState>({ user: null, loading: true, error: null });
+  const [scopedCompanyId, setScopedCompanyIdState] = useState<number | null>(null);
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem(COMPANY_SCOPE_STORAGE_KEY);
+    if (!saved) return;
+    const parsed = Number(saved);
+    if (!Number.isNaN(parsed) && parsed > 0) {
+      setScopedCompanyIdState(parsed);
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     try {
@@ -65,11 +80,26 @@ export function LocalAuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
+    window.localStorage.removeItem(COMPANY_SCOPE_STORAGE_KEY);
+    setScopedCompanyIdState(null);
     setState({ user: null, loading: false, error: null });
+  }, []);
+
+  const setScopedCompanyId = useCallback((companyId: number | null) => {
+    if (!companyId) {
+      window.localStorage.removeItem(COMPANY_SCOPE_STORAGE_KEY);
+      setScopedCompanyIdState(null);
+      return;
+    }
+    window.localStorage.setItem(COMPANY_SCOPE_STORAGE_KEY, String(companyId));
+    setScopedCompanyIdState(companyId);
   }, []);
 
   const isPlatformUserValue = isPlatformUser(state.user?.role ?? null);
   const isCompanyUserValue = isCompanyUser(state.user?.role ?? null);
+  const effectiveCompanyId = isPlatformUserValue
+    ? scopedCompanyId
+    : (state.user?.companyId ?? null);
 
   return (
     <LocalAuthContext.Provider value={{
@@ -80,6 +110,9 @@ export function LocalAuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: !!state.user,
       isPlatformUser: isPlatformUserValue,
       isCompanyUser: isCompanyUserValue,
+      effectiveCompanyId,
+      scopedCompanyId,
+      setScopedCompanyId,
     }}>
       {children}
     </LocalAuthContext.Provider>

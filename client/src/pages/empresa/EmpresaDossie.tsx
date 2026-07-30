@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   FolderOpen, FileText, CheckCircle2, AlertCircle, Clock,
-  Upload, ArrowLeft, User, Calendar,
+  Upload, ArrowLeft, User, Calendar, Download, Briefcase, MapPin, Mail, Phone,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
@@ -46,6 +46,7 @@ export default function EmpresaDossie() {
     categoria: "pessoal" as const,
     nome: "",
     tipo: "",
+    dataEmissao: "",
     validade: "",
     fileUrl: "",
   });
@@ -58,13 +59,25 @@ export default function EmpresaDossie() {
     { employeeId },
     { enabled: employeeId > 0 }
   );
+  const { data: cargos = [] } = trpc.positions.list.useQuery(
+    { companyId: employee?.companyId ?? 0 },
+    { enabled: (employee?.companyId ?? 0) > 0 }
+  );
+  const { data: obras = [] } = trpc.worksites.list.useQuery(
+    { companyId: employee?.companyId ?? 0 },
+    { enabled: (employee?.companyId ?? 0) > 0 }
+  );
+  const { data: historicoSolicitacoes = [] } = trpc.requests.list.useQuery(
+    { companyId: employee?.companyId ?? 0, employeeId },
+    { enabled: (employee?.companyId ?? 0) > 0 && employeeId > 0 }
+  );
 
   const createDocMutation = trpc.employeeDocs.create.useMutation({
     onSuccess: () => {
       toast.success("Documento cadastrado com sucesso!");
       setShowUpload(false);
       refetch();
-      setUploadForm({ categoria: "pessoal", nome: "", tipo: "", validade: "", fileUrl: "" });
+      setUploadForm({ categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", fileUrl: "" });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -78,6 +91,9 @@ export default function EmpresaDossie() {
       </CompanyLayout>
     );
   }
+
+  const selectedCargo = cargos.find((cargo) => cargo.id === employee?.positionId);
+  const selectedObra = obras.find((obra) => obra.id === employee?.worksiteId);
 
   const scoreColor = (score: number) =>
     score >= 80 ? "text-green-600 dark:text-green-400" : score >= 50 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400";
@@ -122,16 +138,40 @@ export default function EmpresaDossie() {
                       </Badge>
                     </div>
                     <div className="flex flex-wrap gap-4 mt-3 text-xs text-muted-foreground">
+                      {selectedCargo && (
+                        <span className="flex items-center gap-1">
+                          <Briefcase className="w-3 h-3" />
+                          {selectedCargo.nome}
+                        </span>
+                      )}
+                      {selectedObra && (
+                        <span className="flex items-center gap-1">
+                          <MapPin className="w-3 h-3" />
+                          {selectedObra.nome}
+                        </span>
+                      )}
                       {employee.dataAdmissao && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
                           Admissão: {new Date(employee.dataAdmissao).toLocaleDateString("pt-BR")}
                         </span>
                       )}
+                      {employee.dataNascimento && (
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          Nascimento: {new Date(employee.dataNascimento).toLocaleDateString("pt-BR")}
+                        </span>
+                      )}
                       {employee.email && (
                         <span className="flex items-center gap-1">
-                          <User className="w-3 h-3" />
+                          <Mail className="w-3 h-3" />
                           {employee.email}
+                        </span>
+                      )}
+                      {employee.telefone && (
+                        <span className="flex items-center gap-1">
+                          <Phone className="w-3 h-3" />
+                          {employee.telefone}
                         </span>
                       )}
                     </div>
@@ -145,6 +185,49 @@ export default function EmpresaDossie() {
                     </div>
                   )}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border">
+              <CardContent className="p-5">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <h3 className="font-semibold text-foreground">Histórico do colaborador</h3>
+                    <p className="text-sm text-muted-foreground">
+                      Solicitações vinculadas e andamento completo deste colaborador.
+                    </p>
+                  </div>
+                  <Badge variant="outline">
+                    {historicoSolicitacoes.length} registro(s)
+                  </Badge>
+                </div>
+
+                {historicoSolicitacoes.length === 0 ? (
+                  <p className="mt-4 text-sm text-muted-foreground">
+                    Ainda não há solicitações vinculadas a este colaborador.
+                  </p>
+                ) : (
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    {historicoSolicitacoes.map((solicitacao) => (
+                      <div key={solicitacao.id} className="rounded-lg border border-border p-4">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-foreground">{solicitacao.titulo}</p>
+                            <p className="text-xs text-muted-foreground">{solicitacao.tipo}</p>
+                          </div>
+                          <Badge variant="outline">{solicitacao.status}</Badge>
+                        </div>
+                        <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                          <p>Criada em {new Date(solicitacao.createdAt).toLocaleDateString("pt-BR")}</p>
+                          <p>Prioridade: {solicitacao.prioridade}</p>
+                          {solicitacao.concluidoAt ? (
+                            <p>Concluída em {new Date(solicitacao.concluidoAt).toLocaleDateString("pt-BR")}</p>
+                          ) : null}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
 
@@ -207,6 +290,10 @@ export default function EmpresaDossie() {
               <Input value={uploadForm.tipo} onChange={(e) => setUploadForm({ ...uploadForm, tipo: e.target.value })} placeholder="Ex: PDF, Certificado, ASO" />
             </div>
             <div className="space-y-1.5">
+              <Label>Data de Emissão</Label>
+              <Input type="date" value={uploadForm.dataEmissao} onChange={(e) => setUploadForm({ ...uploadForm, dataEmissao: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
               <Label>Data de Validade</Label>
               <Input type="date" value={uploadForm.validade} onChange={(e) => setUploadForm({ ...uploadForm, validade: e.target.value })} />
             </div>
@@ -225,6 +312,7 @@ export default function EmpresaDossie() {
                 categoria: uploadForm.categoria,
                 nome: uploadForm.nome,
                 tipo: uploadForm.tipo || undefined,
+                dataEmissao: uploadForm.dataEmissao || undefined,
                 validade: uploadForm.validade || undefined,
                 fileUrl: uploadForm.fileUrl || undefined,
                 obrigatorio: true,
@@ -267,15 +355,26 @@ function DocGrid({ docs }: { docs: any[] }) {
                   </Badge>
                 </div>
                 {doc.tipo && <p className="text-xs text-muted-foreground mt-0.5">{doc.tipo}</p>}
+                {doc.dataEmissao && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Emissão: {new Date(doc.dataEmissao).toLocaleDateString("pt-BR")}
+                  </p>
+                )}
                 {doc.validade && (
                   <p className="text-xs text-muted-foreground mt-0.5">
                     Validade: {new Date(doc.validade).toLocaleDateString("pt-BR")}
                   </p>
                 )}
                 {doc.fileUrl && (
-                  <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline mt-1 inline-block">
-                    Ver documento
-                  </a>
+                  <div className="mt-2 flex flex-wrap items-center gap-3">
+                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline inline-block">
+                      Ver documento
+                    </a>
+                    <a href={doc.fileUrl} download={doc.nome} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                      <Download className="h-3 w-3" />
+                      Download
+                    </a>
+                  </div>
                 )}
               </div>
             </div>

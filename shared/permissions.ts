@@ -58,5 +58,5 @@ export function canSeeAdminManagement(role?: string | null) {
 }
 
 export function canSeeCompanySettings(role?: string | null) {
-  return role === "company_admin" || role === "company_hr";
+  return role === "platform_admin" || role === "company_admin" || role === "company_hr";
 }

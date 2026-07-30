@@ -17,6 +17,7 @@ import {
   formatCpf,
   formatPhone,
   getBirthDateMax,
+  hasFullName,
   isAtLeastYearsOld,
   isValidCpf,
   isValidPhone,
@@ -47,13 +48,15 @@ const emptyForm = {
 };
 
 export default function EmpresaColaboradores() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
+  const { user, effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
   const canCreate = canManageCompanyData(user?.role ?? null);
   const maxBirthDate = getBirthDateMax(12);
 
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("todos");
+  const [filterPosition, setFilterPosition] = useState("todos");
+  const [filterWorksite, setFilterWorksite] = useState("todos");
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
@@ -63,6 +66,9 @@ export default function EmpresaColaboradores() {
   );
   const { data: cargos = [] } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: obras = [] } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
+
+  const cargoMap = useMemo(() => new Map(cargos.map((cargo) => [cargo.id, cargo.nome])), [cargos]);
+  const obraMap = useMemo(() => new Map(obras.map((obra) => [obra.id, obra.nome])), [obras]);
 
   const createMutation = trpc.employees.create.useMutation({
     onSuccess: () => {
@@ -82,6 +88,12 @@ export default function EmpresaColaboradores() {
       const matchesStatus = filterStatus === "todos" || colaborador.status === filterStatus;
       if (!matchesStatus) return false;
 
+      const matchesPosition = filterPosition === "todos" || String(colaborador.positionId ?? "") === filterPosition;
+      if (!matchesPosition) return false;
+
+      const matchesWorksite = filterWorksite === "todos" || String(colaborador.worksiteId ?? "") === filterWorksite;
+      if (!matchesWorksite) return false;
+
       if (!normalizedSearch) return true;
 
       const searchableText = normalizeTextSearch(
@@ -91,11 +103,25 @@ export default function EmpresaColaboradores() {
 
       return searchableText.includes(normalizedSearch) || (!!digitSearch && cpfDigits.includes(digitSearch));
     });
-  }, [colaboradores, filterStatus, search]);
+  }, [colaboradores, filterPosition, filterStatus, filterWorksite, search]);
+
+  const fullNameValid = !form.nome.trim() || hasFullName(form.nome);
+  const birthDateValid = !form.dataNascimento || isAtLeastYearsOld(form.dataNascimento, 12);
+  const canSubmitCreate =
+    hasFullName(form.nome) &&
+    !!form.cpf.trim() &&
+    (!form.telefone.trim() || isValidPhone(form.telefone)) &&
+    birthDateValid &&
+    !createMutation.isPending;
 
   const handleCreate = () => {
     if (!form.nome.trim()) {
       toast.error("Informe o nome completo.");
+      return;
+    }
+
+    if (!hasFullName(form.nome)) {
+      toast.error("Informe nome e sobrenome do colaborador.");
       return;
     }
 
@@ -167,6 +193,34 @@ export default function EmpresaColaboradores() {
               <SelectItem value="desligado">Desligados</SelectItem>
             </SelectContent>
           </Select>
+
+          <Select value={filterPosition} onValueChange={setFilterPosition}>
+            <SelectTrigger className="w-52">
+              <SelectValue placeholder="Todas as funções" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todas as funções</SelectItem>
+              {cargos.map((cargo) => (
+                <SelectItem key={cargo.id} value={String(cargo.id)}>
+                  {cargo.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={filterWorksite} onValueChange={setFilterWorksite}>
+            <SelectTrigger className="w-52">
+              <SelectValue placeholder="Todos os locais" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Todos os locais</SelectItem>
+              {obras.map((obra) => (
+                <SelectItem key={obra.id} value={String(obra.id)}>
+                  {obra.nome}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -217,6 +271,22 @@ export default function EmpresaColaboradores() {
                   </div>
 
                   <div className="space-y-1 text-xs text-muted-foreground">
+                    {colaborador.positionId ? (
+                      <p>
+                        Função:{" "}
+                        <span className="text-foreground">
+                          {cargoMap.get(colaborador.positionId) ?? "Não informada"}
+                        </span>
+                      </p>
+                    ) : null}
+                    {colaborador.worksiteId ? (
+                      <p>
+                        Frente / local:{" "}
+                        <span className="text-foreground">
+                          {obraMap.get(colaborador.worksiteId) ?? "Não informada"}
+                        </span>
+                      </p>
+                    ) : null}
                     {colaborador.dataAdmissao && (
                       <p>
                         Admissão:{" "}
@@ -283,7 +353,9 @@ export default function EmpresaColaboradores() {
                   onChange={(event) => setForm((current) => ({ ...current, nome: event.target.value }))}
                   placeholder="Ex: João da Silva"
                   maxLength={255}
+                  aria-invalid={!fullNameValid}
                 />
+                {!fullNameValid && <p className="text-xs text-destructive">Informe nome e sobrenome do colaborador.</p>}
               </div>
 
               <div className="space-y-1.5">
@@ -302,7 +374,9 @@ export default function EmpresaColaboradores() {
                   value={form.dataNascimento}
                   max={maxBirthDate}
                   onChange={(event) => setForm((current) => ({ ...current, dataNascimento: event.target.value }))}
+                  aria-invalid={!birthDateValid}
                 />
+                {!birthDateValid && <p className="text-xs text-destructive">A pessoa deve ter pelo menos 12 anos completos.</p>}
               </div>
 
               <div className="space-y-1.5">
@@ -368,7 +442,7 @@ export default function EmpresaColaboradores() {
             </div>
 
             <p className="text-xs text-muted-foreground">
-              A data de nascimento aceita somente pessoas com 12 anos completos ou mais.
+              O nome deve conter nome e sobrenome. A data de nascimento aceita somente pessoas com 12 anos completos ou mais.
             </p>
           </div>
 
@@ -378,7 +452,7 @@ export default function EmpresaColaboradores() {
             </Button>
             <Button
               onClick={handleCreate}
-              disabled={!form.nome.trim() || !form.cpf.trim() || createMutation.isPending}
+              disabled={!canSubmitCreate}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {createMutation.isPending ? "Salvando..." : "Cadastrar"}

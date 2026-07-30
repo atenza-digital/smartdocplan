@@ -8,8 +8,8 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 const COLORS = ["#2BBFB3", "#1a9e93", "#3dd6ca", "#0d7a72", "#5ee8de"];
 
 export default function EmpresaBI() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
+  const { user, effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
 
   const { data: empStats } = trpc.employees.stats.useQuery(
     { companyId },

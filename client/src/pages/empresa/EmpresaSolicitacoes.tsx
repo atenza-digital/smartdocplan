@@ -52,8 +52,8 @@ const statusColors: Record<string, string> = {
 };
 
 export default function EmpresaSolicitacoes() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
+  const { user, effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
   const canCreate = canCreateRequests(user?.role ?? null);
 
   const [docModal, setDocModal] = useState<{ id: number; tipo: string; titulo: string } | null>(null);

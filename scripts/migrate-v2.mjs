@@ -85,6 +85,37 @@ try {
   `);
   console.log("request_document_uploads: tabela garantida");
 
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS company_update_requests (
+      id serial PRIMARY KEY,
+      "companyId" integer NOT NULL,
+      "requestedBy" integer NOT NULL,
+      status varchar(30) NOT NULL DEFAULT 'pendente',
+      payload text NOT NULL,
+      motivo text,
+      "reviewedBy" integer,
+      "reviewedAt" timestamp,
+      "createdAt" timestamp NOT NULL DEFAULT now(),
+      "updatedAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  console.log("company_update_requests: tabela garantida");
+
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS user_notifications (
+      id serial PRIMARY KEY,
+      "userId" integer NOT NULL,
+      "companyId" integer,
+      tipo varchar(60) NOT NULL DEFAULT 'geral',
+      titulo varchar(255) NOT NULL,
+      mensagem text,
+      link text,
+      "lidaAt" timestamp,
+      "createdAt" timestamp NOT NULL DEFAULT now()
+    )
+  `);
+  console.log("user_notifications: tabela garantida");
+
   const templates = [
     ["admissao", "pessoal", "RG (Identidade)", "Copia do documento de identidade", true, "todos", 1],
     ["admissao", "pessoal", "CPF", "Copia do CPF", true, "todos", 2],

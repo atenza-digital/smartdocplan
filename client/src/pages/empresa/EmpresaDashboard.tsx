@@ -8,8 +8,8 @@ import { AlertTriangle, ClipboardList, Plus, Ticket, UserMinus, Users } from "lu
 import { canCreateRequests } from "@shared/permissions";
 
 export default function EmpresaDashboard() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
+  const { user, effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
   const canOpenRequests = canCreateRequests(user?.role ?? null);
 
   const { data: dash, isLoading } = trpc.dashboard.company.useQuery(

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { toast } from "sonner";
 import {
   Building2, Mail, Phone, ArrowLeft, Users, FileText,
   Briefcase, AlertCircle, Ticket, UserCheck
@@ -22,7 +23,7 @@ export default function AdminEmpresaDetalhe() {
   const [, navigate] = useLocation();
   const empresaId = parseInt(params.id ?? "0");
 
-  const { data: empresa, isLoading } = trpc.companies.get.useQuery(
+  const { data: empresa, isLoading, refetch: refetchEmpresa } = trpc.companies.get.useQuery(
     { id: empresaId },
     { enabled: !!empresaId }
   );
@@ -46,6 +47,27 @@ export default function AdminEmpresaDetalhe() {
     { companyId: empresaId },
     { enabled: !!empresaId }
   );
+  const { data: companyUpdateRequests = [], refetch: refetchCompanyUpdateRequests } = trpc.companyUpdateRequests.listByCompany.useQuery(
+    { companyId: empresaId },
+    { enabled: !!empresaId }
+  );
+
+  const approveUpdateMutation = trpc.companyUpdateRequests.approve.useMutation({
+    onSuccess: () => {
+      toast.success("Atualização aprovada com sucesso.");
+      refetchEmpresa();
+      refetchCompanyUpdateRequests();
+    },
+    onError: (error) => toast.error(error.message),
+  });
+
+  const rejectUpdateMutation = trpc.companyUpdateRequests.reject.useMutation({
+    onSuccess: () => {
+      toast.success("Solicitação devolvida para ajuste.");
+      refetchCompanyUpdateRequests();
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   if (isLoading) {
     return (
@@ -193,6 +215,10 @@ export default function AdminEmpresaDetalhe() {
                   <FileText className="w-3.5 h-3.5 mr-1.5" />
                   Documentos
                 </TabsTrigger>
+                <TabsTrigger value="atualizacoes" className="flex-1">
+                  <Building2 className="w-3.5 h-3.5 mr-1.5" />
+                  Atualizações
+                </TabsTrigger>
               </TabsList>
 
               <TabsContent value="colaboradores">
@@ -293,6 +319,67 @@ export default function AdminEmpresaDetalhe() {
                       title="Documentos da empresa"
                       description="Gerencie Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT e CNO com alerta de validade."
                     />
+                  </CardContent>
+                </Card>
+              </TabsContent>
+              <TabsContent value="atualizacoes">
+                <Card>
+                  <CardContent className="p-0">
+                    {companyUpdateRequests.length === 0 ? (
+                      <div className="flex flex-col items-center justify-center py-10 text-muted-foreground">
+                        <Building2 className="w-8 h-8 mb-2 opacity-40" />
+                        <p className="text-sm">Nenhuma atualização pendente</p>
+                      </div>
+                    ) : (
+                      <div className="divide-y">
+                        {companyUpdateRequests.map((item) => (
+                          <div key={item.id} className="space-y-3 px-4 py-4">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="font-medium text-sm">Solicitação #{item.id}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {item.requestedByName ?? "Usuário"} • {new Date(item.createdAt).toLocaleString("pt-BR")}
+                                </p>
+                              </div>
+                              <Badge variant="outline" className="capitalize">
+                                {item.status}
+                              </Badge>
+                            </div>
+                            <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
+                              {Object.entries(item.payload).map(([key, value]) => (
+                                <p key={key}>
+                                  <span className="font-medium text-foreground">{key}:</span> {String(value ?? "-")}
+                                </p>
+                              ))}
+                              {item.motivo && <p className="mt-2">{item.motivo}</p>}
+                            </div>
+                            {item.status === "pendente" && (
+                              <div className="flex gap-2">
+                                <Button
+                                  size="sm"
+                                  onClick={() => approveUpdateMutation.mutate({ requestId: item.id })}
+                                  disabled={approveUpdateMutation.isPending || rejectUpdateMutation.isPending}
+                                >
+                                  Aprovar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => {
+                                    const motivo = window.prompt("Motivo da devolução:");
+                                    if (!motivo?.trim()) return;
+                                    rejectUpdateMutation.mutate({ requestId: item.id, motivo });
+                                  }}
+                                  disabled={approveUpdateMutation.isPending || rejectUpdateMutation.isPending}
+                                >
+                                  Devolver para ajuste
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>

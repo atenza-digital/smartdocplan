@@ -40,8 +40,8 @@ const tipoLabels: Record<string, string> = {
 };
 
 export default function EmpresaChamados() {
-  const { user } = useAuth();
-  const companyId = user?.companyId ?? 0;
+  const { user, effectiveCompanyId } = useAuth();
+  const companyId = effectiveCompanyId ?? 0;
   const canCreate = canCreateTickets(user?.role ?? null);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({

@@ -59,6 +59,33 @@ export const companies = smartdocSchema.table("companies", {
 export type Company = typeof companies.$inferSelect;
 export type InsertCompany = typeof companies.$inferInsert;
 
+// --- COMPANY UPDATE REQUESTS ---
+export const companyUpdateRequests = smartdocSchema.table("company_update_requests", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  requestedBy: integer("requestedBy").notNull(),
+  status: varchar("status", { length: 30 }).default("pendente").notNull(),
+  payload: text("payload").notNull(),
+  motivo: text("motivo"),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+// --- USER NOTIFICATIONS ---
+export const userNotifications = smartdocSchema.table("user_notifications", {
+  id: serial("id").primaryKey(),
+  userId: integer("userId").notNull(),
+  companyId: integer("companyId"),
+  tipo: varchar("tipo", { length: 60 }).default("geral").notNull(),
+  titulo: varchar("titulo", { length: 255 }).notNull(),
+  mensagem: text("mensagem"),
+  link: text("link"),
+  lidaAt: timestamp("lidaAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 // --- COMPANY DOCUMENTS ---
 export const companyDocuments = smartdocSchema.table("company_documents", {
   id: serial("id").primaryKey(),
@@ -67,6 +94,7 @@ export const companyDocuments = smartdocSchema.table("company_documents", {
   nome: varchar("nome", { length: 255 }).notNull(),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
+  dataEmissao: date("dataEmissao"),
   validade: date("validade"),
   observacao: text("observacao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
@@ -163,6 +191,7 @@ export const employeeDocuments = smartdocSchema.table("employee_documents", {
   tipo: varchar("tipo", { length: 100 }),
   fileUrl: text("fileUrl"),
   fileKey: text("fileKey"),
+  dataEmissao: date("dataEmissao"),
   validade: date("validade"),
   versao: integer("versao").default(1).notNull(),
   obrigatorio: boolean("obrigatorio").default(true).notNull(),

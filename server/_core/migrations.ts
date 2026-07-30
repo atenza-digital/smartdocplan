@@ -63,6 +63,8 @@ export async function runAutoMigrations() {
 
   // ── tickets ───────────────────────────────────────────────────────────────
   await addColumnIfMissing("tickets", "responsavelId", "INT NULL");
+  await addColumnIfMissing("company_documents", "dataEmissao", "DATE NULL");
+  await addColumnIfMissing("employee_documents", "dataEmissao", "DATE NULL");
 
   // ── document_type_templates ───────────────────────────────────────────────
   await createTableIfMissing("document_type_templates", `(
