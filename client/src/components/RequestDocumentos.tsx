@@ -76,12 +76,13 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
   const [motivo, setMotivo] = useState("");
   const [reviewMeta, setReviewMeta] = useState({ numeroDocumento: "", dataEmissao: "", validade: "" });
 
-  const { data: templates = [] } = trpc.documentTemplates.listByTipo.useQuery(
-    { tipoSolicitacao: tipoSolicitacao as any },
-    { enabled: !!tipoSolicitacao }
-  );
+  const { data: templates = [] } = trpc.requestDocUploads.templates.useQuery({ requestId });
 
   const { data: uploads = [], refetch } = trpc.requestDocUploads.listByRequest.useQuery({ requestId });
+  const { data: request } = trpc.requests.get.useQuery({ id: requestId });
+  let context: Record<string, { id: number; nome: string }> = {};
+  try { context = JSON.parse(request?.contextSnapshot || "{}"); } catch { /* Legacy requests have no snapshot. */ }
+  const contextLabels: Record<string, string> = { empresa: "Empresa", colaborador: "Colaborador", funcao: "Função", frente: "Frente", contrato: "Contrato", unidade: "Unidade", obra: "Obra" };
 
   const uploadMutation = trpc.requestDocUploads.upload.useMutation({
     onSuccess: () => {
@@ -126,7 +127,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
 
   const uploadsAvulsos = uploads.filter((upload) => !upload.templateId);
   const totalConfigurados = templates.length;
-  const totalAnexados = uploads.length;
+  const totalAnexados = uploads.filter(upload => !!upload.fileUrl).length;
   const totalPendentes = uploads.filter((upload) => upload.status === "pendente").length;
   const totalAprovados = uploads.filter((upload) => upload.status === "aprovado").length;
 
@@ -197,6 +198,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
 
   return (
     <div className="space-y-4">
+      {Object.keys(context).length > 0 && <div className="rounded-lg border p-4 space-y-2"><p className="font-medium">Vínculos no momento da abertura</p><dl className="grid gap-2 sm:grid-cols-2">{Object.entries(context).map(([key, value]) => <div key={key}><dt className="text-xs text-muted-foreground">{contextLabels[key] || key}</dt><dd className="text-sm break-words">{value.nome}</dd></div>)}</dl><p className="text-xs text-muted-foreground">Os vínculos e requisitos desta solicitação são preservados mesmo após alterações nos cadastros.</p></div>}
       {templates.length > 0 && (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
           <div className="rounded-lg bg-muted/40 p-3 text-center">

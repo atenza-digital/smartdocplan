@@ -33,6 +33,14 @@ export function isPlatformAuditor(role?: string | null) {
   return role === "platform_auditor";
 }
 
+export function canAccessHealthData(role?: string | null) {
+  return role === "platform_admin" || role === "company_hr";
+}
+
+export function isHealthCategory(value?: string | null) {
+  return ["exame_medico", "psicossocial", "atestado", "atestado_medico", "afastamento"].includes(value ?? "");
+}
+
 export function canManageCompanyData(role?: string | null) {
   return role === "platform_admin" || role === "platform_analyst" || role === "company_admin" || role === "company_hr";
 }

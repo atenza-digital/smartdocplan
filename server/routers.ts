@@ -1,6 +1,8 @@
 ﻿import { COOKIE_NAME } from "@shared/const";
 import {
   canCreateRequests,
+  canAccessHealthData,
+  isHealthCategory,
   canCreateTickets,
   canManageCompanyData,
   canManageRequestWorkflow,
@@ -9,6 +11,10 @@ import {
 } from "@shared/permissions";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
+import { organizationRouter } from "./organization";
+import { vacationsRouter } from "./vacations";
+import { uploadRoot } from "./uploadFiles";
+import { createRequestWithRequirements, requestCreationInput } from "./requestCreation";
 import { publicProcedure, protectedProcedure, adminProcedure, superAdminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { getDb, getUserByEmail, createLocalUser } from "./db";
@@ -558,7 +564,7 @@ const companyDocumentsRouter = router({
 
     const fs = await import("fs");
     const path = await import("path");
-    const uploadsDir = path.join(process.cwd(), "dist", "public", "uploads", "companies");
+    const uploadsDir = path.join(uploadRoot(), "companies");
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
     const ext = input.fileNome.split(".").pop() ?? "bin";
@@ -785,6 +791,7 @@ const requestsRouter = router({
     if (input.companyId === 0) {
       if (!isPlatformUser(ctx.user.role)) return [];
       const conditions = [];
+      if (!canAccessHealthData(ctx.user.role)) conditions.push(sql`${requests.tipo} NOT IN ('atestado_medico', 'afastamento')`);
       if (input.status) conditions.push(eq(requests.status, input.status));
       if (input.tipo) conditions.push(eq(requests.tipo, input.tipo));
       if (input.employeeId) conditions.push(eq(requests.employeeId, input.employeeId));
@@ -792,6 +799,7 @@ const requestsRouter = router({
     }
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
     const conditions = [eq(requests.companyId, input.companyId)] as any[];
+    if (!canAccessHealthData(ctx.user.role)) conditions.push(sql`${requests.tipo} NOT IN ('atestado_medico', 'afastamento')`);
     if (input.status) conditions.push(eq(requests.status, input.status));
     if (input.tipo) conditions.push(eq(requests.tipo, input.tipo));
     if (input.employeeId) conditions.push(eq(requests.employeeId, input.employeeId));
@@ -805,73 +813,15 @@ const requestsRouter = router({
     const req = result[0];
     if (!req) return null;
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, req.companyId)) return null;
+    if (isHealthCategory(req.tipo) && !canAccessHealthData(ctx.user.role)) return null;
     return req;
   }),
 
-  create: protectedProcedure.input(z.object({
-    companyId: z.number(),
-    employeeId: z.number().optional(),
-    positionId: z.number().optional(),
-    tipo: z.enum(["admissao","demissao","mudanca_funcao","afastamento","atestado_medico","outros"]),
-    titulo: z.string().min(1),
-    descricao: z.string().optional(),
-    prioridade: z.enum(["baixa","media","alta","urgente"]).default("media"),
-  })).mutation(async ({ ctx, input }) => {
+  create: protectedProcedure.input(requestCreationInput).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode abrir solicitações.");
-    const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
-    const { positionId, ...requestData } = input;
-    const insertResult = await db.insert(requests).values({ ...requestData, criadoPor: ctx.user.id } as any);
-    const requestId = Number((insertResult as any)?.[0]?.insertId ?? (insertResult as any)?.insertId ?? 0) || null;
-
-    if (requestId && positionId) {
-      const position = await getPositionByIdOrThrow(db, positionId);
-      if (position.companyId === input.companyId) {
-        const allowedTypes =
-          input.tipo === "admissao" || input.tipo === "demissao" || input.tipo === "mudanca_funcao"
-            ? [input.tipo, "todos"]
-            : ["todos"];
-
-        const dynamicRequirements = await db
-          .select({
-            nome: positionRequirements.documentoNome,
-            categoria: positionRequirements.categoria,
-            obrigatorio: positionRequirements.obrigatorio,
-          })
-          .from(positionRequirements)
-          .where(
-            and(
-              eq(positionRequirements.positionId, positionId),
-              eq(positionRequirements.ativo, true),
-              or(
-                eq(positionRequirements.tipoSolicitacao, allowedTypes[0] as "admissao" | "demissao" | "mudanca_funcao" | "todos"),
-                allowedTypes[1]
-                  ? eq(positionRequirements.tipoSolicitacao, allowedTypes[1] as "todos")
-                  : eq(positionRequirements.tipoSolicitacao, "todos")
-              )
-            )
-          );
-
-        if (dynamicRequirements.length > 0) {
-          await db.insert(requestDocumentUploads).values(
-            dynamicRequirements.map((requirement) => ({
-              requestId,
-              nome: requirement.nome,
-              categoria: requirement.categoria,
-              obrigatorio: requirement.obrigatorio,
-              status: "pendente" as const,
-            })) as any
-          );
-        }
-      }
-    }
-
-    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: 'criou_solicitacao', entidade: 'requests', dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
-    return {
-      success: true,
-      id: requestId,
-    };
+    assertAccess(!isHealthCategory(input.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    return createRequestWithRequirements(input, ctx.user.id);
   }),
 
   updateStatus: protectedProcedure.input(z.object({
@@ -883,6 +833,7 @@ const requestsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const request = await getRequestByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(!isHealthCategory(request.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status da solicitação.");
     const updateData: Record<string, unknown> = { status: input.status };
     if (input.observacoes) updateData.observacoes = input.observacoes;
@@ -1087,11 +1038,12 @@ const worksitesRouter = router({
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar frentes de trabalho.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    if (input.dataInicio && input.dataFim && input.dataFim < input.dataInicio) throw new Error("A data final deve ser posterior à inicial.");
     await db.insert(worksites).values({
       ...input,
-      dataInicio: input.dataInicio ? new Date(input.dataInicio) : undefined,
-      dataFim: input.dataFim ? new Date(input.dataFim) : undefined,
-    } as any);
+      dataInicio: input.dataInicio || undefined,
+      dataFim: input.dataFim || undefined,
+    });
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: input.companyId,
@@ -1127,12 +1079,13 @@ const worksitesRouter = router({
       endereco: normalizeOptionalText(input.endereco) ?? null,
       cidade: normalizeOptionalText(input.cidade) ?? null,
       estado: normalizeOptionalText(input.estado)?.toUpperCase() ?? null,
-      dataInicio: input.dataInicio ? new Date(input.dataInicio) : null,
-      dataFim: input.dataFim ? new Date(input.dataFim) : null,
+      dataInicio: input.dataInicio || null,
+      dataFim: input.dataFim || null,
       status: input.status ?? worksite.status,
     };
 
-    await db.update(worksites).set(payload as any).where(eq(worksites.id, input.id));
+    if (input.dataInicio && input.dataFim && input.dataFim < input.dataInicio) throw new Error("A data final deve ser posterior à inicial.");
+    await db.update(worksites).set(payload).where(eq(worksites.id, input.id));
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: worksite.companyId,
@@ -1475,8 +1428,12 @@ const auditRouter = router({
       .where(conditions.length ? and(...conditions) : undefined)
       .orderBy(desc(auditLogs.createdAt))
       .limit(input.limit);
-    // Enriquecer com nome do usuário
-    return rows;
+    // Raw document/request payloads may contain health information from older events.
+    return canAccessHealthData(ctx.user.role) ? rows : rows.map(row =>
+      ["requests", "request_document_uploads", "employee_documents", "documento"].includes(row.entidade ?? "")
+        ? { ...row, dadosDepois: null }
+        : row
+    );
   }),
 });
 
@@ -1574,7 +1531,8 @@ const employeeDocsRouter = router({
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId)) return [];
     const conditions = [eq(employeeDocuments.employeeId, input.employeeId)];
     if (input.categoria) conditions.push(eq(employeeDocuments.categoria, input.categoria));
-    return db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
+    const docs = await db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
+    return docs.filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role));
   }),
 
   create: protectedProcedure.input(z.object({
@@ -1592,12 +1550,16 @@ const employeeDocsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
+    assertAccess(!isHealthCategory(input.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
+    assertAccess(employee.companyId === input.companyId, "O colaborador não pertence à empresa informada.");
+    assertAccess(!isHealthCategory(input.categoria) || !input.fileUrl || input.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
     await db.insert(employeeDocuments).values({
       ...input,
-      dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : undefined,
-      validade: input.validade ? new Date(input.validade) : undefined,
+      dataEmissao: input.dataEmissao || undefined,
+      validade: input.validade || undefined,
       uploadedBy: ctx.user.id,
     } as any);
     return { success: true };
@@ -1709,15 +1671,27 @@ const documentTemplatesRouter = router({
 
 // â”€â”€â”€ REQUEST DOCUMENT UPLOADS ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const requestDocUploadsRouter = router({
+  templates: protectedProcedure.input(z.object({ requestId: z.number().int().positive() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const request = await getRequestByIdOrThrow(db, input.requestId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    if (isHealthCategory(request.tipo) && !canAccessHealthData(ctx.user.role)) return [];
+    const snapshot = request.requirementsSnapshot ? parseJsonText<{ templates: (typeof documentTypeTemplates.$inferSelect)[] }>(request.requirementsSnapshot) : null;
+    const templates = snapshot?.templates ?? await db.select().from(documentTypeTemplates).where(and(eq(documentTypeTemplates.tipoSolicitacao, request.tipo), eq(documentTypeTemplates.ativo, true))).orderBy(documentTypeTemplates.ordem);
+    return templates.filter(t => !isHealthCategory(t.categoria) || canAccessHealthData(ctx.user.role));
+  }),
   // Listar uploads de uma solicitação
   listByRequest: protectedProcedure.input(z.object({ requestId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     const request = await getRequestByIdOrThrow(db, input.requestId);
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId)) return [];
-    return db.select().from(requestDocumentUploads)
+    if (isHealthCategory(request.tipo) && !canAccessHealthData(ctx.user.role)) return [];
+    const docs = await db.select().from(requestDocumentUploads)
       .where(eq(requestDocumentUploads.requestId, input.requestId))
       .orderBy(requestDocumentUploads.categoria, requestDocumentUploads.nome);
+    return docs.filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role));
   }),
 
   // Upload de documento (base64) — empresa faz upload
@@ -1739,6 +1713,7 @@ const requestDocUploadsRouter = router({
     if (!db) throw new Error("DB unavailable");
     const request = await getRequestByIdOrThrow(db, input.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(input.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(
       canCreateRequests(ctx.user.role) || canManageRequestWorkflow(ctx.user.role),
       "Seu perfil não pode enviar documentos da solicitação."
@@ -1748,13 +1723,16 @@ const requestDocUploadsRouter = router({
     const { fileBase64, ...rest } = input;
     const fs = await import("fs");
     const path = await import("path");
-    const uploadsDir = path.join(process.cwd(), "dist", "public", "uploads");
+    const uploadsDir = uploadRoot();
     if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-    const ext = input.fileNome.split(".").pop() ?? "bin";
-    const fileName = `req_${input.requestId}_${Date.now()}.${ext}`;
+    const ext = input.fileNome.split(".").pop()?.toLowerCase() ?? "";
+    if (!["pdf", "png", "jpg", "jpeg"].includes(ext)) throw new Error("Envie um PDF, PNG ou JPEG.");
+    const { randomUUID } = await import("node:crypto");
+    const fileName = `req_${input.requestId}_${randomUUID()}.${ext}`;
     const filePath = path.join(uploadsDir, fileName);
     const buffer = Buffer.from(fileBase64, "base64");
+    if (!buffer.length || buffer.length > 10 * 1024 * 1024 || buffer.length !== input.fileTamanho) throw new Error("Arquivo inválido ou maior que 10 MB.");
     fs.writeFileSync(filePath, buffer);
 
     const fileUrl = `/uploads/${fileName}`;
@@ -1773,8 +1751,9 @@ const requestDocUploadsRouter = router({
 
     const uploadPayload = {
       ...rest,
-      dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : undefined,
-      validade: input.validade ? new Date(input.validade) : undefined,
+      dataEmissao: input.dataEmissao || undefined,
+      validade: input.validade || undefined,
+      obrigatorio: placeholder?.obrigatorio ?? input.obrigatorio,
       fileUrl,
       fileKey: fileName,
       uploadedBy: ctx.user.id,
@@ -1814,12 +1793,18 @@ const requestDocUploadsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode avaliar documentos.");
+    const [document] = await db.select().from(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
+    if (!document?.fileUrl) throw new Error("Anexe um arquivo antes de avaliar.");
+    const request = await getRequestByIdOrThrow(db, document.requestId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(document.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    if (input.status === "reprovado" && !input.motivoReprovacao?.trim()) throw new Error("Informe o motivo da reprovação.");
     await db.update(requestDocumentUploads).set({
       status: input.status,
       motivoReprovacao: input.motivoReprovacao ?? null,
       numeroDocumento: input.numeroDocumento?.trim() || null,
-      dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : null,
-      validade: input.validade ? new Date(input.validade) : null,
+      dataEmissao: input.dataEmissao || null,
+      validade: input.validade || null,
       analisadoPor: ctx.user.id,
       analisadoAt: new Date(),
     } as any).where(eq(requestDocumentUploads.id, input.id));
@@ -1836,16 +1821,20 @@ const requestDocUploadsRouter = router({
     if (!upload) throw new Error("Documento não encontrado");
     const request = await getRequestByIdOrThrow(db, upload.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
+    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(upload.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(
       canCreateRequests(ctx.user.role) || canManageRequestWorkflow(ctx.user.role),
       "Seu perfil não pode excluir documentos da solicitação."
     );
-    await db.delete(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
+    // Keep the requirement after deleting its attachment.
+    await db.update(requestDocumentUploads).set({ fileUrl: null, fileKey: null, fileNome: null, fileTamanho: null, fileMime: null, numeroDocumento: null, dataEmissao: null, validade: null, status: "pendente", motivoReprovacao: null, analisadoPor: null, analisadoAt: null, updatedAt: new Date() }).where(eq(requestDocumentUploads.id, input.id));
     return { success: true };
   }),
 });
 
 export const appRouter = router({
+  vacations: vacationsRouter,
+  organization: organizationRouter,
   system: systemRouter,
   documentTemplates: documentTemplatesRouter,
   requestDocUploads: requestDocUploadsRouter,

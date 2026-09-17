@@ -45,7 +45,7 @@ export async function getUserFromLocalSession(cookieHeader: string | undefined) 
   if (!session) return null;
 
   const user = await getUserById(session.userId);
-  return user ?? null;
+  return user?.ativo ? user : null;
 }
 
 // ─── Seed do usuário admin inicial ───────────────────────────────────────────

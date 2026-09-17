@@ -2,6 +2,7 @@ import express, { type Express } from "express";
 import fs from "fs";
 import { type Server } from "http";
 import path from "path";
+import { uploadRoot } from "../uploadFiles";
 
 export async function setupVite(app: Express, server: Server) {
   // Imports dinâmicos — vite e plugins são devDependencies
@@ -22,6 +23,7 @@ export async function setupVite(app: Express, server: Server) {
       },
     },
     server: {
+      fs: { deny: [".env", ".env.*", "**/dist/public/uploads/**", "**/var/uploads/**", `${uploadRoot().replaceAll("\\", "/")}/**`] },
       middlewareMode: true,
       hmr: { server },
       allowedHosts: true as const,

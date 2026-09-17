@@ -11,6 +11,48 @@ import {
 } from "drizzle-orm/pg-core";
 
 const smartdocSchema = pgSchema("smartdocplan");
+const organizationFields = () => ({
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  codigo: varchar("codigo", { length: 60 }),
+  observacoes: text("observacoes"),
+  status: text("status").default("ativo").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export const contracts = smartdocSchema.table("contracts", organizationFields());
+export const organizationalUnits = smartdocSchema.table("organizational_units", organizationFields());
+export const constructionWorks = smartdocSchema.table("construction_works", organizationFields());
+
+export const vacations = smartdocSchema.table("vacations", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  employeeId: integer("employeeId").notNull(),
+  acquisitionStart: date("acquisitionStart").notNull(),
+  acquisitionEnd: date("acquisitionEnd").notNull(),
+  concessionDeadline: date("concessionDeadline"),
+  startDate: date("startDate").notNull(),
+  endDate: date("endDate").notNull(),
+  notes: text("notes"),
+  status: varchar("status", { length: 24 }).default("rascunho").notNull(),
+  noticeFileUrl: text("noticeFileUrl"),
+  noticeFileName: varchar("noticeFileName", { length: 255 }),
+  createdBy: integer("createdBy").notNull(),
+  reviewedBy: integer("reviewedBy"),
+  reviewedAt: timestamp("reviewedAt"),
+  reviewReason: text("reviewReason"),
+  revision: integer("revision").default(1).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export const vacationEvents = smartdocSchema.table("vacation_events", {
+  id: serial("id").primaryKey(),
+  vacationId: integer("vacationId").notNull(),
+  userId: integer("userId").notNull(),
+  action: varchar("action", { length: 40 }).notNull(),
+  details: text("details"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
 const companyStatusEnum = smartdocSchema.enum("company_status", ["ativo", "inativo", "suspenso"] as const);
 const positionRequirementCategoryEnum = smartdocSchema.enum("position_requirement_category", ["treinamento", "exame_medico", "psicossocial", "outros"] as const);
 const positionRequirementRequestTypeEnum = smartdocSchema.enum("position_requirement_request_type", ["admissao", "demissao", "mudanca_funcao", "todos"] as const);
@@ -207,6 +249,13 @@ export const requests = smartdocSchema.table("requests", {
   id: serial("id").primaryKey(),
   companyId: integer("companyId").notNull(),
   employeeId: integer("employeeId"),
+  positionId: integer("positionId"),
+  worksiteId: integer("worksiteId"),
+  contractId: integer("contractId"),
+  unitId: integer("unitId"),
+  constructionWorkId: integer("constructionWorkId"),
+  contextSnapshot: text("contextSnapshot"),
+  requirementsSnapshot: text("requirementsSnapshot"),
   tipo: text("tipo").notNull(),
   titulo: varchar("titulo", { length: 255 }).notNull(),
   descricao: text("descricao"),

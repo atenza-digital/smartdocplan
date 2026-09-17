@@ -103,6 +103,7 @@ export default function EmpresaDossie() {
   return (
     <CompanyLayout title={employee ? `Dossiê — ${employee.nome}` : "Dossiê"}>
       <div className="space-y-6">
+        {employee && <Button asChild variant="outline"><Link href={`/empresa/ferias?empresa=${employee.companyId}&colaborador=${employee.id}`}>Consultar férias do colaborador</Link></Button>}
         {/* Voltar */}
         <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground -ml-2">
           <Link href="/empresa/colaboradores">

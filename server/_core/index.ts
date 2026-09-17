@@ -6,7 +6,10 @@ import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerLocalAuthRoutes, seedAdminUser } from "./localAuth";
 import { runAutoMigrations } from "./migrations";
+import { runPostgresMigrations } from "./postgresMigrations";
 import { appRouter } from "../routers";
+import { registerDocumentAccess } from "../documentAccess";
+import { notifyVacationDeadlines } from "../vacations";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -32,6 +35,8 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  // Do not serve a new version against an incompatible PostgreSQL schema.
+  if (process.env.DATABASE_URL?.startsWith("postgres")) await runPostgresMigrations();
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -60,6 +65,10 @@ async function startServer() {
     })
   );
   // development mode uses Vite, production mode uses static files
+  registerDocumentAccess(app);
+  const checkVacationDeadlines = () => notifyVacationDeadlines().catch(error => console.error("[Férias] Falha ao verificar prazos:", error.message));
+  void checkVacationDeadlines();
+  setInterval(checkVacationDeadlines, 60 * 60 * 1000).unref();
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {

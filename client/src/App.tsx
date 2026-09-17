@@ -32,6 +32,8 @@ import EmpresaPendencias from "./pages/empresa/EmpresaPendencias";
 import EmpresaChamados from "./pages/empresa/EmpresaChamados";
 import EmpresaBI from "./pages/empresa/EmpresaBI";
 import EmpresaConfiguracoes from "./pages/empresa/EmpresaConfiguracoes";
+import OrganizationRegisters from "./pages/OrganizationRegisters";
+import Vacations from "./pages/Vacations";
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 import { canManagePlatformSettings, canSeeCompanySettings } from "@shared/permissions";
@@ -114,6 +116,10 @@ function Router() {
           <AdminEmpresas />
         </AuthGuard>
       </Route>
+      <Route path="/admin/estrutura"><AuthGuard><OrganizationRegisters /></AuthGuard></Route>
+      <Route path="/admin/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
+      <Route path="/empresa/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
+      <Route path="/empresa/estrutura"><AuthGuard><OrganizationRegisters /></AuthGuard></Route>
       <Route path="/admin/empresas/:id">
         <AuthGuard>
           <AdminEmpresaDetalhe />

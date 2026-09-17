@@ -10,8 +10,8 @@ RUN npm install -g pnpm@10.4.1
 COPY package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
 
-# Instalar dependências (sem frozen para evitar conflitos de lockfile)
-RUN pnpm install --no-frozen-lockfile
+# Instalar exatamente as dependências validadas pelo CI
+RUN pnpm install --frozen-lockfile
 
 # Copiar código fonte
 COPY . .
@@ -31,7 +31,7 @@ COPY package.json pnpm-lock.yaml ./
 COPY patches/ ./patches/
 
 # Instalar apenas dependências de produção
-RUN pnpm install --no-frozen-lockfile --prod
+RUN pnpm install --frozen-lockfile --prod
 
 # Copiar build
 COPY --from=builder /app/dist ./dist
@@ -39,6 +39,8 @@ COPY --from=builder /app/drizzle ./drizzle
 
 ENV NODE_ENV=production
 ENV PORT=5000
+ARG BUILD_SHA=development
+ENV BUILD_SHA=$BUILD_SHA
 
 EXPOSE 5000
 

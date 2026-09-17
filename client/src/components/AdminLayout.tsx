@@ -49,6 +49,8 @@ type NavItem = {
 const navItems: NavItem[] = [
   { href: "/admin", icon: LayoutDashboard, label: "Dashboard Global" },
   { href: "/admin/empresas", icon: Building2, label: "Empresas" },
+  { href: "/admin/estrutura", icon: Building2, label: "Estrutura da empresa" },
+  { href: "/admin/ferias", icon: ClipboardList, label: "Férias" },
   { href: "/admin/solicitacoes", icon: ClipboardList, label: "Solicitações" },
   { href: "/admin/chamados", icon: Ticket, label: "Chamados" },
   { href: "/admin/auditoria", icon: ScrollText, label: "Auditoria" },

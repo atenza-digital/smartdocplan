@@ -47,10 +47,12 @@ const navItems: NavItem[] = [
   { href: "/empresa", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/empresa/solicitacoes", icon: ClipboardList, label: "Solicitações de RH" },
   { href: "/empresa/colaboradores", icon: Users, label: "Colaboradores" },
+  { href: "/empresa/ferias", icon: ClipboardList, label: "Férias" },
   { href: "/empresa/pendencias", icon: AlertTriangle, label: "Pendências" },
   { href: "/empresa/chamados", icon: Ticket, label: "Chamados" },
   { href: "/empresa/bi", icon: BarChart3, label: "BI / Relatórios" },
   { href: "/empresa/configuracoes", icon: Settings, label: "Configurações", visible: canSeeCompanySettings },
+  { href: "/empresa/estrutura", icon: Settings, label: "Estrutura da empresa", visible: canSeeCompanySettings },
 ];
 
 interface CompanyLayoutProps {

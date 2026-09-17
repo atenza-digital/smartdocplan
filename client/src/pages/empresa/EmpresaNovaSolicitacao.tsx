@@ -31,7 +31,7 @@ import {
   UserRoundSearch,
 } from "lucide-react";
 import { toast } from "sonner";
-import { canCreateRequests, canManageCompanyData } from "@shared/permissions";
+import { canCreateRequests, canManageCompanyData, canAccessHealthData, isHealthCategory } from "@shared/permissions";
 import {
   formatCpf,
   getBirthDateMax,
@@ -108,6 +108,9 @@ export default function EmpresaNovaSolicitacao() {
     nome: "",
     positionId: "",
     worksiteId: "",
+    contractId: "",
+    unitId: "",
+    constructionWorkId: "",
     dataNascimento: "",
     formatoTrabalho: "clt_presencial",
     tempoContrato: "prazo_indeterminado",
@@ -119,6 +122,7 @@ export default function EmpresaNovaSolicitacao() {
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
   const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
+  const [submitting, setSubmitting] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [selectedUploadTarget, setSelectedUploadTarget] = useState<{
     templateId?: number;
@@ -147,6 +151,13 @@ export default function EmpresaNovaSolicitacao() {
   const { data: employees = [] } = trpc.employees.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: positions = [] } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: worksites = [] } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
+  const { data: contracts = [] } = trpc.organization.list.useQuery({ companyId, kind: "contrato" }, { enabled: companyId > 0 });
+  const { data: units = [] } = trpc.organization.list.useQuery({ companyId, kind: "unidade" }, { enabled: companyId > 0 });
+  const { data: works = [] } = trpc.organization.list.useQuery({ companyId, kind: "obra" }, { enabled: companyId > 0 });
+  useEffect(() => {
+    setForm(current => ({ ...current, positionId: "", worksiteId: "", contractId: "", unitId: "", constructionWorkId: "" }));
+    setPendingUploads([]);
+  }, [companyId]);
   const { data: legalRequirements = [] } = trpc.legalRequirements.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: positionRequirements = [] } = trpc.positionRequirements.listByContext.useQuery(
     { companyId, positionId: Number(form.positionId || 0), tipoSolicitacao: form.tipo },
@@ -178,6 +189,7 @@ export default function EmpresaNovaSolicitacao() {
   }, [matchedEmployee]);
 
   const selectedProcess = PROCESS_OPTIONS.find((option) => option.key === form.tipo) ?? PROCESS_OPTIONS[0];
+  useEffect(() => { setPendingUploads([]); }, [form.tipo, form.positionId]);
   const selectedPosition = positions.find((position) => position.id === Number(form.positionId));
   const selectedWorksite = worksites.find((worksite) => worksite.id === Number(form.worksiteId));
   const selectedFormat = WORK_FORMAT_OPTIONS.find((option) => option.key === form.formatoTrabalho);
@@ -260,6 +272,10 @@ export default function EmpresaNovaSolicitacao() {
     nome: string;
     categoria: PendingUpload["categoria"];
   }) => {
+    if (isHealthCategory(target.categoria) && !canAccessHealthData(user?.role)) {
+      toast.error("Este documento deve ser anexado pelo RH ou Administrador Geral.");
+      return;
+    }
     setSelectedUploadTarget(target);
     setSelectedUploadFile(null);
     setUploadForm({ numeroDocumento: "", dataEmissao: "", validade: "" });
@@ -321,6 +337,9 @@ export default function EmpresaNovaSolicitacao() {
       `Nome: ${form.nome}`,
       `Cargo/Função: ${selectedPosition?.nome ?? "-"}`,
       `Frente/Local: ${selectedWorksite?.nome ?? "-"}`,
+      `Contrato: ${contracts.find(item => item.id === Number(form.contractId))?.nome ?? "Não se aplica"}`,
+      `Unidade: ${units.find(item => item.id === Number(form.unitId))?.nome ?? "Não se aplica"}`,
+      `Obra: ${works.find(item => item.id === Number(form.constructionWorkId))?.nome ?? "Não se aplica"}`,
     ];
 
     if (form.tipo === "admissao") {
@@ -425,6 +444,7 @@ export default function EmpresaNovaSolicitacao() {
   };
 
   const handleCreate = async () => {
+    if (submitting) return;
     for (const step of visibleSteps) {
       const error = validateStep(step.id);
       if (error) {
@@ -441,16 +461,23 @@ export default function EmpresaNovaSolicitacao() {
 
     const titulo = `${selectedProcess.label} - ${form.nome}`.trim();
 
+    let createdId: number | null = null;
+    setSubmitting(true);
     try {
       const createdRequest = await createMutation.mutateAsync({
         companyId,
         employeeId: matchedEmployee?.id,
         positionId: form.positionId ? Number(form.positionId) : undefined,
+        worksiteId: form.worksiteId ? Number(form.worksiteId) : undefined,
+        contractId: form.contractId ? Number(form.contractId) : undefined,
+        unitId: form.unitId ? Number(form.unitId) : undefined,
+        constructionWorkId: form.constructionWorkId ? Number(form.constructionWorkId) : undefined,
         tipo: form.tipo,
         titulo,
         descricao: buildDescription(),
         prioridade: form.prioridade,
       });
+      createdId = createdRequest.id;
 
       if (createdRequest.id && pendingUploads.length > 0) {
         for (const upload of pendingUploads) {
@@ -474,8 +501,11 @@ export default function EmpresaNovaSolicitacao() {
       toast.success("Solicitação criada com sucesso!");
       navigate(listRoute);
     } catch {
-      // handled by mutations
-    }
+      if (createdId) {
+        toast.warning("A solicitação foi criada, mas nem todos os anexos foram enviados. Abra os detalhes para completar o envio.");
+        navigate(listRoute);
+      }
+    } finally { setSubmitting(false); }
   };
 
   const handleCreateCargo = () => {
@@ -590,7 +620,7 @@ export default function EmpresaNovaSolicitacao() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {PROCESS_OPTIONS.map((option) => {
+            {PROCESS_OPTIONS.filter(option => !isHealthCategory(option.key) || canAccessHealthData(user?.role)).map((option) => {
               const isSelected = form.tipo === option.key;
               return (
                 <button
@@ -699,7 +729,7 @@ export default function EmpresaNovaSolicitacao() {
                     <SelectValue placeholder="Selecione a frente" />
                   </SelectTrigger>
                   <SelectContent>
-                    {worksites.map((worksite) => (
+                    {worksites.filter(worksite => worksite.status === "ativo").map((worksite) => (
                       <SelectItem key={worksite.id} value={String(worksite.id)}>
                         {worksite.nome}
                       </SelectItem>
@@ -707,7 +737,7 @@ export default function EmpresaNovaSolicitacao() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Esse campo vem do cadastro auxiliar de frentes, locais ou obras da empresa.
+                  Cadastro de frentes de trabalho. Obras, contratos e unidades são selecionados separadamente.
                 </p>
                 {worksites.length === 0 && (
                   <Alert>
@@ -722,6 +752,17 @@ export default function EmpresaNovaSolicitacao() {
                 )}
               </div>
 
+              <div className="md:col-span-2 space-y-3 rounded-xl border border-border p-4">
+                <p className="font-medium">Vínculos da solicitação (opcionais)</p>
+                <p className="text-sm text-muted-foreground">Selecione os cadastros aplicáveis. Nesta fase, os requisitos são definidos pela função; estes vínculos não alteram a matriz.</p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  {([
+                    { field: "contractId", label: "Contrato", items: contracts },
+                    { field: "unitId", label: "Unidade", items: units },
+                    { field: "constructionWorkId", label: "Obra", items: works },
+                  ] as const).map(({ field, label, items }) => <div key={field} className="space-y-1.5 min-w-0"><Label htmlFor={field}>{label}</Label><select id={field} className="w-full min-w-0 h-10 rounded-md border border-input bg-background px-2 text-sm" value={form[field]} onChange={e => setForm(current => ({ ...current, [field]: e.target.value }))}><option value="">Não se aplica</option>{items.map(item => <option key={item.id} value={item.id}>{item.nome}</option>)}</select></div>)}
+                </div>
+              </div>
               <div className="space-y-1.5">
                 <Label>Data de nascimento</Label>
                 <Input
@@ -1269,7 +1310,7 @@ export default function EmpresaNovaSolicitacao() {
                   {currentIndex < visibleSteps.length - 1 ? (
                     <Button onClick={goToNextStep}>Próxima etapa</Button>
                   ) : (
-                    <Button onClick={handleCreate} disabled={createMutation.isPending || uploadRequestDocumentMutation.isPending}>
+                    <Button onClick={handleCreate} disabled={submitting}>
                       {createMutation.isPending || uploadRequestDocumentMutation.isPending ? "Criando..." : "Criar solicitação"}
                     </Button>
                   )}

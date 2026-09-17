@@ -1,6 +1,9 @@
 import { z } from "zod";
 import { notifyOwner } from "./notification";
 import { adminProcedure, publicProcedure, router } from "./trpc";
+import { getDb } from "../db";
+import { sql } from "drizzle-orm";
+import { TRPCError } from "@trpc/server";
 
 export const systemRouter = router({
   health: publicProcedure
@@ -9,9 +12,19 @@ export const systemRouter = router({
         timestamp: z.number().min(0, "timestamp cannot be negative"),
       })
     )
-    .query(() => ({
-      ok: true,
-    })),
+    .query(async () => {
+      try {
+        const db = await getDb();
+        if (!db) throw new Error("Database unavailable");
+        await db.execute(sql`SELECT 1`);
+        return { ok: true, version: process.env.BUILD_SHA || "development" };
+      } catch {
+        throw new TRPCError({
+          code: "SERVICE_UNAVAILABLE",
+          message: "Serviço temporariamente indisponível.",
+        });
+      }
+    }),
 
   notifyOwner: adminProcedure
     .input(

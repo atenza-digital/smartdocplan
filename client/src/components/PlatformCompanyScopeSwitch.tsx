@@ -51,15 +51,15 @@ export default function PlatformCompanyScopeSwitch({
     <>
       <div className="flex items-center gap-2">
         {companyView && selectedCompany ? (
-          <Button variant="outline" size="sm" onClick={handleBackToPlatform}>
-            <Undo2 className="mr-2 h-4 w-4" />
-            Voltar para plataforma
+          <Button variant="outline" size="sm" aria-label="Voltar para plataforma" onClick={handleBackToPlatform}>
+            <Undo2 className="h-4 w-4 sm:mr-2" />
+            <span className="hidden sm:inline">Voltar para plataforma</span>
           </Button>
         ) : null}
 
-        <Button variant="outline" size="sm" className="max-w-[260px]" onClick={() => setOpen(true)}>
-          <Building2 className="mr-2 h-4 w-4 shrink-0" />
-          <span className="truncate">
+        <Button variant="outline" size="sm" className="max-w-[260px]" aria-label="Escolher visão da empresa" onClick={() => setOpen(true)}>
+          <Building2 className="h-4 w-4 shrink-0 sm:mr-2" />
+          <span className="hidden truncate sm:inline">
             {selectedCompany ? selectedCompany.nomeFantasia || selectedCompany.razaoSocial : "Operar como empresa"}
           </span>
         </Button>

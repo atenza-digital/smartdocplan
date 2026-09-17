@@ -6,6 +6,8 @@ services:
     image: ${APP_IMAGE:-ghcr.io/atenza-digital/smartdocplan:latest}
     container_name: smartdocplan-app
     restart: unless-stopped
+    volumes:
+      - ./uploads:/app/var/uploads
     env_file:
       - .env
     environment:
@@ -13,6 +15,7 @@ services:
       PORT: ${APP_PORT:-5000}
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
+      UPLOADS_DIR: /app/var/uploads
     ports:
       - "${APP_BIND_IP:-0.0.0.0}:${APP_HOST_PORT:-5000}:${APP_PORT:-5000}"
     networks:

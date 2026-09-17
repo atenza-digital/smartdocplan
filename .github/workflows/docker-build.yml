@@ -13,12 +13,24 @@ permissions:
 
 concurrency:
   group: smartdocplan-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   validate:
     name: Check, test and build
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: smartdocplan_ci_test
+          POSTGRES_USER: smartdoc_test
+          POSTGRES_PASSWORD: ci-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U smartdoc_test -d smartdocplan_ci_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
 
     steps:
       - name: Checkout
@@ -40,6 +52,8 @@ jobs:
         run: pnpm check
 
       - name: Run tests
+        env:
+          TEST_DATABASE_URL: postgresql://smartdoc_test:ci-test-only@127.0.0.1:5432/smartdocplan_ci_test
         run: pnpm test
 
       - name: Build application
@@ -81,6 +95,7 @@ jobs:
         with:
           context: .
           push: true
+          build-args: BUILD_SHA=${{ github.sha }}
           tags: |
             ${{ steps.meta.outputs.image_latest }}
             ${{ steps.meta.outputs.image_ref }}
@@ -105,8 +120,8 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          source: "docker-compose.yml"
-          target: ${{ vars.DEPLOY_PATH }}
+          source: "docker-compose.yml,scripts/deploy-homolog.sh"
+          target: ${{ vars.DEPLOY_PATH }}/incoming
           overwrite: true
 
       - name: Deploy on VPS
@@ -130,53 +145,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+          command_timeout: 20m
           envs: APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN,VPS_APP_ENV_B64,APP_HOST,APP_PORT,APP_HOST_PORT,APP_BIND_IP,DB_DOCKER_NETWORK,DEPLOY_PATH,TRAEFIK_ENABLE,TRAEFIK_ENTRYPOINTS,TRAEFIK_CERTRESOLVER,TRAEFIK_DOCKER_NETWORK
           script: |
-            set -euo pipefail
-
-            DEPLOY_PATH="${DEPLOY_PATH:-/docker/smartdocplan}"
-            mkdir -p "$DEPLOY_PATH"
-
-            printf '%s' "$VPS_APP_ENV_B64" | base64 -d | tr -d '\r' > "$DEPLOY_PATH/.env"
-            printf '%s\n' \
-              "APP_IMAGE=${APP_IMAGE}" \
-              "APP_HOST=${APP_HOST:-srv1450720.hstgr.cloud}" \
-              "APP_PORT=${APP_PORT:-5000}" \
-              "APP_HOST_PORT=${APP_HOST_PORT:-8080}" \
-              "APP_BIND_IP=${APP_BIND_IP:-0.0.0.0}" \
-              "DB_DOCKER_NETWORK=${DB_DOCKER_NETWORK:-postgresql-evkn_default}" \
-              "TRAEFIK_ENABLE=${TRAEFIK_ENABLE:-true}" \
-              "TRAEFIK_ENTRYPOINTS=${TRAEFIK_ENTRYPOINTS:-websecure}" \
-              "TRAEFIK_CERTRESOLVER=${TRAEFIK_CERTRESOLVER:-letsencrypt}" \
-              "TRAEFIK_DOCKER_NETWORK=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}" \
-              >> "$DEPLOY_PATH/.env"
-
-            echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
-
-            NETWORK_NAME="${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}"
-            docker network inspect "$NETWORK_NAME" >/dev/null 2>&1 || docker network create "$NETWORK_NAME"
-            DB_NETWORK_NAME="${DB_DOCKER_NETWORK:-postgresql-evkn_default}"
-            docker network inspect "$DB_NETWORK_NAME" >/dev/null 2>&1 || docker network create "$DB_NETWORK_NAME"
-
-            cd "$DEPLOY_PATH"
-            docker compose -f docker-compose.yml pull
-            docker compose -f docker-compose.yml up -d --remove-orphans
-
-            ATTEMPTS=0
-            STATUS=""
-            until [ "$ATTEMPTS" -ge 30 ]; do
-              STATUS="$(docker inspect --format='{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' smartdocplan-app 2>/dev/null || true)"
-              if [ "$STATUS" = "healthy" ]; then
-                break
-              fi
-              ATTEMPTS=$((ATTEMPTS + 1))
-              sleep 10
-            done
-
-            if [ "$STATUS" != "healthy" ]; then
-              echo "Container did not become healthy. Current status: ${STATUS:-unknown}"
-              docker compose -f docker-compose.yml logs --tail=200
-              exit 1
-            fi
-
-            docker image prune -af --filter "until=168h" || true
+            bash "${DEPLOY_PATH:-/docker/smartdocplan}/incoming/scripts/deploy-homolog.sh"
