@@ -37,6 +37,7 @@ Thumbs.db
 
 # Drizzle migrations geradas
 drizzle/*.sql
+!drizzle/0000_sleepy_cargill.sql
 drizzle/meta/
 
 # Uploads temporários
