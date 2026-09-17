@@ -4,7 +4,7 @@ Data: 17/09/2026. Referência: MINUTA DE RESPOSTA, de 26/08/2026.
 
 ## Situação desta entrega
 
-Entrega ampliada com gestão documental de férias, implementada e validada localmente, preparada para publicação pelo Git/CI/CD. Não representa a conclusão de todos os ajustes da minuta. Os testes usaram PostgreSQL 17 em um contêiner dedicado, com dados fictícios. O resultado efetivo da publicação será registrado em documento de verificação separado; aprovação local não é prova de deploy.
+Entrega ampliada com gestão documental de férias, implementada, testada e publicada em homologação pelo Git/CI/CD. Não representa a conclusão de todos os ajustes da minuta. Os testes usaram PostgreSQL 17 dedicado e cenários fictícios na VPS. O resultado efetivo, a versão e as pendências estão em [Verificação da publicação](VERIFICACAO_PUBLICACAO_2026-09-17.md), incluindo seis referências antigas a arquivos ausentes que precisam de recuperação ou reenvio.
 
 ## Ajustes implementados
 
