@@ -120,7 +120,7 @@ jobs:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           key: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
-          source: "docker-compose.yml,scripts/deploy-homolog.sh"
+          source: "docker-compose.yml,scripts/deploy-homolog.sh,scripts/allow-smartdocplan-port.sh"
           target: ${{ vars.DEPLOY_PATH }}/incoming
           overwrite: true
 
@@ -149,3 +149,18 @@ jobs:
           envs: APP_IMAGE,GHCR_USERNAME,GHCR_TOKEN,VPS_APP_ENV_B64,APP_HOST,APP_PORT,APP_HOST_PORT,APP_BIND_IP,DB_DOCKER_NETWORK,DEPLOY_PATH,TRAEFIK_ENABLE,TRAEFIK_ENTRYPOINTS,TRAEFIK_CERTRESOLVER,TRAEFIK_DOCKER_NETWORK
           script: |
             bash "${DEPLOY_PATH:-/docker/smartdocplan}/incoming/scripts/deploy-homolog.sh"
+
+      - name: Verify public application version
+        if: vars.APP_BIND_IP == '0.0.0.0'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          APP_HOST_PORT: ${{ vars.APP_HOST_PORT }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          node --input-type=module <<'JS'
+          const input=encodeURIComponent(JSON.stringify({json:{timestamp:0}}));
+          const response=await fetch(`http://${process.env.VPS_HOST}:${process.env.APP_HOST_PORT || 8080}/api/trpc/system.health?input=${input}`,{signal:AbortSignal.timeout(20000)});
+          const body=await response.json();
+          if (!response.ok || body.result?.data?.json?.version !== process.env.EXPECTED_SHA) process.exit(1);
+          console.log('Public endpoint serves the expected release.');
+          JS

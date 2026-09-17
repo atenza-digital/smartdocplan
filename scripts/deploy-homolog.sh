@@ -67,6 +67,27 @@ mv .env.next .env
 cp incoming/docker-compose.yml docker-compose.yml
 docker compose config --quiet
 docker compose up -d --no-deps app
+if [ "${APP_BIND_IP:-0.0.0.0}" = 0.0.0.0 ]; then
+  # Keep the same narrow ingress exception after Docker/host restarts.
+  cat > /etc/systemd/system/smartdocplan-public-access.service <<EOF
+[Unit]
+Description=SmartDocPlan published application port
+After=docker.service
+Requires=docker.service
+PartOf=docker.service
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+Environment=PUBLIC_PORT=${APP_HOST_PORT:-8080}
+Environment=APP_PORT=${APP_PORT:-5000}
+ExecStart=/bin/bash $DEPLOY_PATH/incoming/scripts/allow-smartdocplan-port.sh
+[Install]
+WantedBy=multi-user.target docker.service
+EOF
+  systemctl daemon-reload
+  systemctl enable smartdocplan-public-access.service
+  systemctl restart smartdocplan-public-access.service
+fi
 healthy=0
 for attempt in $(seq 1 40); do
   status="$(docker inspect --format='{{.State.Health.Status}}' smartdocplan-app)"
