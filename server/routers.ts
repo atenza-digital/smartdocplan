@@ -13,7 +13,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { organizationRouter } from "./organization";
 import { vacationsRouter } from "./vacations";
-import { uploadRoot } from "./uploadFiles";
+import { saveDocumentFile, uploadRoot } from "./uploadFiles";
 import { createRequestWithRequirements, requestCreationInput } from "./requestCreation";
 import { publicProcedure, protectedProcedure, adminProcedure, superAdminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -551,8 +551,8 @@ const companyDocumentsRouter = router({
     companyId: z.number(),
     tipo: z.string().min(1),
     nome: z.string().min(1),
-    dataEmissao: z.string().optional(),
-    validade: z.string().optional(),
+    dataEmissao: z.union([z.iso.date(), z.literal("")]).optional(),
+    validade: z.union([z.iso.date(), z.literal("")]).optional(),
     observacao: z.string().optional(),
     fileNome: z.string(),
     fileBase64: z.string(),
@@ -562,29 +562,20 @@ const companyDocumentsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
 
-    const fs = await import("fs");
-    const path = await import("path");
-    const uploadsDir = path.join(uploadRoot(), "companies");
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-    const ext = input.fileNome.split(".").pop() ?? "bin";
-    const fileName = `company_${input.companyId}_${input.tipo}_${Date.now()}.${ext}`;
-    const filePath = path.join(uploadsDir, fileName);
-    const buffer = Buffer.from(input.fileBase64, "base64");
-    fs.writeFileSync(filePath, buffer);
-    const fileUrl = `/uploads/companies/${fileName}`;
-
+    const saved = await saveDocumentFile(input.fileBase64, `company_${input.companyId}`);
+    const fileUrl = saved.url;
+    try {
     await db.insert(companyDocuments).values({
       companyId: input.companyId,
       tipo: input.tipo.trim(),
       nome: input.nome.trim(),
       fileUrl,
-      fileKey: fileName,
-      dataEmissao: input.dataEmissao ? new Date(input.dataEmissao) : undefined,
-      validade: input.validade ? new Date(input.validade) : undefined,
+      fileKey: fileUrl.replace("/uploads/", ""),
+      dataEmissao: input.dataEmissao || undefined,
+      validade: input.validade || undefined,
       observacao: normalizeOptionalText(input.observacao) ?? undefined,
-    } as any);
-
+    });
+    } catch (error) { await saved.cleanup(); throw error; }
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: input.companyId,
@@ -598,8 +589,8 @@ const companyDocumentsRouter = router({
   update: protectedProcedure.input(z.object({
     id: z.number(),
     nome: z.string().min(1).optional(),
-    dataEmissao: z.string().optional(),
-    validade: z.string().optional(),
+    dataEmissao: z.union([z.iso.date(), z.literal("")]).optional(),
+    validade: z.union([z.iso.date(), z.literal("")]).optional(),
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -612,8 +603,8 @@ const companyDocumentsRouter = router({
 
     const payload = {
       nome: input.nome?.trim() ?? doc.nome,
-      dataEmissao: input.dataEmissao !== undefined ? (input.dataEmissao ? new Date(input.dataEmissao) : null) : undefined,
-      validade: input.validade !== undefined ? (input.validade ? new Date(input.validade) : null) : undefined,
+      dataEmissao: input.dataEmissao !== undefined ? input.dataEmissao || null : undefined,
+      validade: input.validade !== undefined ? input.validade || null : undefined,
       observacao: input.observacao !== undefined ? normalizeOptionalText(input.observacao) ?? null : undefined,
     };
     await db.update(companyDocuments).set(payload as any).where(eq(companyDocuments.id, input.id));
@@ -681,10 +672,10 @@ const employeesRouter = router({
     companyId: z.number(),
     nome: z.string().min(1),
     cpf: z.string().min(11),
-    dataNascimento: z.string().optional(),
+    dataNascimento: z.union([z.iso.date(), z.literal("")]).optional(),
     positionId: z.number().optional(),
     worksiteId: z.number().optional(),
-    dataAdmissao: z.string().optional(),
+    dataAdmissao: z.union([z.iso.date(), z.literal("")]).optional(),
     salario: z.string().optional(),
     email: z.string().email().optional(),
     telefone: z.string().optional(),
@@ -705,8 +696,8 @@ const employeesRouter = router({
       ...input,
       nome: input.nome.trim(),
       cpf: formatCpf(input.cpf),
-      dataNascimento: input.dataNascimento ? new Date(input.dataNascimento) : undefined,
-      dataAdmissao: input.dataAdmissao ? new Date(input.dataAdmissao) : undefined,
+      dataNascimento: input.dataNascimento || undefined,
+      dataAdmissao: input.dataAdmissao || undefined,
       email: normalizeOptionalText(input.email) ?? undefined,
       telefone: normalizeOptionalText(input.telefone) ? formatPhone(input.telefone!) : undefined,
     } as any);

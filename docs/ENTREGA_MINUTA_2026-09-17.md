@@ -30,7 +30,8 @@ Entrega ampliada com gestão documental de férias, implementada e validada loca
 
 ## Verificação
 
-- 57 testes aprovados: 36 existentes, 17 de integração com PostgreSQL/HTTP e 4 de calendário/arquivos.
+- 59 testes aprovados: 36 existentes, 19 de integração com PostgreSQL/HTTP e 4 de calendário/arquivos. A integração também grava nascimento/admissão e cria/edita/limpa datas de documentos da empresa.
+- Corrigidas as conversões de datas nesses cadastros, incluídas colunas de emissão ausentes na instalação-base e validado o conteúdo/tamanho dos novos arquivos da empresa. Falhas na gravação removem o arquivo recém-criado, evitando sobras desse caminho de erro.
 - Integração cobre migração repetida, separação dos cadastros, isolamento entre empresas, inativação, abertura com ID válido, cópia histórica das regras, permissões de saúde, upload com datas, acesso por URL e preservação do requisito após exclusão do anexo.
 - Checagem TypeScript sem erros; builds de frontend e backend concluídos. O frontend ainda emite aviso de pacote JavaScript grande, não bloqueante.
 - Validação no navegador: autenticação no banco fictício, seleção de empresa, cadastro de contrato, programação de férias, anexo, envio, aprovação e histórico. Calendário e rolagem conferidos em largura de 390 pixels. Campos de data do cenário foram preenchidos pela instrumentação do navegador, pois a automação de entrada nativa não os preencheu; isso não valida todas as formas de digitação manual.

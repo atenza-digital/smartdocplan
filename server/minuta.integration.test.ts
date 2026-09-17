@@ -140,6 +140,26 @@ describe.skipIf(!url)("Minuta - PostgreSQL e isolamento de documentos", () => {
       ).rows[0].count
     ).toBe("1");
   });
+  it("grava datas de nascimento e admissão como datas PostgreSQL", async () => {
+    await caller().employees.create({ companyId, nome: "Pessoa Datas Teste", cpf: "11144477735", dataNascimento: "2000-02-29", dataAdmissao: "2025-01-01" });
+    const employee = (await caller().employees.list({companyId})).find(e => e.nome === "Pessoa Datas Teste")!;
+    expect(employee.dataNascimento).toBe("2000-02-29");
+    expect(employee.dataAdmissao).toBe("2025-01-01");
+  });
+  it("grava, altera e limpa datas dos documentos da empresa", async () => {
+    const created = await caller().companyDocuments.create({ companyId, tipo: "contrato_social", nome: "Documento Datas Teste", dataEmissao: "2026-01-01", validade: "2027-01-01", fileNome: "teste.pdf", fileBase64: Buffer.from("%PDF-1.4\n%%EOF").toString("base64") });
+    fileUrls.push(created.fileUrl);
+    const doc = (await caller().companyDocuments.listByCompany({companyId})).find(d => d.fileUrl === created.fileUrl)!;
+    expect(doc.dataEmissao).toBe("2026-01-01");
+    await caller().companyDocuments.update({id:doc.id,dataEmissao:"2026-02-01",validade:""});
+    const updated = (await caller().companyDocuments.listByCompany({companyId})).find(d => d.id === doc.id)!;
+    expect(updated.dataEmissao).toBe("2026-02-01");
+    expect(updated.validade).toBeNull();
+    auth.user = ctx("company_hr",companyId).user;
+    expect((await fetch(origin + created.fileUrl)).status).toBe(200);
+    auth.user = ctx("company_hr",otherCompany).user;
+    expect((await fetch(origin + created.fileUrl)).status).toBe(404);
+  });
   it("mantém contratos, unidades e obras separados e auditados", async () => {
     for (const kind of ["contrato", "unidade", "obra"] as const) {
       const created = await caller().organization.create({
