@@ -255,7 +255,7 @@ export default function AdminSolicitacoes() {
                 : "Acompanhe as solicitações em modo somente leitura."}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {canCreate && (
               <Button asChild variant="outline" size="sm">
                 <Link href="/admin/solicitacoes/nova">

@@ -198,7 +198,7 @@ export default function AdminEmpresaDetalhe() {
           {/* Tabs de detalhes */}
           <div className="lg:col-span-2">
             <Tabs defaultValue="colaboradores">
-              <TabsList className="w-full">
+              <TabsList className="h-auto w-full flex-wrap">
                 <TabsTrigger value="colaboradores" className="flex-1">
                   <Users className="w-3.5 h-3.5 mr-1.5" />
                   Colaboradores ({colaboradores.length})
