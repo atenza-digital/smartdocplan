@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, Search, UserPlus, MoreVertical, UserCog, KeyRound, UserCheck, UserX, Building2 } from "lucide-react";
+import { Users, Search, UserPlus, MoreVertical, UserCog, KeyRound, UserCheck, UserX, Building2, MapPin } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
 const roleLabels: Record<string, string> = {
@@ -32,7 +33,7 @@ const roleColors: Record<string, string> = {
   company_viewer: "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20",
 };
 
-type ModalType = "create" | "editRole" | "resetPassword" | null;
+type ModalType = "create" | "editRole" | "resetPassword" | "worksites" | null;
 
 export default function AdminUsuarios() {
   const [search, setSearch] = useState("");
@@ -83,6 +84,20 @@ export default function AdminUsuarios() {
       toast.success("Senha redefinida com sucesso!");
       setModal(null);
       setNewPassword("");
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const [obrasSelecionadas, setObrasSelecionadas] = useState<number[]>([]);
+  const { data: obrasEmpresa = [] } = trpc.worksites.list.useQuery(
+    { companyId: selectedUser?.companyId ?? 0 },
+    { enabled: modal === "worksites" && !!selectedUser?.companyId }
+  );
+  const setWorksitesMutation = trpc.users.setWorksites.useMutation({
+    onSuccess: () => {
+      toast.success("Obras do usuário atualizadas!");
+      setModal(null);
+      refetch();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -174,6 +189,12 @@ export default function AdminUsuarios() {
                                 {getEmpresaNome(u.companyId)}
                               </p>
                             )}
+                            {u.obras?.length > 0 && (
+                              <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                                <MapPin className="w-3 h-3 shrink-0" />
+                                <span className="truncate">{u.obras.map((o: { nome: string }) => o.nome).join(", ")}</span>
+                              </p>
+                            )}
                           </div>
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
@@ -202,6 +223,16 @@ export default function AdminUsuarios() {
                                 <KeyRound className="w-4 h-4 mr-2" />
                                 Redefinir Senha
                               </DropdownMenuItem>
+                              {u.companyId && (
+                                <DropdownMenuItem onClick={() => {
+                                  setSelectedUser(u);
+                                  setObrasSelecionadas((u.obras ?? []).map((o: { id: number }) => o.id));
+                                  setModal("worksites");
+                                }}>
+                                  <MapPin className="w-4 h-4 mr-2" />
+                                  Obras / locais
+                                </DropdownMenuItem>
+                              )}
                               <DropdownMenuSeparator />
                               <DropdownMenuItem
                                 onClick={() => toggleAtivoMutation.mutate({ userId: u.id, ativo: !u.ativo })}
@@ -234,6 +265,47 @@ export default function AdminUsuarios() {
           </Card>
         )}
       </div>
+
+      {/* Modal: Obras / locais do usuario */}
+      <Dialog open={modal === "worksites"} onOpenChange={(o) => !o && setModal(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Obras / locais — {selectedUser?.name}</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">
+            Marque as obras e locais a que este usuário pertence. Eles aparecem no log de auditoria junto das ações dele.
+          </p>
+          <div className="max-h-72 space-y-2 overflow-y-auto">
+            {obrasEmpresa.length === 0 && (
+              <p className="text-sm text-muted-foreground">Esta empresa ainda não tem obras ou locais cadastrados.</p>
+            )}
+            {obrasEmpresa.map((obra) => {
+              const marcada = obrasSelecionadas.includes(obra.id);
+              return (
+                <label key={obra.id} className="flex cursor-pointer items-center gap-3 rounded-md border border-border p-2.5 hover:bg-muted/50">
+                  <Checkbox
+                    checked={marcada}
+                    onCheckedChange={(checked) =>
+                      setObrasSelecionadas((atual) => (checked ? [...atual, obra.id] : atual.filter((id) => id !== obra.id)))
+                    }
+                  />
+                  <span className="text-sm text-foreground">{obra.nome}</span>
+                </label>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModal(null)}>Cancelar</Button>
+            <Button
+              onClick={() => setWorksitesMutation.mutate({ userId: selectedUser.id, worksiteIds: obrasSelecionadas })}
+              disabled={setWorksitesMutation.isPending}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {setWorksitesMutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal: Criar usuario */}
       <Dialog open={modal === "create"} onOpenChange={(o) => !o && setModal(null)}>

@@ -40,6 +40,7 @@ const ACAO_LABELS: Record<string, string> = {
   enviou_documento_solicitacao: "Enviou documento da solicitação",
   criou_chamado: "Abriu chamado",
   respondeu_chamado: "Respondeu chamado",
+  vinculou_obras_usuario: "Alterou obras / locais do usuário",
   atualizou_status_chamado: "Mudou status do chamado",
   criou_funcao: "Criou função",
   atualizou_funcao: "Atualizou função",
@@ -266,10 +267,10 @@ export default function AdminAuditoria() {
                             <Building2 className="w-3 h-3" />
                             {log.empresaNome ?? "Plataforma"}
                           </span>
-                          {log.obraNome && (
-                            <span className="flex items-center gap-1">
+                          {log.obrasUsuario && (
+                            <span className="flex items-center gap-1" title="Obras / locais do usuário">
                               <MapPin className="w-3 h-3" />
-                              {log.obraNome}
+                              {log.obrasUsuario}
                             </span>
                           )}
                           <span className="flex items-center gap-1">
@@ -284,6 +285,12 @@ export default function AdminAuditoria() {
                       <div className="border-t border-border px-4 py-3 text-xs space-y-2">
                         {log.usuarioEmail && (
                           <p className="text-muted-foreground">E-mail do usuário: <span className="text-foreground">{log.usuarioEmail}</span></p>
+                        )}
+                        <p className="text-muted-foreground">
+                          Obras / locais do usuário: <span className="text-foreground">{log.obrasUsuario ?? "nenhum vínculo cadastrado"}</span>
+                        </p>
+                        {log.obraNome && (
+                          <p className="text-muted-foreground">Obra afetada pela ação: <span className="text-foreground">{log.obraNome}</span></p>
                         )}
                         {log.detalhesOcultos ? (
                           <p className="text-muted-foreground">Detalhes ocultos: podem conter dados de saúde, visíveis só para o Administrador da plataforma e o RH.</p>

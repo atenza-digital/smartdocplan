@@ -135,3 +135,12 @@ describe("Chamados — respostas e status", () => {
     await expect(caller.tickets.reply({ ticketId: 1, mensagem: "   " })).rejects.toThrow();
   });
 });
+
+// ─── Usuários × obras ────────────────────────────────────────────────────────
+
+describe("Usuários — vínculo com obras", () => {
+  it.each(["platform_analyst", "company_admin"])("%s não altera obras de usuários", async (role) => {
+    const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: role.startsWith("company") ? 1 : null }));
+    await expect(caller.users.setWorksites({ userId: 2, worksiteIds: [1] })).rejects.toThrow();
+  });
+});

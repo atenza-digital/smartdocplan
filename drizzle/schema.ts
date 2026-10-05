@@ -158,6 +158,13 @@ export const worksites = smartdocSchema.table("worksites", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// --- USER WORKSITES (obras/locais a que o usuário da empresa pertence) ---
+export const userWorksites = smartdocSchema.table("user_worksites", {
+  userId: integer("userId").notNull(),
+  worksiteId: integer("worksiteId").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 // --- POSITIONS (CARGOS) ---
 // Cargos sao por empresa (companyId obrigatorio)
 export const positions = smartdocSchema.table("positions", {

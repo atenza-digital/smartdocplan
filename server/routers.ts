@@ -23,7 +23,7 @@ import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
   legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads,
-  companyUpdateRequests, userNotifications, ticketMessages
+  companyUpdateRequests, userNotifications, ticketMessages, userWorksites
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
@@ -1579,6 +1579,7 @@ const auditRouter = router({
         companyId: auditLogs.companyId,
         empresaNome: sql<string | null>`coalesce(${companies.nomeFantasia}, ${companies.razaoSocial})`,
         obraNome: sql<string | null>`coalesce(${obraColaborador.nome}, ${obraSolicitacao.nome})`,
+        obrasUsuario: sql<string | null>`(select string_agg(w.nome, ', ' order by w.nome) from smartdocplan.user_worksites uw join smartdocplan.worksites w on w.id = uw."worksiteId" where uw."userId" = ${auditLogs.userId})`,
         acao: auditLogs.action,
         entidade: auditLogs.entity,
         entidadeId: auditLogs.entityId,
@@ -1672,11 +1673,42 @@ const usersRouter = router({
   list: superAdminProcedure.query(async () => {
     const db = await getDb();
     if (!db) return [];
-    return db.select({
+    const rows = await db.select({
       id: users.id, name: users.name, email: users.email,
       role: users.role, companyId: users.companyId, createdAt: users.createdAt,
       ativo: users.ativo,
     }).from(users).orderBy(desc(users.createdAt));
+    const vinculos = await db.select({ userId: userWorksites.userId, worksiteId: worksites.id, nome: worksites.nome })
+      .from(userWorksites)
+      .innerJoin(worksites, eq(worksites.id, userWorksites.worksiteId))
+      .orderBy(worksites.nome);
+    return rows.map(row => ({
+      ...row,
+      obras: vinculos.filter(v => v.userId === row.id).map(v => ({ id: v.worksiteId, nome: v.nome })),
+    }));
+  }),
+
+  setWorksites: superAdminProcedure.input(z.object({
+    userId: z.number(),
+    worksiteIds: z.array(z.number()).max(200),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [alvo] = await db.select({ id: users.id, companyId: users.companyId }).from(users).where(eq(users.id, input.userId)).limit(1);
+    if (!alvo) throw new Error("Usuário não encontrado.");
+    const ids = Array.from(new Set(input.worksiteIds));
+    assertAccess(!!alvo.companyId || ids.length === 0, "Usuários da plataforma não são vinculados a obras.");
+    if (ids.length) {
+      const validas = await db.select({ id: worksites.id }).from(worksites)
+        .where(and(inArray(worksites.id, ids), eq(worksites.companyId, alvo.companyId!)));
+      assertAccess(validas.length === ids.length, "Todas as obras precisam pertencer à empresa do usuário.");
+    }
+    await db.transaction(async (tx) => {
+      await tx.delete(userWorksites).where(eq(userWorksites.userId, alvo.id));
+      if (ids.length) await tx.insert(userWorksites).values(ids.map(worksiteId => ({ userId: alvo.id, worksiteId })));
+    });
+    await insertAuditLog({ userId: ctx.user.id, companyId: alvo.companyId, acao: "vinculou_obras_usuario", entidade: "users", entidadeId: alvo.id, dadosDepois: { obras: ids } });
+    return { success: true };
   }),
 
   listByCompany: superAdminProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
