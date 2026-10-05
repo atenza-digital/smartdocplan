@@ -1,5 +1,6 @@
 import AdminLayout from "@/components/AdminLayout";
 import { ChangePasswordForm } from "@/components/ChangePasswordForm";
+import { DialogSizePreference } from "@/components/DialogSizePreference";
 import { useLocalAuth } from "@/contexts/LocalAuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -57,6 +58,8 @@ export default function AdminConfiguracoes() {
             </div>
           </CardContent>
         </Card>
+
+        <DialogSizePreference />
 
         {/* Alterar Senha */}
         <Card>

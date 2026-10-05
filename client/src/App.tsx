@@ -5,6 +5,7 @@ import { Route, Switch, useLocation } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AccessibilityProvider } from "./contexts/AccessibilityContext";
+import { DisplayPreferencesProvider } from "./contexts/DisplayPreferencesContext";
 import { LocalAuthProvider, useLocalAuth } from "./contexts/LocalAuthContext";
 import { AccessibilityBar } from "./components/AccessibilityBar";
 import { CookieBanner } from "./components/CookieBanner";
@@ -248,6 +249,7 @@ function App() {
   return (
     <ErrorBoundary>
       <AccessibilityProvider>
+      <DisplayPreferencesProvider>
         <ThemeProvider defaultTheme="light" switchable>
           <LocalAuthProvider>
             <TooltipProvider>
@@ -265,6 +267,7 @@ function App() {
             </TooltipProvider>
           </LocalAuthProvider>
         </ThemeProvider>
+      </DisplayPreferencesProvider>
       </AccessibilityProvider>
     </ErrorBoundary>
   );

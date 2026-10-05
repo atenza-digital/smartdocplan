@@ -2,6 +2,7 @@ import { useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import CompanyLayout from "@/components/CompanyLayout";
 import { ChangePasswordForm } from "@/components/ChangePasswordForm";
+import { DialogSizePreference } from "@/components/DialogSizePreference";
 import { useLocalAuth } from "@/contexts/LocalAuthContext";
 import { useTheme } from "@/contexts/ThemeContext";
 import { trpc } from "@/lib/trpc";
@@ -89,6 +90,8 @@ export default function Perfil() {
             </Button>
           </CardContent>
         </Card>
+
+        <DialogSizePreference />
 
         <Card>
           <CardHeader className="pb-3">

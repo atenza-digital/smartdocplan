@@ -10,3 +10,4 @@
 - Responsividade: abas da ficha da empresa e botões do topo de Solicitações quebram linha no celular em vez de ficarem cortados.
 - Chamados: conversa entre a equipe SmartDocPlan e a empresa, com resposta ao mudar o status (obrigatória ao resolver ou fechar), resposta da empresa e notificações (migration 20261005_ticket_messages).
 - Chamados: visão kanban com arrastar entre status (mantida a visão em lista); soltar em Resolvido ou Fechado abre o atendimento com resposta obrigatória.
+- Janelas de diálogo: cada usuário escolhe o tamanho (Pequeno, Médio ou Grande, cerca de 65% da tela) em Meu perfil e nas Configurações.
