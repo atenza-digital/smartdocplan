@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { createPortal } from "react-dom";
 import { Link } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { RequestDocumentos } from "@/components/RequestDocumentos";
@@ -30,6 +31,7 @@ import { canCreateRequests, canManageRequestWorkflow } from "@shared/permissions
 import { NEXT_REQUEST_STATUS, canTransitionRequest } from "@shared/requestStatus";
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   PointerSensor,
   useDraggable,
@@ -115,22 +117,21 @@ function KanbanCard({
   onOpen: () => void;
   children: React.ReactNode;
 }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+  // O card que acompanha o cursor é desenhado pelo DragOverlay; aqui fica só o espaço de origem.
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: request.id,
     data: { status: request.status },
     disabled: !canDrag,
   });
-  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
   return (
     <Card
       ref={setNodeRef}
-      style={style}
       {...(canDrag ? listeners : {})}
       {...(canDrag ? attributes : {})}
       aria-roledescription={canDrag ? "card arrastável" : undefined}
       className={`border-border/60 bg-background/80 transition-shadow hover:border-primary/30 hover:shadow-md ${
         canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-      } ${isDragging ? "relative z-50 shadow-lg" : ""}`}
+      } ${isDragging ? "border-dashed border-primary/50 opacity-40" : ""}`}
       onClick={onOpen}
     >
       {children}
@@ -152,6 +153,7 @@ export default function AdminSolicitacoes() {
   const [observacoes, setObservacoes] = useState("");
 
   const [draggingStatus, setDraggingStatus] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<number | null>(null);
   const [rejectTarget, setRejectTarget] = useState<any>(null);
   const [rejectMotivo, setRejectMotivo] = useState("");
 
@@ -184,10 +186,12 @@ export default function AdminSolicitacoes() {
 
   const handleDragStart = (event: DragStartEvent) => {
     setDraggingStatus((event.active.data.current?.status as string) ?? null);
+    setActiveId(Number(event.active.id));
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
     setDraggingStatus(null);
+    setActiveId(null);
     const from = event.active.data.current?.status as string | undefined;
     const to = event.over?.id as string | undefined;
     if (!from || !to || from === to) return;
@@ -235,6 +239,29 @@ export default function AdminSolicitacoes() {
     const empresa = empresas.find((item) => item.id === companyId);
     return empresa ? empresa.nomeFantasia || empresa.razaoSocial : `Empresa #${companyId}`;
   };
+
+  const activeRequest = activeId !== null ? solicitacoes.find((item) => item.id === activeId) ?? null : null;
+
+  const renderCardContent = (request: any) => (
+    <CardContent className="space-y-2 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{request.titulo}</p>
+        <Badge className={`shrink-0 text-xs ${PRIORIDADE_COLORS[request.prioridade]}`}>{request.prioridade}</Badge>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <FileText className="h-3 w-3" />
+        <span>{TIPO_LABELS[request.tipo] ?? request.tipo}</span>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Building2 className="h-3 w-3" />
+        <span className="truncate">{getEmpresaNome(request.companyId)}</span>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Calendar className="h-3 w-3" />
+        <span>{format(new Date(request.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
+      </div>
+    </CardContent>
+  );
 
   const openDetail = (request: any) => {
     setSelectedRequest(request);
@@ -325,7 +352,15 @@ export default function AdminSolicitacoes() {
         </div>
 
         {viewMode === "kanban" && (
-          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setDraggingStatus(null)}>
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => {
+              setDraggingStatus(null);
+              setActiveId(null);
+            }}
+          >
           {canReview && (
             <p className="-mt-2 text-xs text-muted-foreground">Arraste os cards entre as colunas para mudar o status.</p>
           )}
@@ -345,24 +380,7 @@ export default function AdminSolicitacoes() {
                           canDrag={canReview && (NEXT_STATUS[request.status]?.length ?? 0) > 0}
                           onOpen={() => openDetail(request)}
                         >
-                          <CardContent className="space-y-2 p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{request.titulo}</p>
-                              <Badge className={`shrink-0 text-xs ${PRIORIDADE_COLORS[request.prioridade]}`}>{request.prioridade}</Badge>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <FileText className="h-3 w-3" />
-                              <span>{TIPO_LABELS[request.tipo] ?? request.tipo}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Building2 className="h-3 w-3" />
-                              <span className="truncate">{getEmpresaNome(request.companyId)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              <span>{format(new Date(request.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
-                            </div>
-                          </CardContent>
+                          {renderCardContent(request)}
                         </KanbanCard>
                       ))}
                   </KanbanColumn>
@@ -370,6 +388,17 @@ export default function AdminSolicitacoes() {
               })}
             </div>
           </div>
+          {createPortal(
+            // Renderizado no <body> para o card não ser cortado pelas colunas com rolagem.
+            <DragOverlay dropAnimation={null} zIndex={60}>
+              {activeRequest ? (
+                <Card className="w-[264px] rotate-2 cursor-grabbing border-primary/40 bg-background shadow-xl">
+                  {renderCardContent(activeRequest)}
+                </Card>
+              ) : null}
+            </DragOverlay>,
+            document.body
+          )}
           </DndContext>
         )}
 
