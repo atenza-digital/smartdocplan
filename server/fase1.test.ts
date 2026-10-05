@@ -156,3 +156,27 @@ describe("Empresas — logo", () => {
     }
   );
 });
+
+// ─── BI por período ──────────────────────────────────────────────────────────
+
+describe("BI — período e acesso", () => {
+  it("recusa data inicial depois da final", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "platform_admin" as any }));
+    await expect(caller.bi.global({ inicio: "2026-12-01", fim: "2026-01-01", agrupamento: "mes" })).rejects.toThrow(/data inicial/);
+  });
+
+  it("recusa período maior que 5 anos", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "platform_admin" as any }));
+    await expect(caller.bi.global({ inicio: "2015-01-01", fim: "2026-01-01", agrupamento: "mes" })).rejects.toThrow(/5 anos/);
+  });
+
+  it("empresa não vê BI de outra empresa", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(caller.bi.company({ companyId: 2, inicio: "2026-01-01", fim: "2026-01-31", agrupamento: "dia" })).rejects.toThrow(/Acesso negado/);
+  });
+
+  it("empresa não acessa BI global", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(caller.bi.global({ inicio: "2026-01-01", fim: "2026-01-31", agrupamento: "dia" })).rejects.toThrow();
+  });
+});
