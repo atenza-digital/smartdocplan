@@ -24,6 +24,8 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canManageCompanyData, canManageRequestWorkflow } from "@shared/permissions";
 import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
+import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
+import { formatCompetencia } from "@shared/recurring";
 import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
 import { Textarea } from "@/components/ui/textarea";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
@@ -41,9 +43,11 @@ type DocForm = {
   dataEmissao: string;
   validade: string;
   requirementId: number | null;
+  recurringTypeId: number | null;
+  competencia: string | null;
 };
 
-const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", requirementId: null };
+const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", requirementId: null, recurringTypeId: null, competencia: null };
 
 const docStatusLabels: Record<string, string> = {
   valido: "Válido",
@@ -102,11 +106,16 @@ export default function EmpresaDossie() {
     { employeeId },
     { enabled: employeeId > 0 }
   );
+  const { data: mensais } = trpc.recurringDocs.employeeGrid.useQuery(
+    { employeeId, meses: 6 },
+    { enabled: employeeId > 0 }
+  );
   // Documentos, checklist e conformidade mudam juntos: recarrega os três após qualquer alteração.
   const refreshDossie = () => {
     refetch();
     utils.employeeDocs.checklist.invalidate({ employeeId });
     utils.employees.get.invalidate({ id: employeeId });
+    utils.recurringDocs.employeeGrid.invalidate({ employeeId });
   };
   const { data: cargos = [] } = trpc.positions.list.useQuery(
     { companyId: employee?.companyId ?? 0 },
@@ -145,6 +154,8 @@ export default function EmpresaDossie() {
       dataEmissao: doc.dataEmissao ? String(doc.dataEmissao).slice(0, 10) : "",
       validade: doc.validade ? String(doc.validade).slice(0, 10) : "",
       requirementId: doc.requirementId ?? null,
+      recurringTypeId: null,
+      competencia: null,
     });
     setShowUpload(true);
   };
@@ -158,6 +169,20 @@ export default function EmpresaDossie() {
       categoria: item.categoria in categoriaLabels ? item.categoria : "outros",
       nome: item.documentoNome,
       requirementId: item.requirementId,
+    });
+    setShowUpload(true);
+  };
+
+  // Envio a partir da grade mensal: já preenche tipo, competência e nome.
+  const openMonthlyUpload = (row: MonthlyRow, cell: MonthlyCell) => {
+    setEditingDoc(null);
+    setSelectedFile(null);
+    setUploadForm({
+      ...emptyDocForm,
+      categoria: row.tipo.categoria in categoriaLabels ? row.tipo.categoria : "outros",
+      nome: `${row.tipo.nome} ${formatCompetencia(cell.competencia)}`,
+      recurringTypeId: row.tipo.id,
+      competencia: cell.competencia,
     });
     setShowUpload(true);
   };
@@ -236,6 +261,9 @@ export default function EmpresaDossie() {
       fileBase64,
       requirementId: uploadForm.requirementId ?? undefined,
     };
+    const mensal = uploadForm.recurringTypeId && uploadForm.competencia
+      ? { recurringTypeId: uploadForm.recurringTypeId, competencia: uploadForm.competencia }
+      : {};
     if (editingDoc) {
       updateDocMutation.mutate({ id: editingDoc.id, ...fields });
     } else {
@@ -247,6 +275,7 @@ export default function EmpresaDossie() {
         dataEmissao: fields.dataEmissao || undefined,
         validade: fields.validade || undefined,
         obrigatorio: true,
+        ...mensal,
       });
     }
   };
@@ -376,6 +405,10 @@ export default function EmpresaDossie() {
               />
             )}
 
+            {mensais && (
+              <MonthlyDocsGrid competencias={mensais.competencias} linhas={mensais.linhas as MonthlyRow[]} canSend={canManage} onSend={openMonthlyUpload} />
+            )}
+
             <Card className="border-border">
               <CardContent className="p-5">
                 <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -460,6 +493,11 @@ export default function EmpresaDossie() {
             <DialogTitle>{editingDoc ? "Editar Documento" : "Enviar Documento"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {uploadForm.competencia && (
+              <p className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-foreground">
+                Documento mensal da competência {formatCompetencia(uploadForm.competencia)}.
+              </p>
+            )}
             {uploadForm.requirementId && (
               <p className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-foreground">
                 Este documento atende o item exigido pelo cargo e será validado pela equipe SmartDocPlan.

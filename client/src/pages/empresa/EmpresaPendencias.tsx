@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { AlertTriangle, CheckCircle2, Clock, Users, FolderOpen } from "lucide-react";
 import { Link } from "wouter";
+import { MonthlyPendencies } from "@/components/MonthlyPendencies";
 
 export default function EmpresaPendencias() {
   const { effectiveCompanyId } = useAuth();
@@ -151,6 +152,8 @@ export default function EmpresaPendencias() {
             </CardContent>
           </Card>
         )}
+
+        <MonthlyPendencies companyId={companyId} />
       </div>
     </CompanyLayout>
   );

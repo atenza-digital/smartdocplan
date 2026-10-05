@@ -2,6 +2,8 @@
 
 ## [Não publicado]
 
+- Documentos mensais: cada empresa cadastra os seus (por colaborador ou da empresa) com dia limite no mês seguinte; grade por competência no dossiê, envio direto pela grade e lista de quem não enviou em Pendências.
+- Configurações da empresa: abas quebram linha no celular.
 - Dossiê: checklist dos documentos exigidos pelo cargo (pendente, aguardando validação, aprovado, rejeitado, vencido), com envio direto pelo item e validação (aprovar ou rejeitar com motivo) pela equipe SmartDocPlan; a rejeição avisa o RH da empresa.
 - Conformidade real (documentos obrigatórios aprovados e válidos ÷ exigidos); cargo sem requisitos mostra "Sem requisitos definidos" em vez de 100%.
 - Liberação do colaborador automática (aguardando documentação, em análise, liberado), com indicadores e filtro na lista; recalculada ao mudar documentos, requisitos ou cargo e a cada hora.

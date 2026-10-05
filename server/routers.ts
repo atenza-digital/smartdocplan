@@ -23,12 +23,14 @@ import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
-  legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads,
+  legalRequirements, positionRequirements, recurringDocumentTypes, users, documentTypeTemplates, requestDocumentUploads,
   companyUpdateRequests, userNotifications, ticketMessages, userWorksites
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
+import { buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
+import { formatCompetencia, isCompetenciaAllowed, isValidCompetencia } from "@shared/recurring";
 import {
   formatCnpj,
   formatCpf,
@@ -1805,6 +1807,105 @@ const usersRouter = router({
 });
 
 // â”€â”€â”€ EMPLOYEE DOCUMENTS ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/**
+ * Documento mensal: tipo e competência vêm juntos, o tipo é ativo, da empresa e do alvo certo,
+ * a competência não é futura e ainda não existe documento para ela. Retorna true quando é mensal.
+ */
+async function assertRecurringUpload(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  opts: { recurringTypeId?: number; competencia?: string; companyId: number; alvo: "colaborador" | "empresa"; employeeId?: number }
+) {
+  if (!opts.recurringTypeId && !opts.competencia) return false;
+  if (!opts.recurringTypeId || !opts.competencia) throw new Error("Informe o tipo e a competência do documento mensal.");
+  if (!isCompetenciaAllowed(opts.competencia)) throw new Error("Competência inválida: use um mês até o atual.");
+  const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, opts.recurringTypeId)).limit(1);
+  assertAccess(!!tipo && tipo.ativo && tipo.companyId === opts.companyId && tipo.alvo === opts.alvo, "Tipo de documento mensal inválido para esta empresa.");
+  const existing = opts.alvo === "colaborador"
+    ? await db.select({ id: employeeDocuments.id }).from(employeeDocuments).where(and(
+        eq(employeeDocuments.employeeId, opts.employeeId!), eq(employeeDocuments.recurringTypeId, opts.recurringTypeId),
+        eq(employeeDocuments.competencia, opts.competencia), ne(employeeDocuments.status, "excluido"))).limit(1)
+    : await db.select({ id: companyDocuments.id }).from(companyDocuments).where(and(
+        eq(companyDocuments.companyId, opts.companyId), eq(companyDocuments.recurringTypeId, opts.recurringTypeId),
+        eq(companyDocuments.competencia, opts.competencia))).limit(1);
+  if (existing.length) throw new Error(`Já existe ${tipo.nome} da competência ${formatCompetencia(opts.competencia)}. Use "Editar" para substituir o arquivo.`);
+  return true;
+}
+
+// Categorias permitidas para documentos mensais (sem dados de saúde).
+const RECURRING_CATEGORIES = ["pessoal", "contratual", "treinamento", "outros"] as const;
+
+const recurringDocsRouter = router({
+  list: protectedProcedure.input(z.object({ companyId: z.number(), incluirInativos: z.boolean().optional() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    const conditions = [eq(recurringDocumentTypes.companyId, input.companyId)];
+    if (!input.incluirInativos) conditions.push(eq(recurringDocumentTypes.ativo, true));
+    return db.select().from(recurringDocumentTypes).where(and(...conditions)).orderBy(recurringDocumentTypes.alvo, recurringDocumentTypes.nome);
+  }),
+
+  create: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    nome: z.string().trim().min(2, "Informe o nome do documento.").max(255),
+    alvo: z.enum(["colaborador", "empresa"]),
+    categoria: z.enum(RECURRING_CATEGORIES).default("outros"),
+    diaLimite: z.number().int().min(1, "O dia limite vai de 1 a 28.").max(28, "O dia limite vai de 1 a 28."),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos mensais.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [created] = await db.insert(recurringDocumentTypes).values({
+      companyId: input.companyId, nome: input.nome, alvo: input.alvo, categoria: input.categoria, diaLimite: input.diaLimite,
+    }).returning({ id: recurringDocumentTypes.id });
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: input.companyId, acao: "criou_documento_mensal", entidade: "recurring_document_types",
+      entidadeId: created?.id ?? null, dadosDepois: { nome: input.nome, alvo: input.alvo, diaLimite: input.diaLimite },
+    });
+    return { success: true };
+  }),
+
+  update: protectedProcedure.input(z.object({
+    id: z.number(),
+    nome: z.string().trim().min(2, "Informe o nome do documento.").max(255).optional(),
+    categoria: z.enum(RECURRING_CATEGORIES).optional(),
+    diaLimite: z.number().int().min(1, "O dia limite vai de 1 a 28.").max(28, "O dia limite vai de 1 a 28.").optional(),
+    ativo: z.boolean().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos mensais.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, input.id)).limit(1);
+    if (!tipo) throw new Error("Documento mensal não encontrado.");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, tipo.companyId), "Acesso negado");
+    const { id, ...changes } = input;
+    await db.update(recurringDocumentTypes).set({ ...changes, updatedAt: new Date() }).where(eq(recurringDocumentTypes.id, id));
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: tipo.companyId, acao: "editou_documento_mensal", entidade: "recurring_document_types",
+      entidadeId: tipo.id, dadosDepois: { antes: { nome: tipo.nome, diaLimite: tipo.diaLimite, ativo: tipo.ativo }, depois: changes },
+    });
+    return { success: true };
+  }),
+
+  /** Grade do dossiê: tipos mensais do colaborador × últimas competências. */
+  employeeGrid: protectedProcedure.input(z.object({ employeeId: z.number(), meses: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
+    return buildEmployeeMonthlyGrid(db, employee, input.meses);
+  }),
+
+  /** Situação da empresa em uma competência (Pendências e Documentos da Empresa). */
+  companyOverview: protectedProcedure.input(z.object({ companyId: z.number(), competencia: z.string() })).query(async ({ ctx, input }) => {
+    if (!isValidCompetencia(input.competencia)) throw new Error("Competência inválida.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    return buildCompanyMonthlyOverview(db, input.companyId, input.competencia);
+  }),
+});
+
 // Documento enviado pela empresa aguarda validação; enviado pela equipe SmartDocPlan já entra aprovado.
 function initialReviewFields(user: { id: number; role: string }) {
   return isPlatformOperator(user.role)
@@ -1954,6 +2055,8 @@ const employeeDocsRouter = router({
     obrigatorio: z.boolean().default(true),
     observacao: z.string().optional(),
     requirementId: z.number().optional(),
+    recurringTypeId: z.number().optional(),
+    competencia: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
@@ -1965,6 +2068,7 @@ const employeeDocsRouter = router({
     assertAccess(employee.companyId === input.companyId, "O colaborador não pertence à empresa informada.");
     assertAccess(!isHealthCategory(input.categoria) || !input.fileUrl || input.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
     if (input.requirementId) await assertRequirementOfEmployee(db, input.requirementId, employee.positionId);
+    const mensal = await assertRecurringUpload(db, { recurringTypeId: input.recurringTypeId, competencia: input.competencia, companyId: employee.companyId, alvo: "colaborador", employeeId: employee.id });
     const { fileBase64, fileNome, ...data } = input;
     const saved = fileBase64 ? await saveDocumentFile(fileBase64, `employee_${input.employeeId}`) : null;
     const fileUrl = saved?.url ?? data.fileUrl;
@@ -1977,7 +2081,8 @@ const employeeDocsRouter = router({
         dataEmissao: data.dataEmissao || undefined,
         validade: data.validade || undefined,
         uploadedBy: ctx.user.id,
-        ...initialReviewFields(ctx.user),
+        // Documento mensal não passa pela validação da equipe (não interfere na liberação); os do checklist passam.
+        ...(mensal ? { status: "valido" } : initialReviewFields(ctx.user)),
       } as any).returning({ id: employeeDocuments.id });
     } catch (error) { await saved?.cleanup(); throw error; }
     await recalcCompliance(db, [input.employeeId]);
@@ -2030,7 +2135,7 @@ const employeeDocsRouter = router({
     if (input.observacao !== undefined) payload.observacao = normalizeOptionalText(input.observacao) ?? null;
     if (input.requirementId !== undefined) payload.requirementId = input.requirementId;
     // Arquivo novo ou datas novas voltam para validação, salvo quando a própria equipe SmartDocPlan altera.
-    if (saved || input.dataEmissao !== undefined || input.validade !== undefined) Object.assign(payload, initialReviewFields(ctx.user));
+    if (!doc.recurringTypeId && (saved || input.dataEmissao !== undefined || input.validade !== undefined)) Object.assign(payload, initialReviewFields(ctx.user));
     if (saved) {
       // O arquivo anterior permanece no disco para histórico; o registro aponta para a nova versão.
       payload.fileUrl = saved.url;
@@ -2346,6 +2451,7 @@ const requestDocUploadsRouter = router({
 
 export const appRouter = router({
   bi: biRouter,
+  recurringDocs: recurringDocsRouter,
   vacations: vacationsRouter,
   organization: organizationRouter,
   system: systemRouter,

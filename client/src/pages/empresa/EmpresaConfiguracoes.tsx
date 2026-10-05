@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import CompanyLayout from "@/components/CompanyLayout";
 import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
 import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
+import { RecurringTypesManager } from "@/components/RecurringTypesManager";
+import { CalendarClock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useLocalAuth as useAuth } from "@/contexts/LocalAuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -433,7 +435,7 @@ export default function EmpresaConfiguracoes() {
         </div>
 
         <Tabs defaultValue="empresa">
-          <TabsList className="grid w-full max-w-2xl grid-cols-5">
+          <TabsList className="flex h-auto w-full max-w-3xl flex-wrap justify-start">
             <TabsTrigger value="empresa" className="text-xs">
               <Building2 className="mr-1 h-3.5 w-3.5" />
               Empresa
@@ -449,6 +451,10 @@ export default function EmpresaConfiguracoes() {
             <TabsTrigger value="matriz" className="text-xs">
               <BookOpen className="mr-1 h-3.5 w-3.5" />
               Matriz Legal
+            </TabsTrigger>
+            <TabsTrigger value="mensais" className="text-xs">
+              <CalendarClock className="mr-1 h-3.5 w-3.5" />
+              Documentos mensais
             </TabsTrigger>
             <TabsTrigger value="perfil" className="text-xs">
               <Users className="mr-1 h-3.5 w-3.5" />
@@ -856,6 +862,10 @@ export default function EmpresaConfiguracoes() {
                 ))}
               </div>
             </div>
+          </TabsContent>
+
+          <TabsContent value="mensais" className="mt-4">
+            <RecurringTypesManager companyId={companyId} canEdit={canEdit} />
           </TabsContent>
 
           <TabsContent value="perfil" className="mt-4">

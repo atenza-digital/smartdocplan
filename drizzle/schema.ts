@@ -139,6 +139,8 @@ export const companyDocuments = smartdocSchema.table("company_documents", {
   dataEmissao: date("dataEmissao"),
   validade: date("validade"),
   observacao: text("observacao"),
+  recurringTypeId: integer("recurringTypeId"), // documento mensal da empresa: tipo e competência (AAAA-MM)
+  competencia: varchar("competencia", { length: 7 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -207,6 +209,19 @@ export const positionRequirements = smartdocSchema.table("position_requirements"
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// --- RECURRING DOCUMENT TYPES (DOCUMENTOS MENSAIS) ---
+export const recurringDocumentTypes = smartdocSchema.table("recurring_document_types", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  alvo: text("alvo").default("colaborador").notNull(), // colaborador | empresa
+  categoria: text("categoria").default("outros").notNull(),
+  diaLimite: integer("diaLimite").default(10).notNull(), // dia do mês seguinte à competência
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 // --- EMPLOYEES (COLABORADORES) ---
 export const employees = smartdocSchema.table("employees", {
   id: serial("id").primaryKey(),
@@ -253,6 +268,8 @@ export const employeeDocuments = smartdocSchema.table("employee_documents", {
   analisadoPor: integer("analisadoPor"),
   analisadoAt: timestamp("analisadoAt"),
   motivoRejeicao: text("motivoRejeicao"),
+  recurringTypeId: integer("recurringTypeId"), // documento mensal: tipo e competência (AAAA-MM)
+  competencia: varchar("competencia", { length: 7 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
