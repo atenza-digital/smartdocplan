@@ -84,35 +84,16 @@ export default function AdminSolicitacoes() {
 
   const [draggingStatus, setDraggingStatus] = useState<string | null>(null);
   const [activeId, setActiveId] = useState<number | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<any>(null);
-  const [rejectMotivo, setRejectMotivo] = useState("");
+  const [statusFromDrop, setStatusFromDrop] = useState(false);
 
   const listInput = { companyId: parseInt(filterEmpresa, 10) };
   const { data: solicitacoes = [], isLoading, refetch } = trpc.requests.list.useQuery(listInput);
   const { data: empresas = [] } = trpc.companies.list.useQuery();
-  const utils = trpc.useUtils();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   );
-
-  const moveMutation = trpc.requests.updateStatus.useMutation({
-    onMutate: async (vars) => {
-      await utils.requests.list.cancel(listInput);
-      const previous = utils.requests.list.getData(listInput);
-      utils.requests.list.setData(listInput, (old) =>
-        old?.map((item) => (item.id === vars.id ? { ...item, status: vars.status } : item))
-      );
-      return { previous };
-    },
-    onError: (error, _vars, context) => {
-      if (context?.previous) utils.requests.list.setData(listInput, context.previous);
-      toast.error(error.message);
-    },
-    onSuccess: () => toast.success("Solicitação movida."),
-    onSettled: () => utils.requests.list.invalidate(listInput),
-  });
 
   const handleDragStart = (event: DragStartEvent) => {
     setDraggingStatus((event.active.data.current?.status as string) ?? null);
@@ -131,18 +112,8 @@ export default function AdminSolicitacoes() {
     }
     const request = solicitacoes.find((item) => item.id === event.active.id);
     if (!request) return;
-    if (to === "rejeitado") {
-      setRejectMotivo("");
-      setRejectTarget(request);
-      return;
-    }
-    moveMutation.mutate({ id: request.id, status: to as any });
-  };
-
-  const confirmReject = () => {
-    if (!rejectTarget || !rejectMotivo.trim()) return;
-    moveMutation.mutate({ id: rejectTarget.id, status: "rejeitado", observacoes: rejectMotivo.trim() });
-    setRejectTarget(null);
+    // Soltar o card abre a avaliação com o novo status já escolhido; a mudança só vale ao confirmar.
+    openDetail(request, to);
   };
 
   const updateStatusMutation = trpc.requests.updateStatus.useMutation({
@@ -193,12 +164,77 @@ export default function AdminSolicitacoes() {
     </CardContent>
   );
 
-  const openDetail = (request: any) => {
+  const openDetail = (request: any, statusInicial?: string) => {
+    setStatusFromDrop(!!statusInicial);
     setSelectedRequest(request);
-    setNovoStatus(request.status);
-    setObservacoes(request.observacoes ?? "");
+    setNovoStatus(statusInicial ?? request.status);
+    setObservacoes(statusInicial ? "" : request.observacoes ?? "");
     setDetailOpen(true);
   };
+
+  const renderReview = () => (
+    canReview ? (
+      <>
+        {(NEXT_STATUS[selectedRequest.status]?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Ações rápidas:</p>
+            <div className="flex flex-wrap gap-2">
+              {NEXT_STATUS[selectedRequest.status].map((status) => {
+                const column = STATUS_COLUMNS.find((item) => item.key === status);
+                return (
+                  <Button
+                    key={status}
+                    size="sm"
+                    variant="outline"
+                    className={`border-current text-xs ${column?.textColor}`}
+                    onClick={() => setNovoStatus(status)}
+                  >
+                    <ArrowRight className="mr-1 h-3 w-3" />
+                    {column?.label ?? status}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label>Status da solicitação</Label>
+          <Select value={novoStatus} onValueChange={setNovoStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_COLUMNS.filter((column) => canTransitionRequest(selectedRequest.status, column.key)).map((column) => (
+                <SelectItem key={column.key} value={column.key}>
+                  {column.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>
+            {novoStatus === "rejeitado" && selectedRequest.status !== "rejeitado" ? "Motivo da rejeição *" : "Observações / parecer"}
+          </Label>
+          <Textarea
+            value={observacoes}
+            onChange={(event) => setObservacoes(event.target.value)}
+            placeholder="Adicione observações, solicitações de documentos ou parecer técnico..."
+            rows={3}
+            className="resize-none"
+          />
+        </div>
+      </>
+    ) : (
+      <Card className="border-border bg-muted/30">
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          Esse perfil possui acesso de leitura. A movimentação de status fica restrita a administradores e analistas da plataforma.
+        </CardContent>
+      </Card>
+    )
+  );
 
   return (
     <AdminLayout title="Solicitações">
@@ -292,7 +328,7 @@ export default function AdminSolicitacoes() {
             }}
           >
           {canReview && (
-            <p className="-mt-2 text-xs text-muted-foreground">Arraste os cards entre as colunas para mudar o status.</p>
+            <p className="-mt-2 text-xs text-muted-foreground">Arraste um card para outra coluna: abre a avaliação com o novo status para você escrever uma observação e confirmar.</p>
           )}
           <div className="overflow-x-auto pb-4">
             <div className="flex min-w-max gap-4">
@@ -407,6 +443,15 @@ export default function AdminSolicitacoes() {
                 )}
               </div>
 
+              {statusFromDrop && (
+                <div className="space-y-4 rounded-lg border border-primary/40 bg-primary/5 p-4">
+                  <p className="text-sm font-medium text-foreground">
+                    Confirme a mudança de status e, se quiser, deixe uma observação.
+                  </p>
+                  {renderReview()}
+                </div>
+              )}
+
               <RequestDocumentos
                 requestId={selectedRequest.id}
                 tipoSolicitacao={selectedRequest.tipo}
@@ -415,67 +460,7 @@ export default function AdminSolicitacoes() {
                 readOnly={!canReview}
               />
 
-              {canReview ? (
-                <>
-                  {(NEXT_STATUS[selectedRequest.status]?.length ?? 0) > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Ações rápidas:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {NEXT_STATUS[selectedRequest.status].map((status) => {
-                          const column = STATUS_COLUMNS.find((item) => item.key === status);
-                          return (
-                            <Button
-                              key={status}
-                              size="sm"
-                              variant="outline"
-                              className={`border-current text-xs ${column?.textColor}`}
-                              onClick={() => setNovoStatus(status)}
-                            >
-                              <ArrowRight className="mr-1 h-3 w-3" />
-                              {column?.label ?? status}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <Label>Status da solicitação</Label>
-                    <Select value={novoStatus} onValueChange={setNovoStatus}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUS_COLUMNS.filter((column) => canTransitionRequest(selectedRequest.status, column.key)).map((column) => (
-                          <SelectItem key={column.key} value={column.key}>
-                            {column.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>
-                      {novoStatus === "rejeitado" && selectedRequest.status !== "rejeitado" ? "Motivo da rejeição *" : "Observações / parecer"}
-                    </Label>
-                    <Textarea
-                      value={observacoes}
-                      onChange={(event) => setObservacoes(event.target.value)}
-                      placeholder="Adicione observações, solicitações de documentos ou parecer técnico..."
-                      rows={3}
-                      className="resize-none"
-                    />
-                  </div>
-                </>
-              ) : (
-                <Card className="border-border bg-muted/30">
-                  <CardContent className="p-4 text-sm text-muted-foreground">
-                    Esse perfil possui acesso de leitura. A movimentação de status fica restrita a administradores e analistas da plataforma.
-                  </CardContent>
-                </Card>
-              )}
+              {!statusFromDrop && renderReview()}
             </div>
           )}
 
@@ -502,34 +487,6 @@ export default function AdminSolicitacoes() {
                 {updateStatusMutation.isPending ? "Salvando..." : "Salvar avaliação"}
               </Button>
             )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={!!rejectTarget} onOpenChange={(open) => !open && setRejectTarget(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Rejeitar solicitação</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-1.5">
-            <p className="text-sm text-muted-foreground">{rejectTarget?.titulo}</p>
-            <Label htmlFor="motivo-rejeicao">Motivo da rejeição *</Label>
-            <Textarea
-              id="motivo-rejeicao"
-              value={rejectMotivo}
-              onChange={(event) => setRejectMotivo(event.target.value)}
-              placeholder="Explique por que a solicitação foi rejeitada"
-              rows={3}
-              className="resize-none"
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectTarget(null)}>
-              Cancelar
-            </Button>
-            <Button onClick={confirmReject} disabled={!rejectMotivo.trim()} className="bg-destructive text-white hover:bg-destructive/90">
-              Rejeitar
-            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

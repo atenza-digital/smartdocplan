@@ -68,8 +68,8 @@ export default function AdminChamados() {
   const { data: stats } = trpc.tickets.stats.useQuery();
   const utils = trpc.useUtils();
   const updateStatus = trpc.tickets.updateStatus.useMutation({
-    onSuccess: () => {
-      toast.success("Chamado atualizado e resposta enviada à empresa.");
+    onSuccess: (_data, vars) => {
+      toast.success(vars.mensagem ? "Chamado atualizado e resposta enviada à empresa." : "Status do chamado atualizado.");
       setSelected(null);
       refetch();
       utils.tickets.stats.invalidate();
@@ -83,28 +83,10 @@ export default function AdminChamados() {
     useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   );
-  const listInput = {};
-  const moveMutation = trpc.tickets.updateStatus.useMutation({
-    onMutate: async (vars) => {
-      await utils.tickets.list.cancel(listInput);
-      const previous = utils.tickets.list.getData(listInput);
-      utils.tickets.list.setData(listInput, (old) =>
-        old?.map((item) => (item.id === vars.id ? { ...item, status: vars.status } : item))
-      );
-      return { previous };
-    },
-    onError: (error, _vars, context) => {
-      if (context?.previous) utils.tickets.list.setData(listInput, context.previous);
-      toast.error(error.message);
-    },
-    onSuccess: () => toast.success("Chamado movido."),
-    onSettled: () => {
-      utils.tickets.list.invalidate(listInput);
-      utils.tickets.stats.invalidate();
-    },
-  });
+  const [statusFromDrop, setStatusFromDrop] = useState(false);
 
   const openTicket = (chamado: any, statusInicial?: string) => {
+    setStatusFromDrop(!!statusInicial);
     setSelected(chamado);
     setNovoStatus(statusInicial ?? chamado.status);
     setResposta("");
@@ -117,12 +99,8 @@ export default function AdminChamados() {
     if (!from || !to || from === to) return;
     const chamado = chamados.find((item) => item.id === event.active.id);
     if (!chamado) return;
-    // Resolver ou fechar exige resposta para a empresa: abre o atendimento com o status já escolhido.
-    if (to === "resolvido" || to === "fechado") {
-      openTicket(chamado, to);
-      return;
-    }
-    moveMutation.mutate({ id: chamado.id, status: to as any });
+    // Soltar o card abre o atendimento com o novo status já escolhido; a mudança só vale ao confirmar.
+    openTicket(chamado, to);
   };
 
   const activeTicket = activeId !== null ? chamados.find((item) => item.id === activeId) ?? null : null;
@@ -224,7 +202,7 @@ export default function AdminChamados() {
           >
             {canManage && (
               <p className="-mt-3 text-xs text-muted-foreground">
-                Arraste os cards para mudar o status. Ao soltar em Resolvido ou Fechado, escreva a resposta para a empresa.
+                Arraste um card para outra coluna: abre a conversa com o novo status para você escrever uma mensagem (opcional; obrigatória em Resolvido e Fechado) e confirmar.
               </p>
             )}
             <div className="overflow-x-auto pb-4">
@@ -310,8 +288,8 @@ export default function AdminChamados() {
             <DialogTitle>{canManage ? "Atender chamado" : "Detalhes do chamado"}</DialogTitle>
           </DialogHeader>
           {selected && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-col gap-4">
+              <div className="order-[-2] flex flex-wrap items-center gap-2">
                 <span className="text-sm font-semibold text-foreground">#{selected.id} — {selected.titulo}</span>
                 <Badge variant="outline" className={`text-xs ${statusColors[selected.status]}`}>{statusLabels[selected.status]}</Badge>
                 <Badge variant="outline" className="text-xs">{tipoLabels[selected.tipo] ?? selected.tipo}</Badge>
@@ -320,7 +298,19 @@ export default function AdminChamados() {
               <TicketThread ticket={selected} />
 
               {canManage && (
-                <div className="space-y-3 border-t border-border pt-4">
+                // Vindo do arraste no kanban, a confirmação aparece antes da conversa.
+                <div
+                  className={
+                    statusFromDrop
+                      ? "order-[-1] space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4"
+                      : "space-y-3 border-t border-border pt-4"
+                  }
+                >
+                  {statusFromDrop && (
+                    <p className="text-sm font-medium text-foreground">
+                      Confirme a mudança de status e, se quiser, escreva uma mensagem para a empresa.
+                    </p>
+                  )}
                   <div className="space-y-1.5">
                     <Label htmlFor="chamado-status">Status</Label>
                     <Select value={novoStatus} onValueChange={setNovoStatus}>
@@ -359,7 +349,7 @@ export default function AdminChamados() {
                 disabled={!podeSalvar || updateStatus.isPending}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
               >
-                {updateStatus.isPending ? "Salvando..." : "Salvar e responder"}
+                {updateStatus.isPending ? "Salvando..." : "Confirmar"}
               </Button>
             )}
           </DialogFooter>
