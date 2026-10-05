@@ -9,6 +9,7 @@ import {
   isPlatformOperator,
   isPlatformUser,
 } from "@shared/permissions";
+import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { organizationRouter } from "./organization";
@@ -833,6 +834,14 @@ const requestsRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
     assertAccess(!isHealthCategory(request.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status da solicitação.");
+    assertAccess(
+      canTransitionRequest(request.status, input.status),
+      `Não é possível mover de "${REQUEST_STATUS_LABELS[request.status as RequestStatus] ?? request.status}" para "${REQUEST_STATUS_LABELS[input.status]}".`
+    );
+    assertAccess(
+      input.status !== "rejeitado" || request.status === "rejeitado" || !!input.observacoes?.trim(),
+      "Informe o motivo da rejeição."
+    );
     const updateData: Record<string, unknown> = { status: input.status };
     if (input.observacoes) updateData.observacoes = input.observacoes;
     if (input.status === "concluido") updateData.concluidoAt = new Date();

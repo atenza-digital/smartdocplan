@@ -27,6 +27,18 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { canCreateRequests, canManageRequestWorkflow } from "@shared/permissions";
+import { NEXT_REQUEST_STATUS, canTransitionRequest } from "@shared/requestStatus";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
 
 const STATUS_COLUMNS = [
   { key: "nova", label: "Novas", color: "bg-blue-500", textColor: "text-blue-700 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800" },
@@ -54,17 +66,77 @@ const PRIORIDADE_COLORS: Record<string, string> = {
   urgente: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
-const NEXT_STATUS: Record<string, string[]> = {
-  nova: ["em_analise", "aguardando_documentos", "rejeitado"],
-  em_analise: ["aguardando_documentos", "aguardando_correcao", "aprovado", "rejeitado"],
-  aguardando_documentos: ["em_analise", "aprovado", "rejeitado"],
-  aguardando_correcao: ["em_analise", "rejeitado"],
-  aprovado: ["concluido", "rejeitado"],
-  concluido: [],
-  rejeitado: [],
-};
+const NEXT_STATUS: Record<string, readonly string[]> = NEXT_REQUEST_STATUS;
 
 type ViewMode = "kanban" | "lista";
+type StatusColumn = (typeof STATUS_COLUMNS)[number];
+
+function KanbanColumn({
+  column,
+  count,
+  dimmed,
+  children,
+}: {
+  column: StatusColumn;
+  count: number;
+  dimmed: boolean;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.key, disabled: dimmed });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`flex w-72 flex-col rounded-xl border ${column.border} ${column.bg} transition-opacity ${
+        dimmed ? "opacity-40" : ""
+      } ${isOver ? "ring-2 ring-primary" : ""}`}
+    >
+      <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
+        <div className="flex items-center gap-2">
+          <div className={`h-2.5 w-2.5 rounded-full ${column.color}`} />
+          <span className={`text-sm font-semibold ${column.textColor}`}>{column.label}</span>
+        </div>
+        <Badge variant="outline" className={`border-current text-xs ${column.textColor}`}>
+          {count}
+        </Badge>
+      </div>
+      <div className="max-h-[calc(100vh-300px)] min-h-24 flex-1 space-y-2 overflow-y-auto p-3">{children}</div>
+    </div>
+  );
+}
+
+function KanbanCard({
+  request,
+  canDrag,
+  onOpen,
+  children,
+}: {
+  request: any;
+  canDrag: boolean;
+  onOpen: () => void;
+  children: React.ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: request.id,
+    data: { status: request.status },
+    disabled: !canDrag,
+  });
+  const style = transform ? { transform: `translate3d(${transform.x}px, ${transform.y}px, 0)` } : undefined;
+  return (
+    <Card
+      ref={setNodeRef}
+      style={style}
+      {...(canDrag ? listeners : {})}
+      {...(canDrag ? attributes : {})}
+      aria-roledescription={canDrag ? "card arrastável" : undefined}
+      className={`border-border/60 bg-background/80 transition-shadow hover:border-primary/30 hover:shadow-md ${
+        canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
+      } ${isDragging ? "relative z-50 shadow-lg" : ""}`}
+      onClick={onOpen}
+    >
+      {children}
+    </Card>
+  );
+}
 
 export default function AdminSolicitacoes() {
   const { user } = useAuth();
@@ -79,10 +151,65 @@ export default function AdminSolicitacoes() {
   const [novoStatus, setNovoStatus] = useState("");
   const [observacoes, setObservacoes] = useState("");
 
-  const { data: solicitacoes = [], isLoading, refetch } = trpc.requests.list.useQuery({
-    companyId: parseInt(filterEmpresa, 10),
-  });
+  const [draggingStatus, setDraggingStatus] = useState<string | null>(null);
+  const [rejectTarget, setRejectTarget] = useState<any>(null);
+  const [rejectMotivo, setRejectMotivo] = useState("");
+
+  const listInput = { companyId: parseInt(filterEmpresa, 10) };
+  const { data: solicitacoes = [], isLoading, refetch } = trpc.requests.list.useQuery(listInput);
   const { data: empresas = [] } = trpc.companies.list.useQuery();
+  const utils = trpc.useUtils();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const moveMutation = trpc.requests.updateStatus.useMutation({
+    onMutate: async (vars) => {
+      await utils.requests.list.cancel(listInput);
+      const previous = utils.requests.list.getData(listInput);
+      utils.requests.list.setData(listInput, (old) =>
+        old?.map((item) => (item.id === vars.id ? { ...item, status: vars.status } : item))
+      );
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) utils.requests.list.setData(listInput, context.previous);
+      toast.error(error.message);
+    },
+    onSuccess: () => toast.success("Solicitação movida."),
+    onSettled: () => utils.requests.list.invalidate(listInput),
+  });
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setDraggingStatus((event.active.data.current?.status as string) ?? null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDraggingStatus(null);
+    const from = event.active.data.current?.status as string | undefined;
+    const to = event.over?.id as string | undefined;
+    if (!from || !to || from === to) return;
+    if (!canTransitionRequest(from, to)) {
+      toast.error("Essa mudança de status não é permitida.");
+      return;
+    }
+    const request = solicitacoes.find((item) => item.id === event.active.id);
+    if (!request) return;
+    if (to === "rejeitado") {
+      setRejectMotivo("");
+      setRejectTarget(request);
+      return;
+    }
+    moveMutation.mutate({ id: request.id, status: to as any });
+  };
+
+  const confirmReject = () => {
+    if (!rejectTarget || !rejectMotivo.trim()) return;
+    moveMutation.mutate({ id: rejectTarget.id, status: "rejeitado", observacoes: rejectMotivo.trim() });
+    setRejectTarget(null);
+  };
 
   const updateStatusMutation = trpc.requests.updateStatus.useMutation({
     onSuccess: () => {
@@ -198,30 +325,25 @@ export default function AdminSolicitacoes() {
         </div>
 
         {viewMode === "kanban" && (
+          <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd} onDragCancel={() => setDraggingStatus(null)}>
+          {canReview && (
+            <p className="-mt-2 text-xs text-muted-foreground">Arraste os cards entre as colunas para mudar o status.</p>
+          )}
           <div className="overflow-x-auto pb-4">
             <div className="flex min-w-max gap-4">
               {STATUS_COLUMNS.map((column) => {
                 const cards = filtered.filter((request) => request.status === column.key);
+                const dimmed = !!draggingStatus && draggingStatus !== column.key && !canTransitionRequest(draggingStatus, column.key);
 
                 return (
-                  <div key={column.key} className={`flex w-72 flex-col rounded-xl border ${column.border} ${column.bg}`}>
-                    <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className={`h-2.5 w-2.5 rounded-full ${column.color}`} />
-                        <span className={`text-sm font-semibold ${column.textColor}`}>{column.label}</span>
-                      </div>
-                      <Badge variant="outline" className={`border-current text-xs ${column.textColor}`}>
-                        {cards.length}
-                      </Badge>
-                    </div>
-
-                    <div className="max-h-[calc(100vh-300px)] flex-1 space-y-2 overflow-y-auto p-3">
+                  <KanbanColumn key={column.key} column={column} count={cards.length} dimmed={dimmed}>
                       {cards.length === 0 && <div className="py-8 text-center text-xs text-muted-foreground/50">Nenhuma solicitação</div>}
                       {cards.map((request) => (
-                        <Card
+                        <KanbanCard
                           key={request.id}
-                          className="cursor-pointer border-border/60 bg-background/80 transition-all hover:border-primary/30 hover:shadow-md"
-                          onClick={() => openDetail(request)}
+                          request={request}
+                          canDrag={canReview && (NEXT_STATUS[request.status]?.length ?? 0) > 0}
+                          onOpen={() => openDetail(request)}
                         >
                           <CardContent className="space-y-2 p-3">
                             <div className="flex items-start justify-between gap-2">
@@ -241,14 +363,14 @@ export default function AdminSolicitacoes() {
                               <span>{format(new Date(request.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
                             </div>
                           </CardContent>
-                        </Card>
+                        </KanbanCard>
                       ))}
-                    </div>
-                  </div>
+                  </KanbanColumn>
                 );
               })}
             </div>
           </div>
+          </DndContext>
         )}
 
         {viewMode === "lista" && (
@@ -376,7 +498,7 @@ export default function AdminSolicitacoes() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        {STATUS_COLUMNS.map((column) => (
+                        {STATUS_COLUMNS.filter((column) => canTransitionRequest(selectedRequest.status, column.key)).map((column) => (
                           <SelectItem key={column.key} value={column.key}>
                             {column.label}
                           </SelectItem>
@@ -386,7 +508,9 @@ export default function AdminSolicitacoes() {
                   </div>
 
                   <div className="space-y-1.5">
-                    <Label>Observações / parecer</Label>
+                    <Label>
+                      {novoStatus === "rejeitado" && selectedRequest.status !== "rejeitado" ? "Motivo da rejeição *" : "Observações / parecer"}
+                    </Label>
                     <Textarea
                       value={observacoes}
                       onChange={(event) => setObservacoes(event.target.value)}
@@ -419,12 +543,44 @@ export default function AdminSolicitacoes() {
                     observacoes: observacoes || undefined,
                   })
                 }
-                disabled={!novoStatus || updateStatusMutation.isPending}
+                disabled={
+                  !novoStatus ||
+                  updateStatusMutation.isPending ||
+                  (novoStatus === "rejeitado" && selectedRequest?.status !== "rejeitado" && !observacoes.trim())
+                }
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {updateStatusMutation.isPending ? "Salvando..." : "Salvar avaliação"}
               </Button>
             )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => !open && setRejectTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Rejeitar solicitação</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-1.5">
+            <p className="text-sm text-muted-foreground">{rejectTarget?.titulo}</p>
+            <Label htmlFor="motivo-rejeicao">Motivo da rejeição *</Label>
+            <Textarea
+              id="motivo-rejeicao"
+              value={rejectMotivo}
+              onChange={(event) => setRejectMotivo(event.target.value)}
+              placeholder="Explique por que a solicitação foi rejeitada"
+              rows={3}
+              className="resize-none"
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRejectTarget(null)}>
+              Cancelar
+            </Button>
+            <Button onClick={confirmReject} disabled={!rejectMotivo.trim()} className="bg-destructive text-white hover:bg-destructive/90">
+              Rejeitar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
