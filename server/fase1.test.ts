@@ -111,3 +111,27 @@ describe("Auditoria — acesso", () => {
     await expect(caller.audit.actions()).rejects.toThrow();
   });
 });
+
+// ─── Chamados: conversa entre equipe e empresa ───────────────────────────────
+
+describe("Chamados — respostas e status", () => {
+  it.each(["resolvido", "fechado"] as const)("não permite %s sem resposta para a empresa", async (status) => {
+    const caller = appRouter.createCaller(makeCtx({ role: "platform_analyst" as any }));
+    await expect(caller.tickets.updateStatus({ id: 1, status })).rejects.toThrow(/resposta para a empresa/);
+  });
+
+  it.each(["company_admin", "company_hr", "platform_auditor"])("%s não muda status do chamado", async (role) => {
+    const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: 1 }));
+    await expect(caller.tickets.updateStatus({ id: 1, status: "em_atendimento" })).rejects.toThrow(/não pode alterar/);
+  });
+
+  it.each(["company_viewer", "platform_auditor"])("%s não responde chamado", async (role) => {
+    const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: 1 }));
+    await expect(caller.tickets.reply({ ticketId: 1, mensagem: "Olá" })).rejects.toThrow(/não pode responder/);
+  });
+
+  it("recusa resposta vazia", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(caller.tickets.reply({ ticketId: 1, mensagem: "   " })).rejects.toThrow();
+  });
+});

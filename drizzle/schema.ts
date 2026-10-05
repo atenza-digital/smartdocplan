@@ -302,6 +302,19 @@ export const tickets = smartdocSchema.table("tickets", {
   resolvidoAt: timestamp("resolvidoAt"),
 });
 
+// --- TICKET MESSAGES (conversa do chamado entre equipe e empresa) ---
+export const ticketMessages = smartdocSchema.table("ticket_messages", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticketId").notNull(),
+  companyId: integer("companyId").notNull(),
+  autorId: integer("autorId").notNull(),
+  origem: varchar("origem", { length: 20 }).notNull(), // plataforma | empresa
+  mensagem: text("mensagem").notNull(),
+  statusAnterior: text("statusAnterior"),
+  statusNovo: text("statusNovo"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type Ticket = typeof tickets.$inferSelect;
 export type InsertTicket = typeof tickets.$inferInsert;
 

@@ -5,8 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Ticket, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Ticket, Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { canManageRequestWorkflow } from "@shared/permissions";
+import { TicketThread } from "@/components/TicketThread";
 
 const statusColors: Record<string, string> = {
   aberto: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
@@ -34,13 +40,34 @@ const tipoLabels: Record<string, string> = {
 };
 
 export default function AdminChamados() {
+  const { user } = useAuth();
+  const canManage = canManageRequestWorkflow(user?.role ?? null);
   const [filterStatus, setFilterStatus] = useState<string>("todos");
+  const [selected, setSelected] = useState<any>(null);
+  const [novoStatus, setNovoStatus] = useState("");
+  const [resposta, setResposta] = useState("");
   const { data: chamados = [], isLoading, refetch } = trpc.tickets.list.useQuery({});
   const { data: stats } = trpc.tickets.stats.useQuery();
+  const utils = trpc.useUtils();
   const updateStatus = trpc.tickets.updateStatus.useMutation({
-    onSuccess: () => { toast.success("Status atualizado!"); refetch(); },
+    onSuccess: () => {
+      toast.success("Chamado atualizado e resposta enviada à empresa.");
+      setSelected(null);
+      refetch();
+      utils.tickets.stats.invalidate();
+    },
     onError: (e) => toast.error(e.message),
   });
+
+  const openTicket = (chamado: any) => {
+    setSelected(chamado);
+    setNovoStatus(chamado.status);
+    setResposta("");
+  };
+
+  const mudouStatus = !!selected && novoStatus !== selected.status;
+  const respostaObrigatoria = mudouStatus && (novoStatus === "resolvido" || novoStatus === "fechado");
+  const podeSalvar = !!selected && (mudouStatus || !!resposta.trim()) && (!respostaObrigatoria || !!resposta.trim());
 
   const filtered = filterStatus === "todos" ? chamados : chamados.filter((c) => c.status === filterStatus);
 
@@ -101,7 +128,14 @@ export default function AdminChamados() {
             </div>
           )}
           {filtered.map((chamado) => (
-            <Card key={chamado.id} className="border-border hover:border-primary/30 transition-colors">
+            <Card
+              key={chamado.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => openTicket(chamado)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openTicket(chamado); } }}
+              className="cursor-pointer border-border hover:border-primary/30 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+            >
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -117,33 +151,86 @@ export default function AdminChamados() {
                     {chamado.descricao && (
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{chamado.descricao}</p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Criado em {new Date(chamado.createdAt).toLocaleDateString("pt-BR")}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
+                      <span>Criado em {new Date(chamado.createdAt).toLocaleDateString("pt-BR")}</span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />
+                        {chamado.totalMensagens} {chamado.totalMensagens === 1 ? "mensagem" : "mensagens"}
+                      </span>
+                      {chamado.ultimaOrigem === "empresa" && (
+                        <Badge variant="outline" className="text-xs py-0 border-primary/40 text-primary">Empresa respondeu</Badge>
+                      )}
+                    </div>
                   </div>
-                  <div className="shrink-0">
-                    <Select
-                      value={chamado.status}
-                      onValueChange={(v) => updateStatus.mutate({ id: chamado.id, status: v as any })}
-                    >
-                      <SelectTrigger className="w-40 h-8 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="aberto">Aberto</SelectItem>
-                        <SelectItem value="em_atendimento">Em Atendimento</SelectItem>
-                        <SelectItem value="aguardando_cliente">Aguardando Cliente</SelectItem>
-                        <SelectItem value="resolvido">Resolvido</SelectItem>
-                        <SelectItem value="fechado">Fechado</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <span className="shrink-0 text-xs font-medium text-primary">{canManage ? "Atender" : "Ver"}</span>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       </div>
+
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{canManage ? "Atender chamado" : "Detalhes do chamado"}</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">#{selected.id} — {selected.titulo}</span>
+                <Badge variant="outline" className={`text-xs ${statusColors[selected.status]}`}>{statusLabels[selected.status]}</Badge>
+                <Badge variant="outline" className="text-xs">{tipoLabels[selected.tipo] ?? selected.tipo}</Badge>
+              </div>
+
+              <TicketThread ticket={selected} />
+
+              {canManage && (
+                <div className="space-y-3 border-t border-border pt-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="chamado-status">Status</Label>
+                    <Select value={novoStatus} onValueChange={setNovoStatus}>
+                      <SelectTrigger id="chamado-status" className="w-full sm:w-60"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(statusLabels).map(([key, label]) => (
+                          <SelectItem key={key} value={key}>{label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="chamado-resposta">Resposta para a empresa{respostaObrigatoria ? " *" : ""}</Label>
+                    <Textarea
+                      id="chamado-resposta"
+                      value={resposta}
+                      onChange={(e) => setResposta(e.target.value)}
+                      placeholder="Explique o que foi feito, o que falta ou o que a empresa precisa enviar"
+                      rows={4}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      {respostaObrigatoria
+                        ? "Obrigatória ao resolver ou fechar: a empresa recebe essa explicação."
+                        : "A empresa vê esta resposta no chamado e recebe uma notificação."}
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelected(null)}>Fechar</Button>
+            {canManage && (
+              <Button
+                onClick={() => updateStatus.mutate({ id: selected.id, status: novoStatus as any, mensagem: resposta.trim() || undefined })}
+                disabled={!podeSalvar || updateStatus.isPending}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {updateStatus.isPending ? "Salvando..." : "Salvar e responder"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AdminLayout>
   );
 }

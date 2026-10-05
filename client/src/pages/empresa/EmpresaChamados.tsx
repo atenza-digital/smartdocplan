@@ -10,9 +10,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Ticket, Plus, Clock, CheckCircle2, AlertCircle } from "lucide-react";
+import { Ticket, Plus, Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 import { canCreateTickets } from "@shared/permissions";
+import { TicketThread } from "@/components/TicketThread";
 
 const statusColors: Record<string, string> = {
   aberto: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
@@ -53,6 +54,20 @@ export default function EmpresaChamados() {
     { enabled: companyId > 0 }
   );
   const { data: stats } = trpc.tickets.stats.useQuery();
+
+  const [selected, setSelected] = useState<any>(null);
+  const [resposta, setResposta] = useState("");
+  const utils = trpc.useUtils();
+  const replyMutation = trpc.tickets.reply.useMutation({
+    onSuccess: (result) => {
+      toast.success("Resposta enviada à equipe SmartDocPlan.");
+      setResposta("");
+      setSelected((current: any) => (current ? { ...current, status: result.status } : current));
+      utils.tickets.messages.invalidate();
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createMutation = trpc.tickets.create.useMutation({
     onSuccess: () => {
@@ -117,7 +132,14 @@ export default function EmpresaChamados() {
             </div>
           )}
           {chamados.map((chamado) => (
-            <Card key={chamado.id} className="border-border hover:border-primary/30 transition-colors">
+            <Card
+              key={chamado.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => { setSelected(chamado); setResposta(""); }}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelected(chamado); setResposta(""); } }}
+              className="cursor-pointer border-border hover:border-primary/30 transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+            >
               <CardContent className="p-4">
                 <div className="flex items-start justify-between gap-4">
                   <div className="flex-1 min-w-0">
@@ -133,16 +155,69 @@ export default function EmpresaChamados() {
                     {chamado.descricao && (
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{chamado.descricao}</p>
                     )}
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Aberto em {new Date(chamado.createdAt).toLocaleDateString("pt-BR")}
-                    </p>
+                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
+                      <span>Aberto em {new Date(chamado.createdAt).toLocaleDateString("pt-BR")}</span>
+                      <span className="flex items-center gap-1">
+                        <MessageSquare className="w-3 h-3" />
+                        {chamado.totalMensagens} {chamado.totalMensagens === 1 ? "mensagem" : "mensagens"}
+                      </span>
+                      {chamado.ultimaOrigem === "plataforma" && (
+                        <Badge variant="outline" className="text-xs py-0 border-primary/40 text-primary">Nova resposta da equipe</Badge>
+                      )}
+                    </div>
                   </div>
+                  <span className="shrink-0 text-xs font-medium text-primary">Ver conversa</span>
                 </div>
               </CardContent>
             </Card>
           ))}
         </div>
       </div>
+
+      <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Detalhes do chamado</DialogTitle>
+          </DialogHeader>
+          {selected && (
+            <div className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm font-semibold text-foreground">#{selected.id} — {selected.titulo}</span>
+                <Badge variant="outline" className={`text-xs ${statusColors[selected.status]}`}>{statusLabels[selected.status]}</Badge>
+                <Badge variant="outline" className="text-xs">{tipoLabels[selected.tipo] ?? selected.tipo}</Badge>
+              </div>
+              <TicketThread ticket={selected} />
+              {canCreate && selected.status !== "fechado" && (
+                <div className="space-y-1.5 border-t border-border pt-4">
+                  <Label htmlFor="chamado-responder">Responder</Label>
+                  <Textarea
+                    id="chamado-responder"
+                    value={resposta}
+                    onChange={(e) => setResposta(e.target.value)}
+                    placeholder="Escreva sua resposta ou envie as informações pedidas pela equipe"
+                    rows={3}
+                  />
+                </div>
+              )}
+              {selected.status === "fechado" && (
+                <p className="text-xs text-muted-foreground">Este chamado está fechado. Para um novo assunto, abra outro chamado.</p>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelected(null)}>Fechar</Button>
+            {canCreate && selected?.status !== "fechado" && (
+              <Button
+                onClick={() => replyMutation.mutate({ ticketId: selected.id, mensagem: resposta.trim() })}
+                disabled={!resposta.trim() || replyMutation.isPending}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {replyMutation.isPending ? "Enviando..." : "Enviar resposta"}
+              </Button>
+            )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Modal Novo Chamado */}
       <Dialog open={showModal && canCreate} onOpenChange={setShowModal}>

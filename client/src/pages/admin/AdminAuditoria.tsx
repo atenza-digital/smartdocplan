@@ -39,6 +39,7 @@ const ACAO_LABELS: Record<string, string> = {
   atualizou_status_solicitacao: "Mudou status da solicitação",
   enviou_documento_solicitacao: "Enviou documento da solicitação",
   criou_chamado: "Abriu chamado",
+  respondeu_chamado: "Respondeu chamado",
   atualizou_status_chamado: "Mudou status do chamado",
   criou_funcao: "Criou função",
   atualizou_funcao: "Atualizou função",

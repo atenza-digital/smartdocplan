@@ -23,9 +23,9 @@ import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
   legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads,
-  companyUpdateRequests, userNotifications
+  companyUpdateRequests, userNotifications, ticketMessages
 } from "../drizzle/schema";
-import { eq, and, desc, or, sql, ne } from "drizzle-orm";
+import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import {
   formatCnpj,
@@ -205,6 +205,52 @@ async function getTicketByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: n
   const ticket = result[0];
   if (!ticket) throw new Error("Chamado não encontrado");
   return ticket;
+}
+
+const TICKET_STATUS_LABELS: Record<string, string> = {
+  aberto: "Aberto",
+  em_atendimento: "Em atendimento",
+  aguardando_cliente: "Aguardando retorno",
+  resolvido: "Resolvido",
+  fechado: "Fechado",
+};
+
+/** Avisa o outro lado da conversa: equipe → quem abriu o chamado; empresa → responsável ou equipe. */
+async function notifyTicketMessage(
+  db: Awaited<ReturnType<typeof getDb>>,
+  ticket: typeof tickets.$inferSelect,
+  fromPlatform: boolean,
+  autorNome: string | null | undefined,
+  novoStatus: string | null = null,
+) {
+  try {
+    if (fromPlatform) {
+      await createNotifications({
+        userIds: [ticket.criadoPor],
+        companyId: ticket.companyId,
+        tipo: "chamado_resposta",
+        titulo: novoStatus
+          ? `Chamado #${ticket.id}: ${TICKET_STATUS_LABELS[novoStatus] ?? novoStatus}`
+          : `Nova resposta no chamado #${ticket.id}`,
+        mensagem: `${autorNome ?? "Equipe SmartDocPlan"} atualizou "${ticket.titulo}".`,
+        link: "/empresa/chamados",
+      });
+      return;
+    }
+    const destinatarios = ticket.responsavelId
+      ? [ticket.responsavelId]
+      : (await db!.select({ id: users.id }).from(users)
+          .where(and(or(eq(users.role, "platform_admin"), eq(users.role, "platform_analyst")), eq(users.ativo, true))))
+          .map(item => item.id);
+    await createNotifications({
+      userIds: destinatarios,
+      companyId: ticket.companyId,
+      tipo: "chamado_resposta",
+      titulo: `Empresa respondeu o chamado #${ticket.id}`,
+      mensagem: `${autorNome ?? "Usuário da empresa"} escreveu em "${ticket.titulo}".`,
+      link: "/admin/chamados",
+    });
+  } catch { /* não bloquear a resposta */ }
 }
 
 // â”€â”€â”€ COMPANIES ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -904,7 +950,73 @@ const ticketsRouter = router({
       conditions.push(eq(tickets.companyId, ctx.user.companyId));
     }
     if (input.status) conditions.push(eq(tickets.status, input.status));
-    return db.select().from(tickets).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(tickets.createdAt));
+    const rows = await db.select().from(tickets).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(tickets.createdAt));
+    if (!rows.length) return [];
+    // Resumo da conversa de cada chamado para os cards (total e origem da última mensagem).
+    const resumo = await db.select({
+      ticketId: ticketMessages.ticketId,
+      total: sql<number>`count(*)::int`,
+      ultimaOrigem: sql<string | null>`(array_agg(${ticketMessages.origem} ORDER BY ${ticketMessages.createdAt} DESC, ${ticketMessages.id} DESC))[1]`,
+      ultimaMensagemEm: sql<Date | null>`max(${ticketMessages.createdAt})`,
+    }).from(ticketMessages)
+      .where(inArray(ticketMessages.ticketId, rows.map(row => row.id)))
+      .groupBy(ticketMessages.ticketId);
+    const porChamado = new Map(resumo.map(item => [item.ticketId, item]));
+    return rows.map(row => ({
+      ...row,
+      totalMensagens: Number(porChamado.get(row.id)?.total ?? 0),
+      ultimaOrigem: porChamado.get(row.id)?.ultimaOrigem ?? null,
+      ultimaMensagemEm: porChamado.get(row.id)?.ultimaMensagemEm ?? null,
+    }));
+  }),
+
+  messages: protectedProcedure.input(z.object({ ticketId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const ticket = await getTicketByIdOrThrow(db, input.ticketId);
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId)) return [];
+    return db.select({
+      id: ticketMessages.id,
+      origem: ticketMessages.origem,
+      mensagem: ticketMessages.mensagem,
+      statusAnterior: ticketMessages.statusAnterior,
+      statusNovo: ticketMessages.statusNovo,
+      createdAt: ticketMessages.createdAt,
+      autorNome: users.name,
+    }).from(ticketMessages)
+      .leftJoin(users, eq(users.id, ticketMessages.autorId))
+      .where(eq(ticketMessages.ticketId, ticket.id))
+      .orderBy(ticketMessages.createdAt, ticketMessages.id);
+  }),
+
+  reply: protectedProcedure.input(z.object({
+    ticketId: z.number(),
+    mensagem: z.string().trim().min(1, "Escreva a mensagem.").max(5000),
+  })).mutation(async ({ ctx, input }) => {
+    const isPlatform = canManageRequestWorkflow(ctx.user.role);
+    assertAccess(isPlatform || canCreateTickets(ctx.user.role), "Seu perfil não pode responder chamados.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const ticket = await getTicketByIdOrThrow(db, input.ticketId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId), "Acesso negado");
+    assertAccess(isPlatform || ctx.user.companyId === ticket.companyId, "Acesso negado");
+    assertAccess(ticket.status !== "fechado", "Este chamado está fechado e não aceita novas mensagens.");
+
+    // Resposta da empresa a um chamado aguardando retorno devolve o atendimento para a equipe.
+    const novoStatus = !isPlatform && ticket.status === "aguardando_cliente" ? "em_atendimento" : null;
+    await db.insert(ticketMessages).values({
+      ticketId: ticket.id,
+      companyId: ticket.companyId,
+      autorId: ctx.user.id,
+      origem: isPlatform ? "plataforma" : "empresa",
+      mensagem: input.mensagem,
+      statusAnterior: novoStatus ? ticket.status : null,
+      statusNovo: novoStatus,
+    });
+    await db.update(tickets).set({ ...(novoStatus ? { status: novoStatus } : {}), updatedAt: new Date() }).where(eq(tickets.id, ticket.id));
+    await notifyTicketMessage(db, ticket, isPlatform, ctx.user.name);
+    await insertAuditLog({ userId: ctx.user.id, companyId: ticket.companyId, acao: "respondeu_chamado", entidade: "tickets", entidadeId: ticket.id, dadosDepois: { origem: isPlatform ? "plataforma" : "empresa", novoStatus } });
+    return { success: true, status: novoStatus ?? ticket.status };
   }),
 
   create: protectedProcedure.input(z.object({
@@ -926,16 +1038,33 @@ const ticketsRouter = router({
   updateStatus: protectedProcedure.input(z.object({
     id: z.number(),
     status: z.enum(["aberto","em_atendimento","aguardando_cliente","resolvido","fechado"]),
+    mensagem: z.string().trim().max(5000).optional(),
   })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status do chamado.");
+    const mensagem = input.mensagem?.trim() || null;
+    const encerrando = input.status === "resolvido" || input.status === "fechado";
+    assertAccess(!encerrando || !!mensagem, "Escreva a resposta para a empresa antes de resolver ou fechar o chamado.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const ticket = await getTicketByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId), "Acesso negado");
-    assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status do chamado.");
-    const updateData: Record<string, unknown> = { status: input.status };
-    if (input.status === "resolvido" || input.status === "fechado") updateData.resolvidoAt = new Date();
+    const mudouStatus = ticket.status !== input.status;
+    if (!mudouStatus && !mensagem) return { success: true };
+    const updateData: Record<string, unknown> = { status: input.status, updatedAt: new Date() };
+    if (mudouStatus && encerrando) updateData.resolvidoAt = new Date();
+    if (!ticket.responsavelId) updateData.responsavelId = ctx.user.id;
     await db.update(tickets).set(updateData).where(eq(tickets.id, input.id));
-    await insertAuditLog({ userId: ctx.user.id, companyId: ticket.companyId, acao: "atualizou_status_chamado", entidade: "tickets", entidadeId: ticket.id, dadosDepois: { status: input.status } });
+    await db.insert(ticketMessages).values({
+      ticketId: ticket.id,
+      companyId: ticket.companyId,
+      autorId: ctx.user.id,
+      origem: "plataforma",
+      mensagem: mensagem ?? "",
+      statusAnterior: mudouStatus ? ticket.status : null,
+      statusNovo: mudouStatus ? input.status : null,
+    });
+    await notifyTicketMessage(db, ticket, true, ctx.user.name, mudouStatus ? input.status : null);
+    await insertAuditLog({ userId: ctx.user.id, companyId: ticket.companyId, acao: mensagem && !mudouStatus ? "respondeu_chamado" : "atualizou_status_chamado", entidade: "tickets", entidadeId: ticket.id, dadosDepois: { status: input.status, comResposta: !!mensagem } });
     return { success: true };
   }),
 

@@ -8,3 +8,4 @@
 - Janelas de diálogo: largura padrão maior, altura limitada à tela com rolagem interna e formulário de colaborador em uma coluna no celular.
 - Perfil: item "Meu perfil" no menu do usuário, com dados da conta, tema e troca da própria senha (cria a rota /api/auth/change-password, que não existia e deixava a troca de senha das Configurações quebrada).
 - Responsividade: abas da ficha da empresa e botões do topo de Solicitações quebram linha no celular em vez de ficarem cortados.
+- Chamados: conversa entre a equipe SmartDocPlan e a empresa, com resposta ao mudar o status (obrigatória ao resolver ou fechar), resposta da empresa e notificações (migration 20261005_ticket_messages).
