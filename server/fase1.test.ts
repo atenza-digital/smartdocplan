@@ -101,3 +101,13 @@ describe("Solicitações — transições de status", () => {
     await expect(caller.requests.updateStatus({ id: 1, status: "em_analise" })).rejects.toThrow();
   });
 });
+
+// ─── Auditoria detalhada ─────────────────────────────────────────────────────
+
+describe("Auditoria — acesso", () => {
+  it.each(["company_admin", "company_hr", "company_viewer"])("%s não lê o log de auditoria", async (role) => {
+    const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: 1 }));
+    await expect(caller.audit.list({})).rejects.toThrow();
+    await expect(caller.audit.actions()).rejects.toThrow();
+  });
+});

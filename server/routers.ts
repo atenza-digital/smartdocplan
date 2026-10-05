@@ -26,6 +26,7 @@ import {
   companyUpdateRequests, userNotifications
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import {
   formatCnpj,
   formatCpf,
@@ -1415,32 +1416,77 @@ const legalReqRouter = router({
 const auditRouter = router({
   list: adminProcedure.input(z.object({
     companyId: z.number().optional(),
-    limit: z.number().default(100),
+    userId: z.number().optional(),
+    acao: z.string().optional(),
+    dataInicio: z.iso.date().optional(),
+    dataFim: z.iso.date().optional(),
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(1).max(100).default(50),
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) return [];
+    if (!db) return { rows: [], total: 0 };
     const conditions: any[] = [];
     if (input.companyId) conditions.push(eq(auditLogs.companyId, input.companyId));
-    const rows = await db.select({
-      id: auditLogs.id,
-      userId: auditLogs.userId,
-      companyId: auditLogs.companyId,
-      acao: auditLogs.action,
-      entidade: auditLogs.entity,
-      entidadeId: auditLogs.entityId,
-      dadosDepois: auditLogs.details,
-      ip: sql<string | null>`NULL`,
-      createdAt: auditLogs.createdAt,
-    }).from(auditLogs)
-      .where(conditions.length ? and(...conditions) : undefined)
-      .orderBy(desc(auditLogs.createdAt))
-      .limit(input.limit);
+    if (input.userId) conditions.push(eq(auditLogs.userId, input.userId));
+    if (input.acao) conditions.push(eq(auditLogs.action, input.acao));
+    if (input.dataInicio) conditions.push(sql`${auditLogs.createdAt} >= ${input.dataInicio}::date`);
+    if (input.dataFim) conditions.push(sql`${auditLogs.createdAt} < (${input.dataFim}::date + interval '1 day')`);
+    const where = conditions.length ? and(...conditions) : undefined;
+
+    // Obra afetada: vem do colaborador (direto ou via documento) ou da solicitação.
+    const docAlvo = alias(employeeDocuments, "audit_doc");
+    const colaboradorAlvo = alias(employees, "audit_employee");
+    const solicitacaoAlvo = alias(requests, "audit_request");
+    const obraColaborador = alias(worksites, "audit_worksite_employee");
+    const obraSolicitacao = alias(worksites, "audit_worksite_request");
+
+    const [rows, [{ total }]] = await Promise.all([
+      db.select({
+        id: auditLogs.id,
+        userId: auditLogs.userId,
+        usuarioNome: users.name,
+        usuarioEmail: users.email,
+        usuarioPapel: users.role,
+        companyId: auditLogs.companyId,
+        empresaNome: sql<string | null>`coalesce(${companies.nomeFantasia}, ${companies.razaoSocial})`,
+        obraNome: sql<string | null>`coalesce(${obraColaborador.nome}, ${obraSolicitacao.nome})`,
+        acao: auditLogs.action,
+        entidade: auditLogs.entity,
+        entidadeId: auditLogs.entityId,
+        dadosDepois: auditLogs.details,
+        createdAt: auditLogs.createdAt,
+      }).from(auditLogs)
+        .leftJoin(users, eq(users.id, auditLogs.userId))
+        .leftJoin(companies, eq(companies.id, auditLogs.companyId))
+        .leftJoin(docAlvo, and(eq(auditLogs.entity, "employee_documents"), eq(docAlvo.id, auditLogs.entityId)))
+        .leftJoin(colaboradorAlvo, or(
+          and(eq(auditLogs.entity, "employees"), eq(colaboradorAlvo.id, auditLogs.entityId)),
+          eq(colaboradorAlvo.id, docAlvo.employeeId),
+        ))
+        .leftJoin(obraColaborador, eq(obraColaborador.id, colaboradorAlvo.worksiteId))
+        .leftJoin(solicitacaoAlvo, and(eq(auditLogs.entity, "requests"), eq(solicitacaoAlvo.id, auditLogs.entityId)))
+        .leftJoin(obraSolicitacao, eq(obraSolicitacao.id, solicitacaoAlvo.worksiteId))
+        .where(where)
+        .orderBy(desc(auditLogs.createdAt), desc(auditLogs.id))
+        .limit(input.pageSize)
+        .offset((input.page - 1) * input.pageSize),
+      db.select({ total: sql<number>`count(*)::int` }).from(auditLogs).where(where),
+    ]);
     // Raw document/request payloads may contain health information from older events.
-    return canAccessHealthData(ctx.user.role) ? rows : rows.map(row =>
-      ["requests", "request_document_uploads", "employee_documents", "documento"].includes(row.entidade ?? "")
-        ? { ...row, dadosDepois: null }
-        : row
+    const canSeeHealth = canAccessHealthData(ctx.user.role);
+    const visibleRows = rows.map(row =>
+      !canSeeHealth && row.dadosDepois && ["requests", "request_document_uploads", "employee_documents", "documento"].includes(row.entidade ?? "")
+        ? { ...row, dadosDepois: null, detalhesOcultos: true }
+        : { ...row, detalhesOcultos: false }
     );
+    return { rows: visibleRows, total: Number(total ?? 0) };
+  }),
+
+  actions: adminProcedure.query(async () => {
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.selectDistinct({ acao: auditLogs.action }).from(auditLogs).orderBy(auditLogs.action);
+    return rows.map(row => row.acao);
   }),
 });
 
