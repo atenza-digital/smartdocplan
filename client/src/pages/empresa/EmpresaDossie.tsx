@@ -22,7 +22,10 @@ import {
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { canManageCompanyData } from "@shared/permissions";
+import { canManageCompanyData, canManageRequestWorkflow } from "@shared/permissions";
+import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
+import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
+import { Textarea } from "@/components/ui/textarea";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
 import { formatDateOnlyBr, getDocumentDateBounds, getDocumentDatesError } from "@shared/formValidation";
 
@@ -37,9 +40,10 @@ type DocForm = {
   tipo: string;
   dataEmissao: string;
   validade: string;
+  requirementId: number | null;
 };
 
-const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "" };
+const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", requirementId: null };
 
 const docStatusLabels: Record<string, string> = {
   valido: "Válido",
@@ -65,7 +69,9 @@ const categoriaLabels: Record<string, string> = {
   advertencia: "Advertência",
   afastamento: "Afastamento",
   atestado: "Atestado",
+  psicossocial: "Psicossocial",
   opcional: "Opcional",
+  outros: "Outros",
 };
 
 export default function EmpresaDossie() {
@@ -73,6 +79,10 @@ export default function EmpresaDossie() {
   const employeeId = parseInt(params?.id ?? "0");
   const { user } = useAuth();
   const canManage = canManageCompanyData(user?.role ?? null);
+  const canReview = canManageRequestWorkflow(user?.role ?? null);
+  const utils = trpc.useUtils();
+  const [rejectTarget, setRejectTarget] = useState<any | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
   const [showUpload, setShowUpload] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
@@ -88,6 +98,16 @@ export default function EmpresaDossie() {
     { employeeId },
     { enabled: employeeId > 0 }
   );
+  const { data: checklist } = trpc.employeeDocs.checklist.useQuery(
+    { employeeId },
+    { enabled: employeeId > 0 }
+  );
+  // Documentos, checklist e conformidade mudam juntos: recarrega os três após qualquer alteração.
+  const refreshDossie = () => {
+    refetch();
+    utils.employeeDocs.checklist.invalidate({ employeeId });
+    utils.employees.get.invalidate({ id: employeeId });
+  };
   const { data: cargos = [] } = trpc.positions.list.useQuery(
     { companyId: employee?.companyId ?? 0 },
     { enabled: (employee?.companyId ?? 0) > 0 }
@@ -124,15 +144,39 @@ export default function EmpresaDossie() {
       tipo: doc.tipo ?? "",
       dataEmissao: doc.dataEmissao ? String(doc.dataEmissao).slice(0, 10) : "",
       validade: doc.validade ? String(doc.validade).slice(0, 10) : "",
+      requirementId: doc.requirementId ?? null,
     });
     setShowUpload(true);
   };
+
+  // Envio a partir do checklist: já vincula o documento ao item exigido pelo cargo.
+  const openChecklistUpload = (item: ChecklistItem) => {
+    setEditingDoc(null);
+    setSelectedFile(null);
+    setUploadForm({
+      ...emptyDocForm,
+      categoria: item.categoria in categoriaLabels ? item.categoria : "outros",
+      nome: item.documentoNome,
+      requirementId: item.requirementId,
+    });
+    setShowUpload(true);
+  };
+
+  const reviewMutation = trpc.employeeDocs.review.useMutation({
+    onSuccess: (_, variables) => {
+      toast.success(variables.decisao === "aprovar" ? "Documento aprovado." : "Documento rejeitado; a empresa foi avisada.");
+      setRejectTarget(null);
+      setRejectReason("");
+      refreshDossie();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const createDocMutation = trpc.employeeDocs.create.useMutation({
     onSuccess: () => {
       toast.success("Documento enviado com sucesso!");
       closeDocDialog();
-      refetch();
+      refreshDossie();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -141,7 +185,7 @@ export default function EmpresaDossie() {
     onSuccess: () => {
       toast.success("Documento atualizado com sucesso!");
       closeDocDialog();
-      refetch();
+      refreshDossie();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -150,7 +194,7 @@ export default function EmpresaDossie() {
     onSuccess: () => {
       toast.success("Documento excluído.");
       setDeleteTarget(null);
-      refetch();
+      refreshDossie();
     },
     onError: (e) => toast.error(e.message),
   });
@@ -190,6 +234,7 @@ export default function EmpresaDossie() {
       validade: uploadForm.validade,
       fileNome: selectedFile?.name,
       fileBase64,
+      requirementId: uploadForm.requirementId ?? undefined,
     };
     if (editingDoc) {
       updateDocMutation.mutate({ id: editingDoc.id, ...fields });
@@ -280,13 +325,13 @@ export default function EmpresaDossie() {
                       {employee.dataAdmissao && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          Admissão: {new Date(employee.dataAdmissao).toLocaleDateString("pt-BR")}
+                          Admissão: {formatDateOnlyBr(employee.dataAdmissao)}
                         </span>
                       )}
                       {employee.dataNascimento && (
                         <span className="flex items-center gap-1">
                           <Calendar className="w-3 h-3" />
-                          Nascimento: {new Date(employee.dataNascimento).toLocaleDateString("pt-BR")}
+                          Nascimento: {formatDateOnlyBr(employee.dataNascimento)}
                         </span>
                       )}
                       {employee.email && (
@@ -303,17 +348,33 @@ export default function EmpresaDossie() {
                       )}
                     </div>
                   </div>
-                  {employee.scoreConformidade !== null && employee.scoreConformidade !== undefined && (
-                    <div className="text-center shrink-0">
+                  <div className="text-center shrink-0">
+                    {employee.scoreConformidade !== null && employee.scoreConformidade !== undefined ? (
                       <p className={`text-3xl font-bold ${scoreColor(employee.scoreConformidade)}`}>
                         {employee.scoreConformidade}%
                       </p>
-                      <p className="text-xs text-muted-foreground">Conformidade</p>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-3xl font-bold text-muted-foreground">—</p>
+                    )}
+                    <p className="text-xs text-muted-foreground">Conformidade</p>
+                    <Badge variant="outline" className={`mt-1.5 text-xs ${RELEASE_COLORS[employee.liberacao as EmployeeRelease] ?? ""}`}>
+                      {RELEASE_LABELS[employee.liberacao as EmployeeRelease] ?? employee.liberacao}
+                    </Badge>
+                  </div>
                 </div>
               </CardContent>
             </Card>
+
+            {checklist && (
+              <DossieChecklist
+                items={checklist.items as ChecklistItem[]}
+                total={checklist.total}
+                aprovados={checklist.aprovados}
+                liberacao={checklist.liberacao}
+                canSend={canManage}
+                onSend={openChecklistUpload}
+              />
+            )}
 
             <Card className="border-border">
               <CardContent className="p-5">
@@ -380,11 +441,11 @@ export default function EmpresaDossie() {
               </TabsList>
 
               <TabsContent value="todos" className="mt-4">
-                <DocGrid docs={documentos} canManage={canManage} onEdit={openEditDoc} onDelete={setDeleteTarget} />
+                <DocGrid docs={documentos} canManage={canManage} canReview={canReview} reviewing={reviewMutation.isPending} onEdit={openEditDoc} onDelete={setDeleteTarget} onApprove={(doc) => reviewMutation.mutate({ id: doc.id, decisao: "aprovar" })} onReject={setRejectTarget} />
               </TabsContent>
               {Object.keys(categoriaLabels).map((cat) => (
                 <TabsContent key={cat} value={cat} className="mt-4">
-                  <DocGrid docs={byCategoria(cat)} canManage={canManage} onEdit={openEditDoc} onDelete={setDeleteTarget} />
+                  <DocGrid docs={byCategoria(cat)} canManage={canManage} canReview={canReview} reviewing={reviewMutation.isPending} onEdit={openEditDoc} onDelete={setDeleteTarget} onApprove={(doc) => reviewMutation.mutate({ id: doc.id, decisao: "aprovar" })} onReject={setRejectTarget} />
                 </TabsContent>
               ))}
             </Tabs>
@@ -399,6 +460,11 @@ export default function EmpresaDossie() {
             <DialogTitle>{editingDoc ? "Editar Documento" : "Enviar Documento"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            {uploadForm.requirementId && (
+              <p className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-foreground">
+                Este documento atende o item exigido pelo cargo e será validado pela equipe SmartDocPlan.
+              </p>
+            )}
             <div className="space-y-1.5">
               <Label>Categoria *</Label>
               <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v })}>
@@ -476,6 +542,29 @@ export default function EmpresaDossie() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectReason(""); } }}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Rejeitar documento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-sm text-muted-foreground">O RH da empresa recebe o motivo e precisa enviar um novo arquivo para "{rejectTarget?.nome}".</p>
+            <Label htmlFor="motivo-rejeicao">Motivo *</Label>
+            <Textarea id="motivo-rejeicao" value={rejectReason} onChange={(e) => setRejectReason(e.target.value)} placeholder="Ex.: certificado ilegível ou sem assinatura do instrutor" rows={3} />
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => { setRejectTarget(null); setRejectReason(""); }}>Cancelar</Button>
+            <Button
+              variant="destructive"
+              disabled={!rejectReason.trim() || reviewMutation.isPending}
+              onClick={() => rejectTarget && reviewMutation.mutate({ id: rejectTarget.id, decisao: "rejeitar", motivo: rejectReason })}
+            >
+              {reviewMutation.isPending ? "Salvando..." : "Rejeitar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </CompanyLayout>
   );
 }
@@ -483,13 +572,21 @@ export default function EmpresaDossie() {
 function DocGrid({
   docs,
   canManage,
+  canReview,
+  reviewing,
   onEdit,
   onDelete,
+  onApprove,
+  onReject,
 }: {
   docs: any[];
   canManage: boolean;
+  canReview: boolean;
+  reviewing: boolean;
   onEdit: (doc: any) => void;
   onDelete: (doc: any) => void;
+  onApprove: (doc: any) => void;
+  onReject: (doc: any) => void;
 }) {
   if (docs.length === 0) {
     return (
@@ -555,6 +652,21 @@ function DocGrid({
                     </>
                   )}
                 </div>
+                {doc.status === "rejeitado" && doc.motivoRejeicao && (
+                  <p className="mt-2 rounded-md bg-red-500/10 px-2 py-1 text-xs text-red-700 dark:text-red-400">Motivo da rejeição: {doc.motivoRejeicao}</p>
+                )}
+                {canReview && doc.status === "aguardando_validacao" && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" disabled={reviewing} onClick={() => onApprove(doc)} className="h-7 border-green-500/40 text-green-700 hover:bg-green-500/10 dark:text-green-400">
+                      <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+                      Aprovar
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={reviewing} onClick={() => onReject(doc)} className="h-7 border-red-500/40 text-red-700 hover:bg-red-500/10 dark:text-red-400">
+                      <AlertCircle className="h-3.5 w-3.5 mr-1" />
+                      Rejeitar
+                    </Button>
+                  </div>
+                )}
                 {doc.versao > 1 && <p className="text-xs text-muted-foreground mt-1">Versão {doc.versao}</p>}
               </div>
             </div>

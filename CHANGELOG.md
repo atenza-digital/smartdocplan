@@ -2,6 +2,10 @@
 
 ## [Não publicado]
 
+- Dossiê: checklist dos documentos exigidos pelo cargo (pendente, aguardando validação, aprovado, rejeitado, vencido), com envio direto pelo item e validação (aprovar ou rejeitar com motivo) pela equipe SmartDocPlan; a rejeição avisa o RH da empresa.
+- Conformidade real (documentos obrigatórios aprovados e válidos ÷ exigidos); cargo sem requisitos mostra "Sem requisitos definidos" em vez de 100%.
+- Liberação do colaborador automática (aguardando documentação, em análise, liberado), com indicadores e filtro na lista; recalculada ao mudar documentos, requisitos ou cargo e a cada hora.
+- Datas de admissão e nascimento deixam de aparecer um dia antes por causa do fuso.
 - Documentos: datas de emissão e validade validadas no servidor e nos formulários (a partir de 01/01/1950, emissão não futura, validade não anterior à emissão e até 50 anos); documento com validade passada aparece como vencido e o dossiê avisa quando vence em até 30 dias.
 - Dossiê do colaborador: envio de arquivo (PDF, PNG ou JPG até 10 MB) no lugar do link, com visualizar, editar, substituir arquivo (nova versão) e excluir (exclusão lógica, registrada na auditoria).
 - Solicitações: arrastar cards entre colunas do kanban, com validação do fluxo de status também no servidor e motivo obrigatório ao rejeitar.

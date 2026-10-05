@@ -28,6 +28,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
 import {
   formatCnpj,
   formatCpf,
@@ -160,6 +161,9 @@ async function createNotifications(opts: {
     })) as any,
   );
 }
+
+// Categorias do dossiê; inclui as dos requisitos por cargo (psicossocial, outros) para o checklist.
+const EMPLOYEE_DOC_CATEGORIES = ["pessoal","contratual","exame_medico","treinamento","psicossocial","advertencia","afastamento","atestado","opcional","outros"] as const;
 
 // Data opcional de documento: AAAA-MM-DD ou vazio (limpa o campo).
 const documentDateInput = z.union([z.iso.date(), z.literal("")]).optional();
@@ -751,12 +755,14 @@ const employeesRouter = router({
     status: z.enum(["ativo", "afastado", "desligado"]).optional(),
     positionId: z.number().optional(),
     worksiteId: z.number().optional(),
+    liberacao: z.enum(["sem_requisitos", "aguardando_documentacao", "em_analise", "liberado"]).optional(),
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
     const conditions = [eq(employees.companyId, input.companyId)];
     if (input.status) conditions.push(eq(employees.status, input.status));
+    if (input.liberacao) conditions.push(eq(employees.liberacao, input.liberacao));
     if (input.positionId) conditions.push(eq(employees.positionId, input.positionId));
     if (input.worksiteId) conditions.push(eq(employees.worksiteId, input.worksiteId));
     return db.select().from(employees).where(and(...conditions)).orderBy(employees.nome);
@@ -796,7 +802,7 @@ const employeesRouter = router({
       throw new Error("Informe um telefone válido com DDD.");
     }
     assertMinimumEmployeeAge(input.dataNascimento);
-    await db.insert(employees).values({
+    const [created] = await db.insert(employees).values({
       ...input,
       nome: input.nome.trim(),
       cpf: formatCpf(input.cpf),
@@ -804,7 +810,8 @@ const employeesRouter = router({
       dataAdmissao: input.dataAdmissao || undefined,
       email: normalizeOptionalText(input.email) ?? undefined,
       telefone: normalizeOptionalText(input.telefone) ? formatPhone(input.telefone!) : undefined,
-    } as any);
+    } as any).returning({ id: employees.id });
+    if (created) await recalcCompliance(db, [created.id]);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: input.companyId,
@@ -844,6 +851,7 @@ const employeesRouter = router({
       telefone: data.telefone !== undefined ? (normalizeOptionalText(data.telefone) ? formatPhone(data.telefone) : null) : undefined,
     };
     await db.update(employees).set(payload).where(eq(employees.id, id));
+    if (payload.positionId !== undefined) await recalcCompliance(db, [id]);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: employee.companyId,
@@ -857,17 +865,28 @@ const employeesRouter = router({
 
   stats: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) return { total: 0, ativos: 0, afastados: 0, desligados: 0 };
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return { total: 0, ativos: 0, afastados: 0, desligados: 0 };
+    const empty = { total: 0, ativos: 0, afastados: 0, desligados: 0, liberados: 0, emAnalise: 0, aguardandoDocumentacao: 0, semRequisitos: 0 };
+    if (!db) return empty;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return empty;
     const [total] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(eq(employees.companyId, input.companyId));
     const [ativos] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(and(eq(employees.companyId, input.companyId), eq(employees.status, "ativo")));
     const [afastados] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(and(eq(employees.companyId, input.companyId), eq(employees.status, "afastado")));
     const [desligados] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(and(eq(employees.companyId, input.companyId), eq(employees.status, "desligado")));
+    // Liberação considera só quem não está desligado.
+    const liberacaoRows = await db.select({ liberacao: employees.liberacao, count: sql<number>`count(*)::int` })
+      .from(employees)
+      .where(and(eq(employees.companyId, input.companyId), ne(employees.status, "desligado")))
+      .groupBy(employees.liberacao);
+    const porLiberacao = Object.fromEntries(liberacaoRows.map((row) => [row.liberacao, Number(row.count)]));
     return {
       total: total?.count ?? 0,
       ativos: ativos?.count ?? 0,
       afastados: afastados?.count ?? 0,
       desligados: desligados?.count ?? 0,
+      liberados: porLiberacao.liberado ?? 0,
+      emAnalise: porLiberacao.em_analise ?? 0,
+      aguardandoDocumentacao: porLiberacao.aguardando_documentacao ?? 0,
+      semRequisitos: porLiberacao.sem_requisitos ?? 0,
     };
   }),
 });
@@ -1415,6 +1434,7 @@ const positionRequirementsRouter = router({
         documentoNome: input.documentoNome,
       },
     });
+    await recalcComplianceForPositions(db, [input.positionId]);
     return { success: true };
   }),
 
@@ -1466,6 +1486,7 @@ const positionRequirementsRouter = router({
       entidadeId: requirement.id,
       dadosDepois: payload,
     });
+    await recalcComplianceForPositions(db, [requirement.positionId]);
     return { success: true };
   }),
 
@@ -1488,6 +1509,7 @@ const positionRequirementsRouter = router({
       entidadeId: requirement.id,
       dadosDepois: { documentoNome: requirement.documentoNome, categoria: requirement.categoria },
     });
+    await recalcComplianceForPositions(db, [requirement.positionId]);
     return { success: true };
   }),
 });
@@ -1783,10 +1805,23 @@ const usersRouter = router({
 });
 
 // â”€â”€â”€ EMPLOYEE DOCUMENTS ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// Documento enviado pela empresa aguarda validação; enviado pela equipe SmartDocPlan já entra aprovado.
+function initialReviewFields(user: { id: number; role: string }) {
+  return isPlatformOperator(user.role)
+    ? { status: "valido", analisadoPor: user.id, analisadoAt: new Date(), motivoRejeicao: null }
+    : { status: "aguardando_validacao", analisadoPor: null, analisadoAt: null, motivoRejeicao: null };
+}
+
+async function assertRequirementOfEmployee(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, requirementId: number, positionId: number | null) {
+  const [requirement] = await db.select({ positionId: positionRequirements.positionId, ativo: positionRequirements.ativo })
+    .from(positionRequirements).where(eq(positionRequirements.id, requirementId)).limit(1);
+  assertAccess(!!requirement && requirement.ativo && requirement.positionId === positionId, "O item do checklist não pertence ao cargo do colaborador.");
+}
+
 const employeeDocsRouter = router({
   list: protectedProcedure.input(z.object({
     employeeId: z.number(),
-    categoria: z.enum(["pessoal","contratual","exame_medico","treinamento","advertencia","afastamento","atestado","opcional"]).optional(),
+    categoria: z.enum(EMPLOYEE_DOC_CATEGORIES).optional(),
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
@@ -1804,10 +1839,110 @@ const employeeDocsRouter = router({
       });
   }),
 
+  /** Checklist do cargo: cada documento exigido, sua situação, a conformidade e a liberação do colaborador. */
+  checklist: protectedProcedure.input(z.object({ employeeId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
+    const result = await getEmployeeChecklist(db, employee);
+    const healthAccess = canAccessHealthData(ctx.user.role);
+    return {
+      ...result,
+      items: result.items.map(({ requirement, doc, estado }) => {
+        // Sem acesso a dados de saúde, mostra só a situação do item, sem o documento.
+        const restrito = isHealthCategory(requirement.categoria) && !healthAccess;
+        return {
+          requirementId: requirement.id,
+          documentoNome: requirement.documentoNome,
+          categoria: requirement.categoria,
+          validadeMeses: requirement.validadeMeses,
+          estado,
+          restrito,
+          documento: doc && !restrito ? { id: doc.id, nome: doc.nome, validade: doc.validade, dataEmissao: doc.dataEmissao } : null,
+        };
+      }),
+    };
+  }),
+
+  /** Validação pela equipe SmartDocPlan: aprova ou rejeita (com motivo) um documento do dossiê. */
+  review: protectedProcedure.input(z.object({
+    id: z.number(),
+    decisao: z.enum(["aprovar", "rejeitar"]),
+    motivo: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Só a equipe SmartDocPlan valida documentos.");
+    const motivo = normalizeOptionalText(input.motivo);
+    if (input.decisao === "rejeitar" && !motivo) throw new Error("Informe o motivo da rejeição.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const doc = await getEmployeeDocByIdOrThrow(db, input.id);
+    assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    const status = input.decisao === "aprovar" ? "valido" : "rejeitado";
+    await db.update(employeeDocuments).set({
+      status,
+      analisadoPor: ctx.user.id,
+      analisadoAt: new Date(),
+      motivoRejeicao: input.decisao === "rejeitar" ? motivo : null,
+      updatedAt: new Date(),
+    }).where(eq(employeeDocuments.id, doc.id));
+    await recalcCompliance(db, [doc.employeeId]);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: doc.companyId,
+      acao: input.decisao === "aprovar" ? "aprovou_documento_colaborador" : "rejeitou_documento_colaborador",
+      entidade: "employee_documents",
+      entidadeId: doc.id,
+      dadosDepois: { documentoId: doc.id, nome: doc.nome, motivo: motivo ?? null },
+    });
+    if (input.decisao === "rejeitar") {
+      const recipients = await db.select({ id: users.id }).from(users)
+        .where(and(eq(users.companyId, doc.companyId), inArray(users.role, ["company_admin", "company_hr"]), eq(users.ativo, true)));
+      await createNotifications({
+        userIds: recipients.map((user) => user.id),
+        companyId: doc.companyId,
+        tipo: "documento_rejeitado",
+        titulo: "Documento rejeitado",
+        mensagem: `O documento "${doc.nome}" foi rejeitado: ${motivo}`,
+        link: `/empresa/colaboradores/${doc.employeeId}`,
+      });
+    }
+    return { success: true };
+  }),
+
+  /** Fila de documentos aguardando validação (equipe SmartDocPlan). */
+  pendingReview: protectedProcedure.input(z.object({ companyId: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    assertAccess(isPlatformUser(ctx.user.role), "Acesso negado");
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [eq(employeeDocuments.status, "aguardando_validacao")];
+    if (input?.companyId) conditions.push(eq(employeeDocuments.companyId, input.companyId));
+    const rows = await db.select({
+      id: employeeDocuments.id,
+      nome: employeeDocuments.nome,
+      categoria: employeeDocuments.categoria,
+      fileUrl: employeeDocuments.fileUrl,
+      dataEmissao: employeeDocuments.dataEmissao,
+      validade: employeeDocuments.validade,
+      createdAt: employeeDocuments.createdAt,
+      updatedAt: employeeDocuments.updatedAt,
+      employeeId: employeeDocuments.employeeId,
+      companyId: employeeDocuments.companyId,
+      colaboradorNome: employees.nome,
+      empresaNome: companies.razaoSocial,
+    })
+      .from(employeeDocuments)
+      .innerJoin(employees, eq(employees.id, employeeDocuments.employeeId))
+      .innerJoin(companies, eq(companies.id, employeeDocuments.companyId))
+      .where(and(...conditions))
+      .orderBy(employeeDocuments.updatedAt);
+    return rows.filter((row) => !isHealthCategory(row.categoria) || canAccessHealthData(ctx.user.role));
+  }),
+
   create: protectedProcedure.input(z.object({
     employeeId: z.number(),
     companyId: z.number(),
-    categoria: z.enum(["pessoal","contratual","exame_medico","treinamento","advertencia","afastamento","atestado","opcional"]),
+    categoria: z.enum(EMPLOYEE_DOC_CATEGORIES),
     nome: z.string().min(1),
     tipo: z.string().optional(),
     fileUrl: z.string().optional(),
@@ -1818,6 +1953,7 @@ const employeeDocsRouter = router({
     validade: documentDateInput,
     obrigatorio: z.boolean().default(true),
     observacao: z.string().optional(),
+    requirementId: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
@@ -1828,6 +1964,7 @@ const employeeDocsRouter = router({
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(employee.companyId === input.companyId, "O colaborador não pertence à empresa informada.");
     assertAccess(!isHealthCategory(input.categoria) || !input.fileUrl || input.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
+    if (input.requirementId) await assertRequirementOfEmployee(db, input.requirementId, employee.positionId);
     const { fileBase64, fileNome, ...data } = input;
     const saved = fileBase64 ? await saveDocumentFile(fileBase64, `employee_${input.employeeId}`) : null;
     const fileUrl = saved?.url ?? data.fileUrl;
@@ -1840,8 +1977,10 @@ const employeeDocsRouter = router({
         dataEmissao: data.dataEmissao || undefined,
         validade: data.validade || undefined,
         uploadedBy: ctx.user.id,
+        ...initialReviewFields(ctx.user),
       } as any).returning({ id: employeeDocuments.id });
     } catch (error) { await saved?.cleanup(); throw error; }
+    await recalcCompliance(db, [input.employeeId]);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: input.companyId,
@@ -1855,7 +1994,7 @@ const employeeDocsRouter = router({
 
   update: protectedProcedure.input(z.object({
     id: z.number(),
-    categoria: z.enum(["pessoal","contratual","exame_medico","treinamento","advertencia","afastamento","atestado","opcional"]).optional(),
+    categoria: z.enum(EMPLOYEE_DOC_CATEGORIES).optional(),
     nome: z.string().min(1).optional(),
     tipo: z.string().optional(),
     dataEmissao: documentDateInput,
@@ -1863,6 +2002,7 @@ const employeeDocsRouter = router({
     observacao: z.string().optional(),
     fileNome: z.string().optional(),
     fileBase64: z.string().optional(),
+    requirementId: z.number().nullable().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar documentos de colaboradores.");
     const db = await getDb();
@@ -1874,6 +2014,10 @@ const employeeDocsRouter = router({
     assertAccess(!isHealthCategory(categoria) || input.fileBase64 || !doc.fileUrl || doc.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
     const datas = mergedDocumentDates(input, doc);
     assertDocumentDates(datas.dataEmissao, datas.validade);
+    if (input.requirementId) {
+      const employee = await getEmployeeByIdOrThrow(db, doc.employeeId);
+      await assertRequirementOfEmployee(db, input.requirementId, employee.positionId);
+    }
     const saved = input.fileBase64 ? await saveDocumentFile(input.fileBase64, `employee_${doc.employeeId}`) : null;
     const payload: Record<string, unknown> = {
       categoria,
@@ -1884,6 +2028,9 @@ const employeeDocsRouter = router({
     if (input.dataEmissao !== undefined) payload.dataEmissao = input.dataEmissao || null;
     if (input.validade !== undefined) payload.validade = input.validade || null;
     if (input.observacao !== undefined) payload.observacao = normalizeOptionalText(input.observacao) ?? null;
+    if (input.requirementId !== undefined) payload.requirementId = input.requirementId;
+    // Arquivo novo ou datas novas voltam para validação, salvo quando a própria equipe SmartDocPlan altera.
+    if (saved || input.dataEmissao !== undefined || input.validade !== undefined) Object.assign(payload, initialReviewFields(ctx.user));
     if (saved) {
       // O arquivo anterior permanece no disco para histórico; o registro aponta para a nova versão.
       payload.fileUrl = saved.url;
@@ -1894,6 +2041,7 @@ const employeeDocsRouter = router({
     try {
       await db.update(employeeDocuments).set(payload as any).where(eq(employeeDocuments.id, doc.id));
     } catch (error) { await saved?.cleanup(); throw error; }
+    await recalcCompliance(db, [doc.employeeId]);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: doc.companyId,
@@ -1914,6 +2062,7 @@ const employeeDocsRouter = router({
     assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     // Exclusão lógica: o registro e o arquivo são mantidos para histórico e auditoria.
     await db.update(employeeDocuments).set({ status: "excluido", updatedAt: new Date() }).where(eq(employeeDocuments.id, doc.id));
+    await recalcCompliance(db, [doc.employeeId]);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: doc.companyId,

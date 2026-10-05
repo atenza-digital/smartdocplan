@@ -221,7 +221,9 @@ export const employees = smartdocSchema.table("employees", {
   status: text("status").default("ativo").notNull(),
   email: varchar("email", { length: 320 }),
   telefone: varchar("telefone", { length: 20 }),
-  scoreConformidade: integer("scoreConformidade").default(100),
+  scoreConformidade: integer("scoreConformidade"), // calculado pelo servidor; null = sem requisitos definidos
+  liberacao: text("liberacao").default("aguardando_documentacao").notNull(),
+  liberadoAt: timestamp("liberadoAt"),
   criadoPor: integer("criadoPor"), // userId do analista interno que cadastrou
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -247,6 +249,10 @@ export const employeeDocuments = smartdocSchema.table("employee_documents", {
   status: text("status").default("valido").notNull(),
   observacao: text("observacao"),
   uploadedBy: integer("uploadedBy"),
+  requirementId: integer("requirementId"), // item do checklist do cargo atendido por este documento
+  analisadoPor: integer("analisadoPor"),
+  analisadoAt: timestamp("analisadoAt"),
+  motivoRejeicao: text("motivoRejeicao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });

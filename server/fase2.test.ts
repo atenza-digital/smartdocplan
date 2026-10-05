@@ -76,3 +76,84 @@ describe("Datas de documentos", () => {
     ).rejects.toThrow();
   });
 });
+
+// ─── B/C. Checklist, conformidade e liberação ────────────────────────────────
+
+import { evaluateChecklist, type ChecklistDocument, type ChecklistRequirement } from "@shared/compliance";
+
+const req = (id: number, documentoNome: string, categoria = "treinamento", validadeMeses: number | null = null): ChecklistRequirement =>
+  ({ id, documentoNome, categoria, validadeMeses, ordem: id });
+const doc = (id: number, nome: string, extra: Partial<ChecklistDocument> = {}): ChecklistDocument =>
+  ({ id, nome, categoria: "treinamento", requirementId: null, status: "valido", dataEmissao: null, validade: null, createdAt: new Date(2026, 0, id), ...extra });
+
+describe("Checklist e conformidade", () => {
+  it("sem requisitos: conformidade nula e 'sem requisitos', não 100%", () => {
+    const r = evaluateChecklist([], [doc(1, "RG")], REF);
+    expect(r.score).toBeNull();
+    expect(r.liberacao).toBe("sem_requisitos");
+  });
+
+  it("requisitos sem documentos: 0% e aguardando documentação", () => {
+    const r = evaluateChecklist([req(1, "NR-35"), req(2, "ASO", "exame_medico")], [], REF);
+    expect(r.score).toBe(0);
+    expect(r.liberacao).toBe("aguardando_documentacao");
+    expect(r.items.map((i) => i.estado)).toEqual(["pendente", "pendente"]);
+  });
+
+  it("documento vinculado aguardando validação deixa em análise", () => {
+    const r = evaluateChecklist([req(1, "NR-35")], [doc(1, "Qualquer", { requirementId: 1, status: "aguardando_validacao" })], REF);
+    expect(r.liberacao).toBe("em_analise");
+    expect(r.score).toBe(0);
+  });
+
+  it("todos aprovados e válidos: 100% e liberado", () => {
+    const r = evaluateChecklist([req(1, "NR-35"), req(2, "NR-18")], [doc(1, "x", { requirementId: 1 }), doc(2, "y", { requirementId: 2, validade: "2027-01-01" })], REF);
+    expect(r.score).toBe(100);
+    expect(r.liberacao).toBe("liberado");
+  });
+
+  it("vencido e rejeitado voltam para aguardando documentação", () => {
+    const vencido = evaluateChecklist([req(1, "NR-35")], [doc(1, "x", { requirementId: 1, validade: "2026-01-01" })], REF);
+    expect(vencido.items[0].estado).toBe("vencido");
+    expect(vencido.liberacao).toBe("aguardando_documentacao");
+    const rejeitado = evaluateChecklist([req(1, "NR-35")], [doc(1, "x", { requirementId: 1, status: "rejeitado" })], REF);
+    expect(rejeitado.items[0].estado).toBe("rejeitado");
+  });
+
+  it("validade em meses do requisito vence documento só com emissão", () => {
+    const r = evaluateChecklist([req(1, "NR-35", "treinamento", 12)], [doc(1, "x", { requirementId: 1, dataEmissao: "2025-09-01" })], REF);
+    expect(r.items[0].estado).toBe("vencido");
+  });
+
+  it("documento antigo sem vínculo atende por nome parecido na mesma categoria", () => {
+    const r = evaluateChecklist([req(1, "Certificado NR-35"), req(2, "ASO", "exame_medico")], [doc(1, "NR-35"), doc(2, "ASO periodico", { categoria: "exame_medico" })], REF);
+    expect(r.score).toBe(100);
+  });
+
+  it("nome parecido em outra categoria não conta", () => {
+    const r = evaluateChecklist([req(1, "Certificado NR-35")], [doc(1, "NR-35", { categoria: "pessoal" })], REF);
+    expect(r.items[0].estado).toBe("pendente");
+  });
+
+  it("vale o documento mais recente", () => {
+    const r = evaluateChecklist([req(1, "NR-35")], [doc(1, "a", { requirementId: 1 }), doc(2, "b", { requirementId: 1, status: "rejeitado" })], REF);
+    expect(r.items[0].estado).toBe("rejeitado");
+  });
+});
+
+describe("Validação de documentos — permissões", () => {
+  it.each(["company_admin", "company_hr", "platform_auditor"])("%s não valida documento", async (role) => {
+    const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: role.startsWith("company") ? 1 : null }));
+    await expect(caller.employeeDocs.review({ id: 1, decisao: "aprovar" })).rejects.toThrow(/Só a equipe SmartDocPlan/);
+  });
+
+  it("rejeitar exige motivo", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "platform_analyst" as any }));
+    await expect(caller.employeeDocs.review({ id: 1, decisao: "rejeitar", motivo: "  " })).rejects.toThrow(/motivo/);
+  });
+
+  it("empresa não vê a fila de validação", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(caller.employeeDocs.pendingReview()).rejects.toThrow(/Acesso negado/);
+  });
+});

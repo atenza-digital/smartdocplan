@@ -1,4 +1,6 @@
 import { useMemo, useState } from "react";
+import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
+import { RELEASE_COLORS } from "@/components/DossieChecklist";
 import { Link } from "wouter";
 import CompanyLayout from "@/components/CompanyLayout";
 import { trpc } from "@/lib/trpc";
@@ -15,6 +17,7 @@ import { toast } from "sonner";
 import { canManageCompanyData } from "@shared/permissions";
 import {
   formatCpf,
+  formatDateOnlyBr,
   formatPhone,
   getBirthDateMax,
   hasFullName,
@@ -55,6 +58,7 @@ export default function EmpresaColaboradores() {
 
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("todos");
+  const [filterLiberacao, setFilterLiberacao] = useState("todos");
   const [filterPosition, setFilterPosition] = useState("todos");
   const [filterWorksite, setFilterWorksite] = useState("todos");
   const [showModal, setShowModal] = useState(false);
@@ -64,6 +68,7 @@ export default function EmpresaColaboradores() {
     { companyId },
     { enabled: companyId > 0 }
   );
+  const { data: stats } = trpc.employees.stats.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: cargos = [] } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: obras = [] } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
 
@@ -88,6 +93,8 @@ export default function EmpresaColaboradores() {
       const matchesStatus = filterStatus === "todos" || colaborador.status === filterStatus;
       if (!matchesStatus) return false;
 
+      if (filterLiberacao !== "todos" && colaborador.liberacao !== filterLiberacao) return false;
+
       const matchesPosition = filterPosition === "todos" || String(colaborador.positionId ?? "") === filterPosition;
       if (!matchesPosition) return false;
 
@@ -103,7 +110,7 @@ export default function EmpresaColaboradores() {
 
       return searchableText.includes(normalizedSearch) || (!!digitSearch && cpfDigits.includes(digitSearch));
     });
-  }, [colaboradores, filterPosition, filterStatus, filterWorksite, search]);
+  }, [colaboradores, filterLiberacao, filterPosition, filterStatus, filterWorksite, search]);
 
   const fullNameValid = !form.nome.trim() || hasFullName(form.nome);
   const birthDateValid = !form.dataNascimento || isAtLeastYearsOld(form.dataNascimento, 12);
@@ -171,6 +178,28 @@ export default function EmpresaColaboradores() {
           )}
         </div>
 
+        {stats && (
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {([
+              ["liberado", stats.liberados, "Liberados"],
+              ["em_analise", stats.emAnalise, "Em análise"],
+              ["aguardando_documentacao", stats.aguardandoDocumentacao, "Aguardando documentação"],
+              ["sem_requisitos", stats.semRequisitos, "Sem requisitos definidos"],
+            ] as const).map(([key, value, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setFilterLiberacao(filterLiberacao === key ? "todos" : key)}
+                className={`rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 ${filterLiberacao === key ? "border-primary ring-1 ring-primary" : "border-border"}`}
+                aria-pressed={filterLiberacao === key}
+              >
+                <p className="text-2xl font-bold text-foreground">{value}</p>
+                <p className="text-xs text-muted-foreground">{label}</p>
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-48 flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -191,6 +220,18 @@ export default function EmpresaColaboradores() {
               <SelectItem value="ativo">Ativos</SelectItem>
               <SelectItem value="afastado">Afastados</SelectItem>
               <SelectItem value="desligado">Desligados</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={filterLiberacao} onValueChange={setFilterLiberacao}>
+            <SelectTrigger className="w-56" aria-label="Filtrar por liberação">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todos">Toda liberação</SelectItem>
+              {Object.entries(RELEASE_LABELS).map(([value, label]) => (
+                <SelectItem key={value} value={value}>{label}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
 
@@ -291,11 +332,16 @@ export default function EmpresaColaboradores() {
                       <p>
                         Admissão:{" "}
                         <span className="text-foreground">
-                          {new Date(colaborador.dataAdmissao).toLocaleDateString("pt-BR")}
+                          {formatDateOnlyBr(colaborador.dataAdmissao)}
                         </span>
                       </p>
                     )}
 
+                    <div className="pt-1">
+                      <Badge variant="outline" className={`text-xs ${RELEASE_COLORS[colaborador.liberacao as EmployeeRelease] ?? ""}`}>
+                        {RELEASE_LABELS[colaborador.liberacao as EmployeeRelease] ?? colaborador.liberacao}
+                      </Badge>
+                    </div>
                     {colaborador.scoreConformidade !== null && (
                       <div className="mt-2 flex items-center gap-2">
                         <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">

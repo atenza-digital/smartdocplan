@@ -10,6 +10,7 @@ import { runPostgresMigrations } from "./postgresMigrations";
 import { appRouter } from "../routers";
 import { registerDocumentAccess } from "../documentAccess";
 import { notifyVacationDeadlines } from "../vacations";
+import { runDocumentJobs } from "../documentJobs";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 
@@ -69,6 +70,9 @@ async function startServer() {
   const checkVacationDeadlines = () => notifyVacationDeadlines().catch(error => console.error("[Férias] Falha ao verificar prazos:", error.message));
   void checkVacationDeadlines();
   setInterval(checkVacationDeadlines, 60 * 60 * 1000).unref();
+  const checkDocuments = () => runDocumentJobs().catch(error => console.error("[Documentos] Falha na rotina de documentos:", error.message));
+  void checkDocuments();
+  setInterval(checkDocuments, 60 * 60 * 1000).unref();
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {

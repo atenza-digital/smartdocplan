@@ -16,10 +16,12 @@ export default function EmpresaPendencias() {
     { enabled: companyId > 0 }
   );
 
-  const pendentes = colaboradores.filter((c) => (c.scoreConformidade ?? 100) < 100);
-  const criticos = pendentes.filter((c) => (c.scoreConformidade ?? 100) < 50);
-  const atencao = pendentes.filter((c) => (c.scoreConformidade ?? 100) >= 50 && (c.scoreConformidade ?? 100) < 80);
-  const conformes = colaboradores.filter((c) => (c.scoreConformidade ?? 100) >= 100);
+  // Conformidade nula = cargo sem documentos exigidos: não conta como conforme nem como pendente.
+  const avaliados = colaboradores.filter((c) => c.scoreConformidade !== null && c.status !== "desligado");
+  const pendentes = avaliados.filter((c) => (c.scoreConformidade ?? 0) < 100);
+  const criticos = pendentes.filter((c) => (c.scoreConformidade ?? 0) < 50);
+  const atencao = pendentes.filter((c) => (c.scoreConformidade ?? 0) >= 50 && (c.scoreConformidade ?? 0) < 80);
+  const conformes = avaliados.filter((c) => (c.scoreConformidade ?? 0) >= 100);
 
   const scoreColor = (score: number) =>
     score >= 80 ? "text-green-600 dark:text-green-400" :
