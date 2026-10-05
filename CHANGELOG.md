@@ -18,3 +18,4 @@
 - BI: exportação em PDF (global e da empresa) com capa, logos da SmartDocPlan e da empresa, resumo executivo, pontos de atenção, tabelas com barras, evolução no período e notas sobre os dados.
 - BI em PDF: corrigidos espaçamento dos títulos e cards, palavras quebradas com hífen, rodapé com número da página, títulos e itens soltos no fim da página; a evolução omite intervalos sem movimento.
 - Login: em telas baixas (ex.: notebook 1366×768 com barras do navegador) o layout fica compacto e o botão Entrar aparece sem rolar.
+- Configurações da empresa: aba Perfil aponta para Meu perfil (troca de senha, tema e tamanho das janelas) e deixa de dizer que a senha só muda pelo administrador.

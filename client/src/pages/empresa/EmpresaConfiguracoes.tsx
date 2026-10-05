@@ -25,6 +25,7 @@ import {
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Link } from "wouter";
 import {
   formatCnpj,
   formatPhone,
@@ -877,8 +878,11 @@ export default function EmpresaConfiguracoes() {
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Para alterar seus dados de acesso ou senha, entre em contato com o administrador da plataforma.
+                    A troca de senha, o tema e o tamanho das janelas ficam em Meu perfil, também acessível pelo menu do seu nome no canto superior direito.
                   </p>
+                  <Button asChild variant="outline" size="sm">
+                    <Link href="/empresa/perfil">Abrir Meu perfil</Link>
+                  </Button>
                 </CardContent>
               </Card>
 
