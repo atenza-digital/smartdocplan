@@ -25,6 +25,7 @@ import {
   Settings,
   Sun,
   Ticket,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
@@ -239,6 +240,12 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link href="/empresa/perfil">
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Meu perfil
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleTheme}>
                   {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
                   {theme === "dark" ? "Tema Claro" : "Tema Escuro"}

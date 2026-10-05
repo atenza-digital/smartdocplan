@@ -33,6 +33,7 @@ import EmpresaChamados from "./pages/empresa/EmpresaChamados";
 import EmpresaBI from "./pages/empresa/EmpresaBI";
 import EmpresaConfiguracoes from "./pages/empresa/EmpresaConfiguracoes";
 import OrganizationRegisters from "./pages/OrganizationRegisters";
+import Perfil from "./pages/Perfil";
 import Vacations from "./pages/Vacations";
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
@@ -164,6 +165,11 @@ function Router() {
           </RoleGuard>
         </AuthGuard>
       </Route>
+      <Route path="/admin/perfil">
+        <AuthGuard>
+          <Perfil />
+        </AuthGuard>
+      </Route>
       <Route path="/admin/documentos">
         <AuthGuard>
           <RoleGuard allow={canManagePlatformSettings} redirectTo="/admin">
@@ -217,6 +223,11 @@ function Router() {
       <Route path="/empresa/bi">
         <AuthGuard>
           <EmpresaBI />
+        </AuthGuard>
+      </Route>
+      <Route path="/empresa/perfil">
+        <AuthGuard>
+          <Perfil />
         </AuthGuard>
       </Route>
       <Route path="/empresa/configuracoes">

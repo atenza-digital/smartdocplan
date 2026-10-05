@@ -6,7 +6,9 @@ import type { Express } from "express";
 import bcrypt from "bcryptjs";
 import { SignJWT, jwtVerify } from "jose";
 import { parse as parseCookies } from "cookie";
-import { getUserByEmail, getUserById, updateUserLastSignedIn, createLocalUser } from "../db";
+import { eq } from "drizzle-orm";
+import { getDb, getUserByEmail, getUserById, updateUserLastSignedIn, createLocalUser } from "../db";
+import { auditLogs, users } from "../../drizzle/schema";
 import { ENV } from "./env";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./cookies";
@@ -118,6 +120,44 @@ export function registerLocalAuthRoutes(app: Express) {
     const cookieOptions = getSessionCookieOptions(req);
     res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     return res.json({ success: true });
+  });
+
+  // POST /api/auth/change-password — o próprio usuário troca a senha informando a atual
+  app.post("/api/auth/change-password", async (req, res) => {
+    try {
+      const user = await getUserFromLocalSession(req.headers.cookie);
+      if (!user) return res.status(401).json({ error: "Não autenticado." });
+
+      const { senhaAtual, novaSenha } = req.body as { senhaAtual?: string; novaSenha?: string };
+      if (!senhaAtual || !novaSenha) {
+        return res.status(400).json({ error: "Informe a senha atual e a nova senha." });
+      }
+      if (novaSenha.length < 8) {
+        return res.status(400).json({ error: "A nova senha deve ter pelo menos 8 caracteres." });
+      }
+      if (novaSenha === senhaAtual) {
+        return res.status(400).json({ error: "A nova senha deve ser diferente da atual." });
+      }
+      if (!user.passwordHash || !(await bcrypt.compare(senhaAtual, user.passwordHash))) {
+        return res.status(400).json({ error: "A senha atual está incorreta." });
+      }
+
+      const db = await getDb();
+      if (!db) return res.status(503).json({ error: "Banco de dados indisponível." });
+      const passwordHash = await bcrypt.hash(novaSenha, 12);
+      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
+      await db.insert(auditLogs).values({
+        userId: user.id,
+        companyId: user.companyId ?? null,
+        action: "alterou_propria_senha",
+        entity: "users",
+        entityId: user.id,
+      }).catch(() => { /* não bloquear a troca de senha */ });
+      return res.json({ success: true });
+    } catch (err) {
+      console.error("[Auth] Change password error:", err);
+      return res.status(500).json({ error: "Erro interno no servidor." });
+    }
   });
 
   // GET /api/auth/me
