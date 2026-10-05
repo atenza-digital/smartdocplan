@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Equipe SmartDocPlan: dossiê do colaborador no admin (/admin/colaboradores/:id; auditor só consulta), fila "Validação de documentos" no menu e liberação, conformidade e link ao dossiê na ficha da empresa.
 - Alertas: aviso no sino para admin e RH da empresa e para a equipe SmartDocPlan quando um documento (de colaborador ou da empresa) vence em até 30 dias, em até 7 dias ou venceu, e quando um documento mensal passa do prazo; sem repetição e, para dados de saúde, só para quem pode vê-los.
 - Documentos da Empresa: módulo próprio no menu (/empresa/documentos) com documentos legais, histórico de versões e documentos mensais da empresa; também na ficha da empresa no admin (auditor só consulta).
 - Contadores de documentos da empresa (painel, módulo e BI) consideram só a versão atual de cada tipo e reconhecem o tipo pelo código ou pelo nome; limite de arquivo alinhado em 10 MB (PDF, PNG ou JPG).

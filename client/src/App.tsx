@@ -22,6 +22,7 @@ import AdminBI from "./pages/admin/AdminBI";
 import AdminUsuarios from "./pages/admin/AdminUsuarios";
 import AdminConfiguracoes from "./pages/admin/AdminConfiguracoes";
 import AdminEmpresaDetalhe from "./pages/admin/AdminEmpresaDetalhe";
+import AdminValidacaoDocumentos from "./pages/admin/AdminValidacaoDocumentos";
 import AdminDocumentos from "./pages/admin/AdminDocumentos";
 
 import EmpresaDashboard from "./pages/empresa/EmpresaDashboard";
@@ -123,6 +124,16 @@ function Router() {
       <Route path="/admin/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
       <Route path="/empresa/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
       <Route path="/empresa/estrutura"><AuthGuard><OrganizationRegisters /></AuthGuard></Route>
+      <Route path="/admin/colaboradores/:id">
+        <AuthGuard>
+          <EmpresaDossie />
+        </AuthGuard>
+      </Route>
+      <Route path="/admin/validacao-documentos">
+        <AuthGuard>
+          <AdminValidacaoDocumentos />
+        </AuthGuard>
+      </Route>
       <Route path="/admin/empresas/:id">
         <AuthGuard>
           <AdminEmpresaDetalhe />

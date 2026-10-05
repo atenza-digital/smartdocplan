@@ -53,6 +53,7 @@ const navItems: NavItem[] = [
   { href: "/admin/estrutura", icon: Building2, label: "Estrutura da empresa" },
   { href: "/admin/ferias", icon: ClipboardList, label: "Férias" },
   { href: "/admin/solicitacoes", icon: ClipboardList, label: "Solicitações" },
+  { href: "/admin/validacao-documentos", icon: FileCheck2, label: "Validação de documentos" },
   { href: "/admin/chamados", icon: Ticket, label: "Chamados" },
   { href: "/admin/auditoria", icon: ScrollText, label: "Auditoria" },
   { href: "/admin/bi", icon: BarChart3, label: "BI Global" },

@@ -1,8 +1,10 @@
-import { useParams, useLocation } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
 import { CompanyMonthlyDocs } from "@/components/CompanyMonthlyDocs";
 import { isPlatformOperator } from "@shared/permissions";
+import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
+import { RELEASE_COLORS } from "@/components/DossieChecklist";
 import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
 import { useLocalAuth } from "@/contexts/LocalAuthContext";
 import { trpc } from "@/lib/trpc";
@@ -240,18 +242,27 @@ export default function AdminEmpresaDetalhe() {
                     ) : (
                       <div className="divide-y">
                         {colaboradores.map(col => (
-                          <div key={col.id} className="flex items-center justify-between px-4 py-3">
+                          <div key={col.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                             <div>
                               <p className="font-medium text-sm">{col.nome}</p>
                               <p className="text-xs text-muted-foreground font-mono">CPF: {col.cpf}</p>
                             </div>
-                            <Badge variant="outline" className={
-                              col.status === "ativo" ? "text-green-700 border-green-500/30" :
-                              col.status === "afastado" ? "text-yellow-700 border-yellow-500/30" :
-                              "text-red-700 border-red-500/30"
-                            }>
-                              {col.status}
-                            </Badge>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className={`text-xs ${RELEASE_COLORS[col.liberacao as EmployeeRelease] ?? ""}`}>
+                                {RELEASE_LABELS[col.liberacao as EmployeeRelease] ?? col.liberacao}
+                                {col.scoreConformidade !== null ? ` · ${col.scoreConformidade}%` : ""}
+                              </Badge>
+                              <Badge variant="outline" className={
+                                col.status === "ativo" ? "text-green-700 border-green-500/30" :
+                                col.status === "afastado" ? "text-yellow-700 border-yellow-500/30" :
+                                "text-red-700 border-red-500/30"
+                              }>
+                                {col.status}
+                              </Badge>
+                              <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                                <Link href={`/admin/colaboradores/${col.id}`}>Dossiê</Link>
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>

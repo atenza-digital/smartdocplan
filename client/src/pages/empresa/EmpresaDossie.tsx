@@ -1,5 +1,6 @@
 import { useState } from "react";
 import CompanyLayout from "@/components/CompanyLayout";
+import AdminLayout from "@/components/AdminLayout";
 import { trpc } from "@/lib/trpc";
 import { useRoute } from "wouter";
 import { Card, CardContent } from "@/components/ui/card";
@@ -80,8 +81,15 @@ const categoriaLabels: Record<string, string> = {
   outros: "Outros",
 };
 
+/**
+ * Dossiê do colaborador. Na área da empresa usa /empresa/colaboradores/:id; a equipe SmartDocPlan
+ * (inclusive analista e auditor, só leitura) abre por /admin/colaboradores/:id, no layout do admin.
+ */
 export default function EmpresaDossie() {
-  const [, params] = useRoute("/empresa/colaboradores/:id");
+  const [isAdminRoute, adminParams] = useRoute("/admin/colaboradores/:id");
+  const [, empresaParams] = useRoute("/empresa/colaboradores/:id");
+  const params = isAdminRoute ? adminParams : empresaParams;
+  const Layout = isAdminRoute ? AdminLayout : CompanyLayout;
   const employeeId = parseInt(params?.id ?? "0");
   const { user } = useAuth();
   const canManage = canManageCompanyData(user?.role ?? null);
@@ -286,11 +294,11 @@ export default function EmpresaDossie() {
 
   if (!employee && employeeId > 0) {
     return (
-      <CompanyLayout title="Dossiê">
+      <Layout title="Dossiê">
         <div className="flex items-center justify-center h-64 text-muted-foreground">
           <p>Carregando colaborador...</p>
         </div>
-      </CompanyLayout>
+      </Layout>
     );
   }
 
@@ -303,14 +311,14 @@ export default function EmpresaDossie() {
   const byCategoria = (cat: string) => documentos.filter((d) => d.categoria === cat);
 
   return (
-    <CompanyLayout title={employee ? `Dossiê — ${employee.nome}` : "Dossiê"}>
+    <Layout title={employee ? `Dossiê — ${employee.nome}` : "Dossiê"}>
       <div className="space-y-6">
-        {employee && <Button asChild variant="outline"><Link href={`/empresa/ferias?empresa=${employee.companyId}&colaborador=${employee.id}`}>Consultar férias do colaborador</Link></Button>}
+        {employee && <Button asChild variant="outline"><Link href={`${isAdminRoute ? "/admin" : "/empresa"}/ferias?empresa=${employee.companyId}&colaborador=${employee.id}`}>Consultar férias do colaborador</Link></Button>}
         {/* Voltar */}
         <Button variant="ghost" size="sm" asChild className="text-muted-foreground hover:text-foreground -ml-2">
-          <Link href="/empresa/colaboradores">
+          <Link href={isAdminRoute ? (employee ? `/admin/empresas/${employee.companyId}` : "/admin/empresas") : "/empresa/colaboradores"}>
             <ArrowLeft className="w-4 h-4 mr-1" />
-            Voltar para Colaboradores
+            {isAdminRoute ? "Voltar para a empresa" : "Voltar para Colaboradores"}
           </Link>
         </Button>
 
@@ -605,7 +613,7 @@ export default function EmpresaDossie() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </CompanyLayout>
+    </Layout>
   );
 }
 
