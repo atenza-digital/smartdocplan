@@ -32,6 +32,8 @@ import {
   formatCnpj,
   formatCpf,
   formatPhone,
+  getDocumentDatesError,
+  getValidityState,
   hasFullName,
   isAtLeastYearsOld,
   isValidCnpj,
@@ -157,6 +159,26 @@ async function createNotifications(opts: {
       link: opts.link ?? null,
     })) as any,
   );
+}
+
+// Data opcional de documento: AAAA-MM-DD ou vazio (limpa o campo).
+const documentDateInput = z.union([z.iso.date(), z.literal("")]).optional();
+
+function assertDocumentDates(dataEmissao?: string | null, validade?: string | null) {
+  const error = getDocumentDatesError(dataEmissao, validade);
+  if (error) throw new Error(error);
+}
+
+/** Datas efetivas após uma atualização parcial: o que veio no input ou o valor já gravado. */
+function mergedDocumentDates(
+  input: { dataEmissao?: string; validade?: string },
+  current: { dataEmissao?: string | Date | null; validade?: string | Date | null }
+) {
+  const asText = (value?: string | Date | null) => (value ? String(value instanceof Date ? value.toISOString() : value).slice(0, 10) : null);
+  return {
+    dataEmissao: input.dataEmissao !== undefined ? input.dataEmissao || null : asText(current.dataEmissao),
+    validade: input.validade !== undefined ? input.validade || null : asText(current.validade),
+  };
 }
 
 function assertMinimumEmployeeAge(dataNascimento?: string) {
@@ -630,14 +652,15 @@ const companyDocumentsRouter = router({
     companyId: z.number(),
     tipo: z.string().min(1),
     nome: z.string().min(1),
-    dataEmissao: z.union([z.iso.date(), z.literal("")]).optional(),
-    validade: z.union([z.iso.date(), z.literal("")]).optional(),
+    dataEmissao: documentDateInput,
+    validade: documentDateInput,
     observacao: z.string().optional(),
     fileNome: z.string(),
     fileBase64: z.string(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
 
@@ -668,8 +691,8 @@ const companyDocumentsRouter = router({
   update: protectedProcedure.input(z.object({
     id: z.number(),
     nome: z.string().min(1).optional(),
-    dataEmissao: z.union([z.iso.date(), z.literal("")]).optional(),
-    validade: z.union([z.iso.date(), z.literal("")]).optional(),
+    dataEmissao: documentDateInput,
+    validade: documentDateInput,
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -679,6 +702,8 @@ const companyDocumentsRouter = router({
     if (!doc) throw new Error("Documento da empresa não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    const datas = mergedDocumentDates(input, doc);
+    assertDocumentDates(datas.dataEmissao, datas.validade);
 
     const payload = {
       nome: input.nome?.trim() ?? doc.nome,
@@ -1770,7 +1795,13 @@ const employeeDocsRouter = router({
     const conditions = [eq(employeeDocuments.employeeId, input.employeeId), ne(employeeDocuments.status, "excluido")];
     if (input.categoria) conditions.push(eq(employeeDocuments.categoria, input.categoria));
     const docs = await db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
-    return docs.filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role));
+    return docs
+      .filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role))
+      .map(doc => {
+        // A situação de validade é derivada da data: um documento "válido" com validade passada aparece como vencido.
+        const situacaoValidade = getValidityState(doc.validade);
+        return { ...doc, situacaoValidade, status: doc.status === "valido" && situacaoValidade === "vencido" ? "vencido" : doc.status };
+      });
   }),
 
   create: protectedProcedure.input(z.object({
@@ -1783,14 +1814,15 @@ const employeeDocsRouter = router({
     fileKey: z.string().optional(),
     fileNome: z.string().optional(),
     fileBase64: z.string().optional(),
-    dataEmissao: z.string().optional(),
-    validade: z.string().optional(),
+    dataEmissao: documentDateInput,
+    validade: documentDateInput,
     obrigatorio: z.boolean().default(true),
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
     assertAccess(!isHealthCategory(input.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
@@ -1826,8 +1858,8 @@ const employeeDocsRouter = router({
     categoria: z.enum(["pessoal","contratual","exame_medico","treinamento","advertencia","afastamento","atestado","opcional"]).optional(),
     nome: z.string().min(1).optional(),
     tipo: z.string().optional(),
-    dataEmissao: z.string().optional(),
-    validade: z.string().optional(),
+    dataEmissao: documentDateInput,
+    validade: documentDateInput,
     observacao: z.string().optional(),
     fileNome: z.string().optional(),
     fileBase64: z.string().optional(),
@@ -1840,6 +1872,8 @@ const employeeDocsRouter = router({
     const categoria = input.categoria ?? doc.categoria;
     assertAccess((!isHealthCategory(doc.categoria) && !isHealthCategory(categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(!isHealthCategory(categoria) || input.fileBase64 || !doc.fileUrl || doc.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
+    const datas = mergedDocumentDates(input, doc);
+    assertDocumentDates(datas.dataEmissao, datas.validade);
     const saved = input.fileBase64 ? await saveDocumentFile(input.fileBase64, `employee_${doc.employeeId}`) : null;
     const payload: Record<string, unknown> = {
       categoria,
@@ -2028,13 +2062,14 @@ const requestDocUploadsRouter = router({
     categoria: z.enum(["pessoal","empresa","treinamento","exame_medico","psicossocial","outros"]).default("pessoal"),
     obrigatorio: z.boolean().default(false),
     numeroDocumento: z.string().optional(),
-    dataEmissao: z.string().optional(),
-    validade: z.string().optional(),
+    dataEmissao: documentDateInput,
+    validade: documentDateInput,
     fileNome: z.string(),
     fileMime: z.string(),
     fileTamanho: z.number(),
     fileBase64: z.string(), // base64 do arquivo
   })).mutation(async ({ ctx, input }) => {
+    assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const request = await getRequestByIdOrThrow(db, input.requestId);
@@ -2113,14 +2148,16 @@ const requestDocUploadsRouter = router({
     status: z.enum(["aprovado","reprovado"]),
     motivoReprovacao: z.string().optional(),
     numeroDocumento: z.string().optional(),
-    dataEmissao: z.string().optional(),
-    validade: z.string().optional(),
+    dataEmissao: documentDateInput,
+    validade: documentDateInput,
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode avaliar documentos.");
     const [document] = await db.select().from(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
     if (!document?.fileUrl) throw new Error("Anexe um arquivo antes de avaliar.");
+    const datas = mergedDocumentDates(input, document);
+    assertDocumentDates(datas.dataEmissao, datas.validade);
     const request = await getRequestByIdOrThrow(db, document.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
     assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(document.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");

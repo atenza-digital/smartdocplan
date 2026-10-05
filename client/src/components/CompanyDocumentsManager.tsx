@@ -10,6 +10,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { fileToBase64 } from "@/lib/files";
+import { getDocumentDateBounds, getDocumentDatesError } from "@shared/formValidation";
+
+// Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
+const DOC_DATES = getDocumentDateBounds();
 
 const COMPANY_DOCUMENT_TYPES = [
   { tipo: "cartao_cnpj", nome: "Cartão CNPJ", obrigatorio: true },
@@ -136,6 +140,11 @@ export default function CompanyDocumentsManager({
     }
     if (selectedFile.size > 15 * 1024 * 1024) {
       toast.error("O arquivo excede o limite de 15MB.");
+      return;
+    }
+    const datesError = getDocumentDatesError(uploadForm.dataEmissao, uploadForm.validade);
+    if (datesError) {
+      toast.error(datesError);
       return;
     }
     const fileBase64 = await fileToBase64(selectedFile);
@@ -343,11 +352,11 @@ export default function CompanyDocumentsManager({
             </div>
             <div className="space-y-1.5">
               <Label>Data de emissão</Label>
-              <Input type="date" value={uploadForm.dataEmissao} onChange={(event) => setUploadForm((current) => ({ ...current, dataEmissao: event.target.value }))} />
+              <Input type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax} value={uploadForm.dataEmissao} onChange={(event) => setUploadForm((current) => ({ ...current, dataEmissao: event.target.value }))} />
             </div>
             <div className="space-y-1.5">
               <Label>Validade</Label>
-              <Input type="date" value={uploadForm.validade} onChange={(event) => setUploadForm((current) => ({ ...current, validade: event.target.value }))} />
+              <Input type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax} value={uploadForm.validade} onChange={(event) => setUploadForm((current) => ({ ...current, validade: event.target.value }))} />
             </div>
             <div className="space-y-1.5">
               <Label>Observação</Label>
@@ -382,11 +391,11 @@ export default function CompanyDocumentsManager({
               </div>
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
-                <Input type="date" value={editForm.dataEmissao} onChange={(event) => setEditForm((current) => (current ? { ...current, dataEmissao: event.target.value } : current))} />
+                <Input type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax} value={editForm.dataEmissao} onChange={(event) => setEditForm((current) => (current ? { ...current, dataEmissao: event.target.value } : current))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Validade</Label>
-                <Input type="date" value={editForm.validade} onChange={(event) => setEditForm((current) => (current ? { ...current, validade: event.target.value } : current))} />
+                <Input type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax} value={editForm.validade} onChange={(event) => setEditForm((current) => (current ? { ...current, validade: event.target.value } : current))} />
               </div>
               <div className="space-y-1.5">
                 <Label>Observação</Label>
@@ -404,6 +413,11 @@ export default function CompanyDocumentsManager({
             <Button
               onClick={() => {
                 if (!editForm) return;
+                const datesError = getDocumentDatesError(editForm.dataEmissao, editForm.validade);
+                if (datesError) {
+                  toast.error(datesError);
+                  return;
+                }
                 updateMutation.mutate({
                   id: editForm.id,
                   nome: editForm.nome.trim(),

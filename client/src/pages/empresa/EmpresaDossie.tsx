@@ -24,6 +24,10 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canManageCompanyData } from "@shared/permissions";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
+import { formatDateOnlyBr, getDocumentDateBounds, getDocumentDatesError } from "@shared/formValidation";
+
+// Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
+const DOC_DATES = getDocumentDateBounds();
 
 type DocStatus = "valido" | "vencido" | "pendente" | "rejeitado" | "aguardando_validacao";
 
@@ -161,6 +165,11 @@ export default function EmpresaDossie() {
   };
 
   const handleSaveDoc = async () => {
+    const datesError = getDocumentDatesError(uploadForm.dataEmissao, uploadForm.validade);
+    if (datesError) {
+      toast.error(datesError);
+      return;
+    }
     let fileBase64: string | undefined;
     if (selectedFile) {
       setIsReadingFile(true);
@@ -411,11 +420,11 @@ export default function EmpresaDossie() {
             </div>
             <div className="space-y-1.5">
               <Label>Data de Emissão</Label>
-              <Input type="date" value={uploadForm.dataEmissao} onChange={(e) => setUploadForm({ ...uploadForm, dataEmissao: e.target.value })} />
+              <Input type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax} value={uploadForm.dataEmissao} onChange={(e) => setUploadForm({ ...uploadForm, dataEmissao: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label>Data de Validade</Label>
-              <Input type="date" value={uploadForm.validade} onChange={(e) => setUploadForm({ ...uploadForm, validade: e.target.value })} />
+              <Input type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax} value={uploadForm.validade} onChange={(e) => setUploadForm({ ...uploadForm, validade: e.target.value })} />
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="dossie-arquivo">{editingDoc ? "Substituir arquivo (opcional)" : "Arquivo *"}</Label>
@@ -509,12 +518,15 @@ function DocGrid({
                 {doc.tipo && <p className="text-xs text-muted-foreground mt-0.5">{doc.tipo}</p>}
                 {doc.dataEmissao && (
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Emissão: {new Date(doc.dataEmissao).toLocaleDateString("pt-BR")}
+                    Emissão: {formatDateOnlyBr(doc.dataEmissao)}
                   </p>
                 )}
                 {doc.validade && (
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Validade: {new Date(doc.validade).toLocaleDateString("pt-BR")}
+                    Validade: {formatDateOnlyBr(doc.validade)}
+                    {doc.situacaoValidade === "a_vencer" && (
+                      <span className="ml-1.5 font-medium text-amber-700 dark:text-amber-400">· vence em até 30 dias</span>
+                    )}
                   </p>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">

@@ -21,6 +21,10 @@ import {
   Plus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { getDocumentDateBounds } from "@shared/formValidation";
+
+// Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
+const DOC_DATES = getDocumentDateBounds();
 
 interface Props {
   requestId: number;
@@ -368,7 +372,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax}
                   value={uploadMeta.dataEmissao}
                   onChange={(event) => setUploadMeta((current) => ({ ...current, dataEmissao: event.target.value }))}
                 />
@@ -378,7 +382,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
             <div className="space-y-1.5">
               <Label>Validade</Label>
               <Input
-                type="date"
+                type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax}
                 value={uploadMeta.validade}
                 onChange={(event) => setUploadMeta((current) => ({ ...current, validade: event.target.value }))}
               />
@@ -438,7 +442,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax}
                   value={reviewMeta.dataEmissao}
                   onChange={(event) => setReviewMeta((current) => ({ ...current, dataEmissao: event.target.value }))}
                 />
@@ -448,7 +452,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
             <div className="space-y-1.5">
               <Label>Validade</Label>
               <Input
-                type="date"
+                type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax}
                 value={reviewMeta.validade}
                 onChange={(event) => setReviewMeta((current) => ({ ...current, validade: event.target.value }))}
               />

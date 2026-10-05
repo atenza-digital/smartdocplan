@@ -40,6 +40,10 @@ import {
   isValidCpf,
   normalizeCpf,
 } from "@shared/formValidation";
+import { getDocumentDateBounds } from "@shared/formValidation";
+
+// Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
+const DOC_DATES = getDocumentDateBounds();
 
 const PROCESS_OPTIONS = [
   { key: "admissao", label: "Admissão", description: "Novo ingresso na empresa." },
@@ -1432,7 +1436,7 @@ export default function EmpresaNovaSolicitacao() {
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax}
                   value={uploadForm.dataEmissao}
                   onChange={(event) => setUploadForm((current) => ({ ...current, dataEmissao: event.target.value }))}
                 />
@@ -1440,7 +1444,7 @@ export default function EmpresaNovaSolicitacao() {
               <div className="space-y-1.5">
                 <Label>Validade</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax}
                   value={uploadForm.validade}
                   onChange={(event) => setUploadForm((current) => ({ ...current, validade: event.target.value }))}
                 />
