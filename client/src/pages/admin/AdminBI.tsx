@@ -5,6 +5,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { BiDashboard } from "@/components/bi/BiDashboard";
 import { PeriodFilter, initialPeriod, type PeriodState } from "@/components/bi/PeriodFilter";
 import { formatDataBr } from "@/components/bi/biFormat";
+import { BiExportButton } from "@/components/bi/BiExportButton";
 
 export default function AdminBI() {
   const [period, setPeriod] = useState<PeriodState>(() => initialPeriod("mes"));
@@ -16,11 +17,14 @@ export default function AdminBI() {
   return (
     <AdminLayout title="BI Global">
       <div className="space-y-6">
-        <div>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
           <h2 className="text-2xl font-bold text-foreground">BI Global da Plataforma</h2>
           <p className="text-muted-foreground text-sm mt-1">
             Indicadores consolidados de todas as empresas entre {formatDataBr(period.inicio)} e {formatDataBr(period.fim)}.
           </p>
+          </div>
+          <BiExportButton report={report} global={true} />
         </div>
 
         <Card className="border-border">

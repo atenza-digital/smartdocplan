@@ -15,3 +15,4 @@
 - Usuários: vínculo com obras/locais da empresa (menu "Obras / locais" em Usuários) e auditoria mostrando as obras do usuário que fez a ação (migration 20261005_user_worksites).
 - Empresas: upload da logo (PNG/JPG até 2 MB) nas configurações da empresa e na ficha da empresa (admin), exibida no topo da área da empresa.
 - BI (global e da empresa): filtros por semana, mês, ano, últimos 12 meses ou período personalizado (de/até), com gráfico de evolução, indicadores do período e ranking de empresas no global.
+- BI: exportação em PDF (global e da empresa) com capa, logos da SmartDocPlan e da empresa, resumo executivo, pontos de atenção, tabelas com barras, evolução no período e notas sobre os dados.
