@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { createPortal } from "react-dom";
 import { Link } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import { RequestDocumentos } from "@/components/RequestDocumentos";
@@ -31,16 +30,14 @@ import { canCreateRequests, canManageRequestWorkflow } from "@shared/permissions
 import { NEXT_REQUEST_STATUS, canTransitionRequest } from "@shared/requestStatus";
 import {
   DndContext,
-  DragOverlay,
   KeyboardSensor,
   PointerSensor,
-  useDraggable,
-  useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragStartEvent,
 } from "@dnd-kit/core";
+import { KanbanCard, KanbanColumn, KanbanDragOverlay } from "@/components/kanban";
 
 const STATUS_COLUMNS = [
   { key: "nova", label: "Novas", color: "bg-blue-500", textColor: "text-blue-700 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800" },
@@ -71,73 +68,6 @@ const PRIORIDADE_COLORS: Record<string, string> = {
 const NEXT_STATUS: Record<string, readonly string[]> = NEXT_REQUEST_STATUS;
 
 type ViewMode = "kanban" | "lista";
-type StatusColumn = (typeof STATUS_COLUMNS)[number];
-
-function KanbanColumn({
-  column,
-  count,
-  dimmed,
-  children,
-}: {
-  column: StatusColumn;
-  count: number;
-  dimmed: boolean;
-  children: React.ReactNode;
-}) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.key, disabled: dimmed });
-  return (
-    <div
-      ref={setNodeRef}
-      className={`flex w-72 flex-col rounded-xl border ${column.border} ${column.bg} transition-opacity ${
-        dimmed ? "opacity-40" : ""
-      } ${isOver ? "ring-2 ring-primary" : ""}`}
-    >
-      <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className={`h-2.5 w-2.5 rounded-full ${column.color}`} />
-          <span className={`text-sm font-semibold ${column.textColor}`}>{column.label}</span>
-        </div>
-        <Badge variant="outline" className={`border-current text-xs ${column.textColor}`}>
-          {count}
-        </Badge>
-      </div>
-      <div className="max-h-[calc(100vh-300px)] min-h-24 flex-1 space-y-2 overflow-y-auto p-3">{children}</div>
-    </div>
-  );
-}
-
-function KanbanCard({
-  request,
-  canDrag,
-  onOpen,
-  children,
-}: {
-  request: any;
-  canDrag: boolean;
-  onOpen: () => void;
-  children: React.ReactNode;
-}) {
-  // O card que acompanha o cursor é desenhado pelo DragOverlay; aqui fica só o espaço de origem.
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
-    id: request.id,
-    data: { status: request.status },
-    disabled: !canDrag,
-  });
-  return (
-    <Card
-      ref={setNodeRef}
-      {...(canDrag ? listeners : {})}
-      {...(canDrag ? attributes : {})}
-      aria-roledescription={canDrag ? "card arrastável" : undefined}
-      className={`border-border/60 bg-background/80 transition-shadow hover:border-primary/30 hover:shadow-md ${
-        canDrag ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"
-      } ${isDragging ? "border-dashed border-primary/50 opacity-40" : ""}`}
-      onClick={onOpen}
-    >
-      {children}
-    </Card>
-  );
-}
 
 export default function AdminSolicitacoes() {
   const { user } = useAuth();
@@ -376,7 +306,7 @@ export default function AdminSolicitacoes() {
                       {cards.map((request) => (
                         <KanbanCard
                           key={request.id}
-                          request={request}
+                          item={request}
                           canDrag={canReview && (NEXT_STATUS[request.status]?.length ?? 0) > 0}
                           onOpen={() => openDetail(request)}
                         >
@@ -388,17 +318,7 @@ export default function AdminSolicitacoes() {
               })}
             </div>
           </div>
-          {createPortal(
-            // Renderizado no <body> para o card não ser cortado pelas colunas com rolagem.
-            <DragOverlay dropAnimation={null} zIndex={60}>
-              {activeRequest ? (
-                <Card className="w-[264px] rotate-2 cursor-grabbing border-primary/40 bg-background shadow-xl">
-                  {renderCardContent(activeRequest)}
-                </Card>
-              ) : null}
-            </DragOverlay>,
-            document.body
-          )}
+          <KanbanDragOverlay>{activeRequest ? renderCardContent(activeRequest) : null}</KanbanDragOverlay>
           </DndContext>
         )}
 

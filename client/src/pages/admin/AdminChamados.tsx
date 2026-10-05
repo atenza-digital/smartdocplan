@@ -8,7 +8,25 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Ticket, Clock, CheckCircle2, AlertCircle, MessageSquare } from "lucide-react";
+import { Ticket, Clock, CheckCircle2, AlertCircle, MessageSquare, LayoutGrid, List } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { KanbanCard, KanbanColumn, KanbanDragOverlay, type KanbanColumnDef } from "@/components/kanban";
+
+const TICKET_COLUMNS: KanbanColumnDef[] = [
+  { key: "aberto", label: "Aberto", color: "bg-red-500", textColor: "text-red-700 dark:text-red-400", bg: "bg-red-50 dark:bg-red-950/30", border: "border-red-200 dark:border-red-800" },
+  { key: "em_atendimento", label: "Em Atendimento", color: "bg-amber-500", textColor: "text-amber-700 dark:text-amber-400", bg: "bg-amber-50 dark:bg-amber-950/30", border: "border-amber-200 dark:border-amber-800" },
+  { key: "aguardando_cliente", label: "Aguardando Retorno", color: "bg-blue-500", textColor: "text-blue-700 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800" },
+  { key: "resolvido", label: "Resolvido", color: "bg-green-500", textColor: "text-green-700 dark:text-green-400", bg: "bg-green-50 dark:bg-green-950/30", border: "border-green-200 dark:border-green-800" },
+  { key: "fechado", label: "Fechado", color: "bg-gray-500", textColor: "text-gray-600 dark:text-gray-400", bg: "bg-gray-50 dark:bg-gray-900/30", border: "border-gray-200 dark:border-gray-800" },
+];
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canManageRequestWorkflow } from "@shared/permissions";
@@ -59,11 +77,72 @@ export default function AdminChamados() {
     onError: (e) => toast.error(e.message),
   });
 
-  const openTicket = (chamado: any) => {
+  const [viewMode, setViewMode] = useState<"kanban" | "lista">("kanban");
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+  const listInput = {};
+  const moveMutation = trpc.tickets.updateStatus.useMutation({
+    onMutate: async (vars) => {
+      await utils.tickets.list.cancel(listInput);
+      const previous = utils.tickets.list.getData(listInput);
+      utils.tickets.list.setData(listInput, (old) =>
+        old?.map((item) => (item.id === vars.id ? { ...item, status: vars.status } : item))
+      );
+      return { previous };
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) utils.tickets.list.setData(listInput, context.previous);
+      toast.error(error.message);
+    },
+    onSuccess: () => toast.success("Chamado movido."),
+    onSettled: () => {
+      utils.tickets.list.invalidate(listInput);
+      utils.tickets.stats.invalidate();
+    },
+  });
+
+  const openTicket = (chamado: any, statusInicial?: string) => {
     setSelected(chamado);
-    setNovoStatus(chamado.status);
+    setNovoStatus(statusInicial ?? chamado.status);
     setResposta("");
   };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveId(null);
+    const from = event.active.data.current?.status as string | undefined;
+    const to = event.over?.id as string | undefined;
+    if (!from || !to || from === to) return;
+    const chamado = chamados.find((item) => item.id === event.active.id);
+    if (!chamado) return;
+    // Resolver ou fechar exige resposta para a empresa: abre o atendimento com o status já escolhido.
+    if (to === "resolvido" || to === "fechado") {
+      openTicket(chamado, to);
+      return;
+    }
+    moveMutation.mutate({ id: chamado.id, status: to as any });
+  };
+
+  const activeTicket = activeId !== null ? chamados.find((item) => item.id === activeId) ?? null : null;
+
+  const renderKanbanCard = (chamado: any) => (
+    <CardContent className="space-y-2 p-3">
+      <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">#{chamado.id} — {chamado.titulo}</p>
+      <Badge variant="outline" className="text-xs">{tipoLabels[chamado.tipo] ?? chamado.tipo}</Badge>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+        <span>{new Date(chamado.createdAt).toLocaleDateString("pt-BR")}</span>
+        <span className="flex items-center gap-1">
+          <MessageSquare className="w-3 h-3" />
+          {chamado.totalMensagens}
+        </span>
+      </div>
+      {chamado.ultimaOrigem === "empresa" && (
+        <Badge variant="outline" className="text-xs py-0 border-primary/40 text-primary">Empresa respondeu</Badge>
+      )}
+    </CardContent>
+  );
 
   const mudouStatus = !!selected && novoStatus !== selected.status;
   const respostaObrigatoria = mudouStatus && (novoStatus === "resolvido" || novoStatus === "fechado");
@@ -99,8 +178,8 @@ export default function AdminChamados() {
           ))}
         </div>
 
-        {/* Filtro */}
-        <div className="flex items-center gap-3">
+        {/* Filtro e visualização */}
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <Select value={filterStatus} onValueChange={setFilterStatus}>
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Filtrar por status" />
@@ -114,9 +193,63 @@ export default function AdminChamados() {
               <SelectItem value="fechado">Fechado</SelectItem>
             </SelectContent>
           </Select>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={viewMode === "kanban" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("kanban")}
+              className={viewMode === "kanban" ? "bg-primary text-primary-foreground" : ""}
+            >
+              <LayoutGrid className="mr-1.5 h-4 w-4" />
+              Kanban
+            </Button>
+            <Button
+              variant={viewMode === "lista" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setViewMode("lista")}
+              className={viewMode === "lista" ? "bg-primary text-primary-foreground" : ""}
+            >
+              <List className="mr-1.5 h-4 w-4" />
+              Lista
+            </Button>
+          </div>
         </div>
 
+        {viewMode === "kanban" && (
+          <DndContext
+            sensors={sensors}
+            onDragStart={(event: DragStartEvent) => setActiveId(Number(event.active.id))}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => setActiveId(null)}
+          >
+            {canManage && (
+              <p className="-mt-3 text-xs text-muted-foreground">
+                Arraste os cards para mudar o status. Ao soltar em Resolvido ou Fechado, escreva a resposta para a empresa.
+              </p>
+            )}
+            <div className="overflow-x-auto pb-4">
+              <div className="flex min-w-max gap-4">
+                {TICKET_COLUMNS.filter((column) => filterStatus === "todos" || column.key === filterStatus).map((column) => {
+                  const cards = filtered.filter((chamado) => chamado.status === column.key);
+                  return (
+                    <KanbanColumn key={column.key} column={column} count={cards.length} dimmed={false}>
+                      {cards.length === 0 && <div className="py-8 text-center text-xs text-muted-foreground/50">Nenhum chamado</div>}
+                      {cards.map((chamado) => (
+                        <KanbanCard key={chamado.id} item={chamado} canDrag={canManage} onOpen={() => openTicket(chamado)}>
+                          {renderKanbanCard(chamado)}
+                        </KanbanCard>
+                      ))}
+                    </KanbanColumn>
+                  );
+                })}
+              </div>
+            </div>
+            <KanbanDragOverlay>{activeTicket ? renderKanbanCard(activeTicket) : null}</KanbanDragOverlay>
+          </DndContext>
+        )}
+
         {/* Lista */}
+        {viewMode === "lista" && (
         <div className="space-y-3">
           {isLoading && [...Array(4)].map((_, i) => (
             <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
@@ -168,6 +301,7 @@ export default function AdminChamados() {
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       <Dialog open={!!selected} onOpenChange={(open) => !open && setSelected(null)}>
