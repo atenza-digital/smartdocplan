@@ -43,3 +43,8 @@ drizzle/meta/
 # Uploads temporários
 uploads/
 var/uploads/
+
+# Arquivos temporários locais (contêm chaves e pacotes de deploy)
+.codex_tmp/
+tmp/
+__pycache__/
