@@ -1,10 +1,13 @@
-import { Document, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
+import { Document, Font, Image, Page, StyleSheet, Text, View } from "@react-pdf/renderer";
 import logoSmartDocPlan from "@/logos/logo_smartdocplan_completa.png";
 import type { BiCompanyReport, BiGlobalReport, BiReport } from "./BiDashboard";
 import {
   AGRUPAMENTO_LABELS, STATUS_CHAMADO, STATUS_SOLICITACAO, TIPO_CHAMADO, TIPO_SOLICITACAO,
   formatDataBr, formatDataHoraBr, formatDias, formatNumero, formatPercent, qtd, rotuloPeriodo,
 } from "./biFormat";
+
+// Sem hifenização automática (quebrava palavras em português, ex.: "cadastra-dos").
+Font.registerHyphenationCallback((word) => [word]);
 
 // Paleta do relatório (alinhada à identidade SmartDocPlan).
 const C = {
@@ -21,7 +24,8 @@ const C = {
 };
 
 const s = StyleSheet.create({
-  page: { paddingTop: 42, paddingBottom: 56, paddingHorizontal: 40, fontFamily: "Helvetica", fontSize: 10, color: C.ink, lineHeight: 1.45 },
+  page: { paddingTop: 42, paddingBottom: 56, paddingHorizontal: 40, fontFamily: "Helvetica", fontSize: 10, color: C.ink },
+  // lineHeight vai em cada estilo de texto, não na página: herdado pelo texto dinâmico do rodapé, ele some no react-pdf.
   cover: { padding: 0, fontFamily: "Helvetica", color: C.ink },
   coverBand: { backgroundColor: C.primary, height: 10 },
   coverBody: { flexGrow: 1, paddingHorizontal: 56, paddingTop: 70, paddingBottom: 40 },
@@ -42,32 +46,33 @@ const s = StyleSheet.create({
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", borderBottomWidth: 1, borderBottomColor: C.line, paddingBottom: 8, marginBottom: 18 },
   headerLogo: { width: 34, height: 24, objectFit: "contain" },
   headerText: { fontSize: 8, color: C.muted, textAlign: "right" },
-  footer: { position: "absolute", bottom: 22, left: 40, right: 40, fontSize: 8, color: C.muted, textAlign: "center", borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 },
+  footer: { position: "absolute", bottom: 22, left: 40, right: 40, flexDirection: "row", justifyContent: "space-between", borderTopWidth: 1, borderTopColor: C.line, paddingTop: 6 },
+  footerText: { fontSize: 8, color: C.muted },
 
-  h1: { fontSize: 17, fontFamily: "Helvetica-Bold", color: C.ink, marginBottom: 4 },
+  h1: { fontSize: 17, fontFamily: "Helvetica-Bold", color: C.ink, lineHeight: 1.3, paddingBottom: 4, marginBottom: 4 },
   h1Bar: { width: 34, height: 3, backgroundColor: C.primary, marginBottom: 10 },
-  h2: { fontSize: 11.5, fontFamily: "Helvetica-Bold", color: C.ink, marginTop: 12, marginBottom: 6 },
-  p: { marginBottom: 7, textAlign: "justify" },
+  h2: { fontSize: 11.5, fontFamily: "Helvetica-Bold", color: C.ink, lineHeight: 1.3, marginTop: 12, marginBottom: 6 },
+  p: { marginBottom: 7, textAlign: "justify", fontSize: 10, lineHeight: 1.45 },
   muted: { color: C.muted },
   section: { marginBottom: 18 },
 
   kpiRow: { flexDirection: "row", gap: 8, marginBottom: 10 },
-  kpi: { flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: 6, padding: 9 },
-  kpiValue: { fontSize: 17, fontFamily: "Helvetica-Bold" },
-  kpiLabel: { fontSize: 8.5, color: C.muted, marginTop: 2 },
-  kpiHint: { fontSize: 7.5, color: C.muted, marginTop: 3 },
+  kpi: { flex: 1, borderWidth: 1, borderColor: C.line, borderRadius: 6, paddingHorizontal: 9, paddingVertical: 8 },
+  kpiValue: { fontSize: 17, fontFamily: "Helvetica-Bold", lineHeight: 1.2, marginBottom: 3 },
+  kpiLabel: { fontSize: 8.5, color: C.muted, lineHeight: 1.3 },
+  kpiHint: { fontSize: 7.5, color: C.muted, lineHeight: 1.3, marginTop: 4 },
 
   callout: { backgroundColor: C.primarySoft, borderRadius: 6, padding: 10, marginBottom: 10 },
-  calloutTitle: { fontFamily: "Helvetica-Bold", marginBottom: 4, color: C.primary },
+  calloutTitle: { fontFamily: "Helvetica-Bold", marginBottom: 4, color: C.primary, fontSize: 10, lineHeight: 1.45 },
   bullet: { flexDirection: "row", marginBottom: 3 },
-  bulletDot: { width: 10, color: C.primary },
-  bulletText: { flex: 1 },
+  bulletDot: { width: 10, color: C.primary, fontSize: 10, lineHeight: 1.45 },
+  bulletText: { flex: 1, fontSize: 10, lineHeight: 1.45 },
 
   table: { borderWidth: 1, borderColor: C.line, borderRadius: 4, marginBottom: 8 },
   tr: { flexDirection: "row", borderTopWidth: 1, borderTopColor: C.line, alignItems: "center", minHeight: 20 },
   th: { flexDirection: "row", backgroundColor: C.zebra, minHeight: 20, alignItems: "center" },
-  thCell: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: C.muted, paddingHorizontal: 6, paddingVertical: 4 },
-  td: { fontSize: 9, paddingHorizontal: 6, paddingVertical: 4 },
+  thCell: { fontSize: 8.5, fontFamily: "Helvetica-Bold", color: C.muted, paddingHorizontal: 6, paddingVertical: 4, lineHeight: 1.45 },
+  td: { fontSize: 9, paddingHorizontal: 6, paddingVertical: 4, lineHeight: 1.45 },
   barTrack: { height: 7, backgroundColor: C.zebra, borderRadius: 3, flexGrow: 1 },
   bar: { height: 7, borderRadius: 3 },
 });
@@ -76,7 +81,7 @@ function Bullets({ items }: { items: string[] }) {
   return (
     <View>
       {items.map((item, i) => (
-        <View key={i} style={s.bullet}>
+        <View key={i} style={s.bullet} wrap={false}>
           <Text style={s.bulletDot}>•</Text>
           <Text style={s.bulletText}>{item}</Text>
         </View>
@@ -134,7 +139,7 @@ function Distribuicao({ titulo, data, labels, cor }: { titulo: string; data: { c
 function Secao({ titulo, children }: { titulo: string; children: React.ReactNode }) {
   return (
     <View style={s.section}>
-      <View wrap={false}>
+      <View wrap={false} minPresenceAhead={80}>
         <Text style={s.h1}>{titulo}</Text>
         <View style={s.h1Bar} />
       </View>
@@ -215,6 +220,8 @@ export function BiReportPdf({
   const docs = report.documentos;
   const serie = report.serie;
   const maxSerie = Math.max(1, ...serie.map((p) => Math.max(p.solicitacoesAbertas, p.chamadosAbertos)));
+  // Intervalos sem nenhum movimento são omitidos da tabela para não poluir o relatório.
+  const serieComMovimento = serie.filter((p) => p.solicitacoesAbertas + p.solicitacoesConcluidas + p.chamadosAbertos + p.chamadosResolvidos > 0);
 
   const Cabecalho = () => (
     <View style={s.header} fixed>
@@ -225,13 +232,10 @@ export function BiReportPdf({
     </View>
   );
   const Rodape = () => (
-    <Text
-      style={s.footer}
-      fixed
-      render={({ pageNumber, totalPages }) =>
-        `SmartDocPlan · Relatório de BI · gerado em ${geradoEm}        Página ${pageNumber} de ${totalPages}`
-      }
-    />
+    <View style={s.footer} fixed>
+      <Text style={s.footerText}>SmartDocPlan · Relatório de BI · gerado em {geradoEm}</Text>
+      <Text style={s.footerText} render={({ pageNumber, totalPages }) => `Página ${pageNumber} de ${totalPages}`} />
+    </View>
   );
 
   return (
@@ -273,7 +277,6 @@ export function BiReportPdf({
       {/* Conteúdo */}
       <Page size="A4" style={s.page}>
         <Cabecalho />
-        <Rodape />
 
         <Secao titulo="1. Resumo executivo">
           <Kpis items={[
@@ -366,29 +369,31 @@ export function BiReportPdf({
             Movimento {AGRUPAMENTO_LABELS[report.periodo.agrupamento].toLowerCase()}: solicitações e chamados abertos e encerrados em cada intervalo. As barras comparam o volume aberto entre os intervalos.
           </Text>
           <View style={s.table}>
-            <View style={s.th} fixed>
-              <Text style={[s.thCell, { width: "16%" }]}>Intervalo</Text>
-              <Text style={[s.thCell, { width: "14%", textAlign: "right" }]}>Solic. abertas</Text>
-              <Text style={[s.thCell, { width: "14%", textAlign: "right" }]}>Solic. concluídas</Text>
-              <Text style={[s.thCell, { width: "14%", textAlign: "right" }]}>Cham. abertos</Text>
-              <Text style={[s.thCell, { width: "14%", textAlign: "right" }]}>Cham. resolvidos</Text>
-              <Text style={[s.thCell, { width: "28%" }]}>Volume aberto</Text>
+            <View style={s.th} fixed minPresenceAhead={30}>
+              <Text style={[s.thCell, { width: "14%" }]}>Intervalo</Text>
+              <Text style={[s.thCell, { width: "17%", textAlign: "right" }]}>Solic. abertas</Text>
+              <Text style={[s.thCell, { width: "17%", textAlign: "right" }]}>Solic. concluídas</Text>
+              <Text style={[s.thCell, { width: "17%", textAlign: "right" }]}>Cham. abertos</Text>
+              <Text style={[s.thCell, { width: "17%", textAlign: "right" }]}>Cham. resolvidos</Text>
+              <Text style={[s.thCell, { width: "18%" }]}>Volume aberto</Text>
             </View>
-            {serie.map((p, i) => (
+            {serieComMovimento.length === 0 ? (
+              <View style={s.tr}><Text style={[s.td, s.muted]}>Nenhum movimento no período.</Text></View>
+            ) : serieComMovimento.map((p, i) => (
               <View key={p.periodo} style={[s.tr, i % 2 === 1 ? { backgroundColor: C.zebra } : {}]} wrap={false}>
-                <Text style={[s.td, { width: "16%" }]}>{rotuloPeriodo(p.periodo, report.periodo.agrupamento)}</Text>
-                <Text style={[s.td, { width: "14%", textAlign: "right" }]}>{formatNumero(p.solicitacoesAbertas)}</Text>
-                <Text style={[s.td, { width: "14%", textAlign: "right" }]}>{formatNumero(p.solicitacoesConcluidas)}</Text>
-                <Text style={[s.td, { width: "14%", textAlign: "right" }]}>{formatNumero(p.chamadosAbertos)}</Text>
-                <Text style={[s.td, { width: "14%", textAlign: "right" }]}>{formatNumero(p.chamadosResolvidos)}</Text>
-                <View style={{ width: "28%", paddingHorizontal: 6, gap: 2 }}>
+                <Text style={[s.td, { width: "14%" }]}>{rotuloPeriodo(p.periodo, report.periodo.agrupamento)}</Text>
+                <Text style={[s.td, { width: "17%", textAlign: "right" }]}>{formatNumero(p.solicitacoesAbertas)}</Text>
+                <Text style={[s.td, { width: "17%", textAlign: "right" }]}>{formatNumero(p.solicitacoesConcluidas)}</Text>
+                <Text style={[s.td, { width: "17%", textAlign: "right" }]}>{formatNumero(p.chamadosAbertos)}</Text>
+                <Text style={[s.td, { width: "17%", textAlign: "right" }]}>{formatNumero(p.chamadosResolvidos)}</Text>
+                <View style={{ width: "18%", paddingHorizontal: 6, gap: 2 }}>
                   <View style={[s.bar, { height: 4, width: `${(p.solicitacoesAbertas / maxSerie) * 100}%`, backgroundColor: C.amber }]} />
                   <View style={[s.bar, { height: 4, width: `${(p.chamadosAbertos / maxSerie) * 100}%`, backgroundColor: C.blue }]} />
                 </View>
               </View>
             ))}
           </View>
-          <Text style={[s.p, s.muted, { fontSize: 8 }]}>Barra laranja: solicitações abertas · barra azul: chamados abertos.</Text>
+          <Text style={[s.p, s.muted, { fontSize: 8 }]}>Barra laranja: solicitações abertas · barra azul: chamados abertos. Intervalos sem movimento foram omitidos.</Text>
         </Secao>
 
         {g ? (
@@ -396,7 +401,7 @@ export function BiReportPdf({
             <Text style={s.p}>
               {qtd(g.empresas.ativas, "empresa ativa", "empresas ativas")} de {formatNumero(g.empresas.total)} cadastradas; {qtd(g.empresas.novasNoPeriodo, "nova empresa entrou", "novas empresas entraram")} na plataforma no período. Ranking pelas solicitações abertas no período.
             </Text>
-            <View style={s.table}>
+            <View style={s.table} wrap={false}>
               <View style={s.th}>
                 <Text style={[s.thCell, { width: "40%" }]}>Empresa</Text>
                 <Text style={[s.thCell, { width: "15%", textAlign: "right" }]}>Solicitações</Text>
@@ -427,6 +432,7 @@ export function BiReportPdf({
             "Dados de saúde (atestados, exames, afastamentos) não são detalhados neste relatório.",
           ]} />
         </Secao>
+        <Rodape />
       </Page>
     </Document>
   );
