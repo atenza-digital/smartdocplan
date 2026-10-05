@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import CompanyLayout from "@/components/CompanyLayout";
 import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
+import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
 import { trpc } from "@/lib/trpc";
 import { useLocalAuth as useAuth } from "@/contexts/LocalAuthContext";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -456,6 +457,15 @@ export default function EmpresaConfiguracoes() {
 
           <TabsContent value="empresa" className="mt-4">
             <div className="max-w-5xl space-y-4">
+            {companyId > 0 && (
+              <div className="max-w-2xl">
+                <CompanyLogoUpload
+                  companyId={companyId}
+                  logoUrl={empresa?.logoUrl}
+                  canEdit={user?.role === "platform_admin" || user?.role === "company_admin"}
+                />
+              </div>
+            )}
             <Card className="max-w-2xl">
               <CardHeader className="pb-3">
                 <CardTitle className="text-base font-semibold">Atualizações cadastrais</CardTitle>

@@ -13,3 +13,4 @@
 - Janelas de diálogo: cada usuário escolhe o tamanho (Pequeno, Médio ou Grande, cerca de 65% da tela) em Meu perfil e nas Configurações.
 - Kanban (Solicitações e Chamados): soltar um card abre o modal já com o novo status e o campo de observação ou mensagem no topo; a mudança só é gravada ao confirmar.
 - Usuários: vínculo com obras/locais da empresa (menu "Obras / locais" em Usuários) e auditoria mostrando as obras do usuário que fez a ação (migration 20261005_user_worksites).
+- Empresas: upload da logo (PNG/JPG até 2 MB) nas configurações da empresa e na ficha da empresa (admin), exibida no topo da área da empresa.

@@ -144,3 +144,15 @@ describe("Usuários — vínculo com obras", () => {
     await expect(caller.users.setWorksites({ userId: 2, worksiteIds: [1] })).rejects.toThrow();
   });
 });
+
+// ─── Logo da empresa ─────────────────────────────────────────────────────────
+
+describe("Empresas — logo", () => {
+  it.each([["company_hr", 1], ["company_admin", 2], ["platform_analyst", null]] as const)(
+    "%s não altera logo da empresa 1",
+    async (role, companyId) => {
+      const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: companyId as any }));
+      await expect(caller.companies.updateLogo({ companyId: 1, fileBase64: null })).rejects.toThrow(/administrador/);
+    }
+  );
+});

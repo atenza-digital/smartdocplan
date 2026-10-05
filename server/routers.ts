@@ -14,7 +14,7 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { organizationRouter } from "./organization";
 import { vacationsRouter } from "./vacations";
-import { saveDocumentFile, uploadRoot } from "./uploadFiles";
+import { saveDocumentFile, uploadRoot, validateDocumentFile } from "./uploadFiles";
 import { createRequestWithRequirements, requestCreationInput } from "./requestCreation";
 import { publicProcedure, protectedProcedure, adminProcedure, superAdminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
@@ -272,6 +272,29 @@ const companiesRouter = router({
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.id)) return null;
     const result = await db.select().from(companies).where(eq(companies.id, input.id)).limit(1);
     return result[0] ?? null;
+  }),
+
+  updateLogo: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    fileBase64: z.string().max(3_000_000).nullable(), // ~2 MB em base64; null remove a logo
+  })).mutation(async ({ ctx, input }) => {
+    const podeAlterar = ctx.user.role === "platform_admin" || (ctx.user.role === "company_admin" && ctx.user.companyId === input.companyId);
+    assertAccess(podeAlterar, "Só o administrador da plataforma ou da própria empresa pode alterar a logo.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    let logoUrl: string | null = null;
+    let saved: Awaited<ReturnType<typeof saveDocumentFile>> | null = null;
+    if (input.fileBase64) {
+      assertAccess(Buffer.byteLength(input.fileBase64, "base64") <= 2 * 1024 * 1024, "A logo deve ter no máximo 2 MB.");
+      assertAccess(validateDocumentFile(input.fileBase64).ext !== "pdf", "Envie a logo em PNG ou JPG.");
+      saved = await saveDocumentFile(input.fileBase64, `logo_company_${input.companyId}`);
+      logoUrl = saved.url;
+    }
+    try {
+      await db.update(companies).set({ logoUrl, updatedAt: new Date() }).where(eq(companies.id, input.companyId));
+    } catch (error) { await saved?.cleanup(); throw error; }
+    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: logoUrl ? "alterou_logo_empresa" : "removeu_logo_empresa", entidade: "companies", entidadeId: input.companyId });
+    return { success: true, logoUrl };
   }),
 
   create: superAdminProcedure.input(z.object({

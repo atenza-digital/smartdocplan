@@ -1,6 +1,8 @@
 import { useParams, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
+import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
+import { useLocalAuth } from "@/contexts/LocalAuthContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,8 @@ export default function AdminEmpresaDetalhe() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const empresaId = parseInt(params.id ?? "0");
+  const { user } = useLocalAuth();
+  const canEditLogo = user?.role === "platform_admin";
 
   const { data: empresa, isLoading, refetch: refetchEmpresa } = trpc.companies.get.useQuery(
     { id: empresaId },
@@ -310,7 +314,8 @@ export default function AdminEmpresaDetalhe() {
                   </CardContent>
                 </Card>
               </TabsContent>
-              <TabsContent value="documentos">
+              <TabsContent value="documentos" className="space-y-4">
+                <CompanyLogoUpload companyId={empresaId} logoUrl={empresa?.logoUrl} canEdit={canEditLogo} />
                 <Card>
                   <CardContent className="p-4">
                     <CompanyDocumentsManager

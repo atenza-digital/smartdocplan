@@ -6,6 +6,7 @@ import { getDb } from "./db";
 import { uploadRoot } from "./uploadFiles";
 import { getUserFromLocalSession } from "./_core/localAuth";
 import {
+  companies,
   companyDocuments,
   employeeDocuments,
   requestDocumentUploads,
@@ -70,6 +71,21 @@ export function registerDocumentAccess(app: Express) {
         .select({ companyId: companyDocuments.companyId })
         .from(companyDocuments)
         .where(eq(companyDocuments.fileUrl, fileUrl));
+      // Logo da empresa: liberada para a plataforma e para a própria empresa, sem registro de acesso.
+      const logoOwners = await db
+        .select({ companyId: companies.id })
+        .from(companies)
+        .where(eq(companies.logoUrl, fileUrl));
+      if (logoOwners.length) {
+        if (!isPlatformUser(user.role) && !logoOwners.some(r => r.companyId === user.companyId)) {
+          res.sendStatus(404);
+          return;
+        }
+        await access(path);
+        res.set("Cache-Control", "private, max-age=300");
+        res.sendFile(path, { dotfiles: "deny" });
+        return;
+      }
       const vacationFiles = await db
         .select({ companyId: vacations.companyId })
         .from(vacations)

@@ -32,6 +32,7 @@ import {
 import { cn } from "@/lib/utils";
 import { canSeeCompanySettings } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
+import { trpc } from "@/lib/trpc";
 import NotificationCenter from "@/components/NotificationCenter";
 import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
@@ -66,6 +67,10 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
   const { user, logout, effectiveCompanyId } = useAuth();
+  const { data: empresaAtual } = trpc.companies.get.useQuery(
+    { id: effectiveCompanyId ?? 0 },
+    { enabled: (effectiveCompanyId ?? 0) > 0 }
+  );
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -216,6 +221,13 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            {empresaAtual?.logoUrl && (
+              <img
+                src={empresaAtual.logoUrl}
+                alt={`Logo de ${empresaAtual.nomeFantasia || empresaAtual.razaoSocial}`}
+                className="mr-2 hidden h-8 max-w-[120px] object-contain sm:block"
+              />
+            )}
             <PlatformCompanyScopeSwitch companyView />
             <NotificationCenter />
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="text-muted-foreground">
