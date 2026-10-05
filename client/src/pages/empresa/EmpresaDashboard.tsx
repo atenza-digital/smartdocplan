@@ -110,10 +110,13 @@ export default function EmpresaDashboard() {
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
           <Card className="border-border lg:col-span-2">
             <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-base font-semibold">
-                <AlertTriangle className="h-4 w-4 text-amber-500" />
-                Alertas documentais da empresa
-              </CardTitle>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <CardTitle className="flex items-center gap-2 text-base font-semibold">
+                  <AlertTriangle className="h-4 w-4 text-amber-500" />
+                  Alertas documentais da empresa
+                </CardTitle>
+                <Link href="/empresa/documentos" className="text-sm text-primary hover:underline">Ver documentos da empresa</Link>
+              </div>
             </CardHeader>
             <CardContent>
               <div className="grid gap-3 sm:grid-cols-3">

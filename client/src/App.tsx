@@ -30,6 +30,7 @@ import EmpresaSolicitacoes from "./pages/empresa/EmpresaSolicitacoes";
 import EmpresaColaboradores from "./pages/empresa/EmpresaColaboradores";
 import EmpresaDossie from "./pages/empresa/EmpresaDossie";
 import EmpresaPendencias from "./pages/empresa/EmpresaPendencias";
+import EmpresaDocumentos from "./pages/empresa/EmpresaDocumentos";
 import EmpresaChamados from "./pages/empresa/EmpresaChamados";
 import EmpresaBI from "./pages/empresa/EmpresaBI";
 import EmpresaConfiguracoes from "./pages/empresa/EmpresaConfiguracoes";
@@ -209,6 +210,11 @@ function Router() {
       <Route path="/empresa/colaboradores/:id">
         <AuthGuard>
           <EmpresaDossie />
+        </AuthGuard>
+      </Route>
+      <Route path="/empresa/documentos">
+        <AuthGuard>
+          <EmpresaDocumentos />
         </AuthGuard>
       </Route>
       <Route path="/empresa/pendencias">

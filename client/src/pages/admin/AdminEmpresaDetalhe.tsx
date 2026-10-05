@@ -1,6 +1,8 @@
 import { useParams, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
+import { CompanyMonthlyDocs } from "@/components/CompanyMonthlyDocs";
+import { isPlatformOperator } from "@shared/permissions";
 import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
 import { useLocalAuth } from "@/contexts/LocalAuthContext";
 import { trpc } from "@/lib/trpc";
@@ -26,6 +28,8 @@ export default function AdminEmpresaDetalhe() {
   const empresaId = parseInt(params.id ?? "0");
   const { user } = useLocalAuth();
   const canEditLogo = user?.role === "platform_admin";
+  // Auditor só consulta; administrador e analista gerenciam os documentos da empresa.
+  const canEditDocs = isPlatformOperator(user?.role ?? null);
 
   const { data: empresa, isLoading, refetch: refetchEmpresa } = trpc.companies.get.useQuery(
     { id: empresaId },
@@ -316,11 +320,12 @@ export default function AdminEmpresaDetalhe() {
               </TabsContent>
               <TabsContent value="documentos" className="space-y-4">
                 <CompanyLogoUpload companyId={empresaId} logoUrl={empresa?.logoUrl} canEdit={canEditLogo} />
+                <CompanyMonthlyDocs companyId={empresaId} canEdit={canEditDocs} />
                 <Card>
                   <CardContent className="p-4">
                     <CompanyDocumentsManager
                       companyId={empresaId}
-                      canEdit={true}
+                      canEdit={canEditDocs}
                       title="Documentos da empresa"
                       description="Gerencie Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT e CNO com alerta de validade."
                     />

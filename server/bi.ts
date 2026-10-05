@@ -87,7 +87,13 @@ async function buildReport(db: Db, companyId: number | null, p: Periodo) {
       count(*) AS total,
       count(*) FILTER (WHERE validade < ${hoje}) AS vencidos,
       count(*) FILTER (WHERE validade BETWEEN ${hoje} AND ${hoje} + 30) AS a_vencer
-    FROM smartdocplan.company_documents WHERE true ${empresa}`);
+    FROM (
+      -- Só a versão atual de cada documento fixo da empresa (versões antigas e mensais ficam de fora).
+      SELECT DISTINCT ON ("companyId", tipo) validade
+      FROM smartdocplan.company_documents
+      WHERE "recurringTypeId" IS NULL ${empresa}
+      ORDER BY "companyId", tipo, "createdAt" DESC, id DESC
+    ) atuais`);
   const [docsColab] = await rows<any>(db, sql`
     SELECT
       count(*) AS total,

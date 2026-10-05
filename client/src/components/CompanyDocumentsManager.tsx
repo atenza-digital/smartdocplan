@@ -9,20 +9,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
-import { fileToBase64 } from "@/lib/files";
-import { getDocumentDateBounds, getDocumentDatesError } from "@shared/formValidation";
+import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
+import { COMPANY_DOCUMENT_TYPES, companyDocumentTypeKey } from "@shared/companyDocuments";
+import { formatDateOnlyBr, getDocumentDateBounds, getDocumentDatesError, getValidityState } from "@shared/formValidation";
 
 // Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
 const DOC_DATES = getDocumentDateBounds();
-
-const COMPANY_DOCUMENT_TYPES = [
-  { tipo: "cartao_cnpj", nome: "Cartão CNPJ", obrigatorio: true },
-  { tipo: "contrato_social", nome: "Contrato Social", obrigatorio: true },
-  { tipo: "pcmso", nome: "PCMSO", obrigatorio: true },
-  { tipo: "pgr", nome: "PGR", obrigatorio: true },
-  { tipo: "ltcat", nome: "LTCAT", obrigatorio: true },
-  { tipo: "cno", nome: "CNO", obrigatorio: false },
-] as const;
 
 type UploadForm = {
   tipo: string;
@@ -48,13 +40,10 @@ function formatDate(value?: string | Date | null) {
 }
 
 function getDocumentStatus(validade?: string | Date | null) {
-  if (!validade) return { key: "sem_validade", label: "Sem validade", tone: "bg-muted text-muted-foreground" };
-  const today = new Date();
-  const warning = new Date();
-  warning.setDate(warning.getDate() + 30);
-  const expiry = new Date(validade);
-  if (expiry < today) return { key: "vencido", label: "Vencido", tone: "bg-red-500/10 text-red-700 border border-red-500/20" };
-  if (expiry <= warning) return { key: "a_vencer", label: "A vencer", tone: "bg-amber-500/10 text-amber-700 border border-amber-500/20" };
+  const state = getValidityState(validade);
+  if (state === "sem_validade") return { key: "sem_validade", label: "Sem validade", tone: "bg-muted text-muted-foreground" };
+  if (state === "vencido") return { key: "vencido", label: "Vencido", tone: "bg-red-500/10 text-red-700 border border-red-500/20" };
+  if (state === "a_vencer") return { key: "a_vencer", label: "A vencer", tone: "bg-amber-500/10 text-amber-700 border border-amber-500/20" };
   return { key: "ok", label: "Válido", tone: "bg-green-500/10 text-green-700 border border-green-500/20" };
 }
 
@@ -112,16 +101,18 @@ export default function CompanyDocumentsManager({
   const docsByType = useMemo(() => {
     const map = new Map<string, any[]>();
     for (const doc of docs) {
-      const current = map.get(doc.tipo) ?? [];
+      if (doc.recurringTypeId) continue;
+      const key = companyDocumentTypeKey(doc.tipo);
+      const current = map.get(key) ?? [];
       current.push(doc);
-      map.set(doc.tipo, current);
+      map.set(key, current);
     }
     return map;
   }, [docs]);
 
   const documentRows = COMPANY_DOCUMENT_TYPES.map((item) => {
     const versions = [...(docsByType.get(item.tipo) ?? [])].sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || b.id - a.id
     );
     const latest = versions[0];
     return { ...item, latest, versions };
@@ -138,8 +129,8 @@ export default function CompanyDocumentsManager({
       toast.error("Selecione um arquivo para enviar.");
       return;
     }
-    if (selectedFile.size > 15 * 1024 * 1024) {
-      toast.error("O arquivo excede o limite de 15MB.");
+    if (selectedFile.size > MAX_DOCUMENT_FILE_BYTES) {
+      toast.error("O arquivo deve ter no máximo 10 MB.");
       return;
     }
     const datesError = getDocumentDatesError(uploadForm.dataEmissao, uploadForm.validade);
@@ -222,8 +213,8 @@ export default function CompanyDocumentsManager({
                       <div className="space-y-1 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">{latest.nome}</p>
                         <p>Última atualização: {formatDate(latest.updatedAt) ?? "-"}</p>
-                        {latest.dataEmissao ? <p>Emissão: {formatDate(latest.dataEmissao)}</p> : null}
-                        {latest.validade ? <p>Validade: {formatDate(latest.validade)}</p> : null}
+                        {latest.dataEmissao ? <p>Emissão: {formatDateOnlyBr(latest.dataEmissao)}</p> : null}
+                        {latest.validade ? <p>Validade: {formatDateOnlyBr(latest.validade)}</p> : null}
                         {latest.observacao ? <p className="whitespace-pre-wrap">{latest.observacao}</p> : null}
                         {latest.fileUrl ? (
                           <div className="flex flex-wrap items-center gap-3">
@@ -298,7 +289,7 @@ export default function CompanyDocumentsManager({
                             <p className="font-medium text-foreground">{doc.nome}</p>
                             <p className="text-xs text-muted-foreground">
                               Atualizado em {formatDate(doc.updatedAt) ?? "-"}
-                              {doc.validade ? ` • validade ${formatDate(doc.validade)}` : ""}
+                              {doc.validade ? ` • validade ${formatDateOnlyBr(doc.validade)}` : ""}
                             </p>
                           </div>
                           {doc.fileUrl ? (
@@ -348,7 +339,7 @@ export default function CompanyDocumentsManager({
             </div>
             <div className="space-y-1.5">
               <Label>Arquivo</Label>
-              <Input type="file" onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
+              <Input type="file" accept={DOCUMENT_FILE_ACCEPT} onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)} />
             </div>
             <div className="space-y-1.5">
               <Label>Data de emissão</Label>

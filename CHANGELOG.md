@@ -2,6 +2,8 @@
 
 ## [Não publicado]
 
+- Documentos da Empresa: módulo próprio no menu (/empresa/documentos) com documentos legais, histórico de versões e documentos mensais da empresa; também na ficha da empresa no admin (auditor só consulta).
+- Contadores de documentos da empresa (painel, módulo e BI) consideram só a versão atual de cada tipo e reconhecem o tipo pelo código ou pelo nome; limite de arquivo alinhado em 10 MB (PDF, PNG ou JPG).
 - Documentos mensais: cada empresa cadastra os seus (por colaborador ou da empresa) com dia limite no mês seguinte; grade por competência no dossiê, envio direto pela grade e lista de quem não enviou em Pendências.
 - Configurações da empresa: abas quebram linha no celular.
 - Dossiê: checklist dos documentos exigidos pelo cargo (pendente, aguardando validação, aprovado, rejeitado, vencido), com envio direto pelo item e validação (aprovar ou rejeitar com motivo) pela equipe SmartDocPlan; a rejeição avisa o RH da empresa.

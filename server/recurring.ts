@@ -106,3 +106,31 @@ export async function buildCompanyMonthlyOverview(db: Db, companyId: number, com
       }),
   };
 }
+
+/** Grade dos documentos mensais da própria empresa: tipos ativos × últimas competências. */
+export async function buildCompanyMonthlyGrid(db: Db, companyId: number, meses: number, referenceDate = new Date()) {
+  const tipos = await listActiveRecurringTypes(db, companyId, "empresa");
+  const competencias = recentCompetencias(meses, referenceDate);
+  const docs = tipos.length
+    ? await db
+        .select({ id: companyDocuments.id, recurringTypeId: companyDocuments.recurringTypeId, competencia: companyDocuments.competencia, nome: companyDocuments.nome, fileUrl: companyDocuments.fileUrl })
+        .from(companyDocuments)
+        .where(and(eq(companyDocuments.companyId, companyId), inArray(companyDocuments.recurringTypeId, tipos.map((t) => t.id))))
+    : [];
+  return {
+    competencias,
+    linhas: tipos.map((tipo) => ({
+      tipo: { id: tipo.id, nome: tipo.nome, categoria: tipo.categoria, diaLimite: tipo.diaLimite },
+      celulas: competencias.map((competencia) => {
+        const doc = docs.find((d) => d.recurringTypeId === tipo.id && d.competencia === competencia) ?? null;
+        return {
+          competencia,
+          aplica: competenciaApplies(competencia, { tipoCriadoEm: tipo.createdAt }) || !!doc,
+          prazo: recurringDeadline(competencia, tipo.diaLimite),
+          estado: recurringCellState(doc ? { status: "valido" } : null, competencia, tipo.diaLimite, referenceDate),
+          documento: doc,
+        };
+      }),
+    })),
+  };
+}

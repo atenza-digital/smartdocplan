@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import CompanyLayout from "@/components/CompanyLayout";
-import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
 import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
 import { RecurringTypesManager } from "@/components/RecurringTypesManager";
 import { CalendarClock } from "lucide-react";
@@ -575,13 +574,16 @@ export default function EmpresaConfiguracoes() {
               </CardContent>
             </Card>
             <Card>
-              <CardContent className="p-5">
-                <CompanyDocumentsManager
-                  companyId={companyId}
-                  canEdit={canEdit}
-                  title="Documentos da empresa"
-                  description="Anexe e acompanhe Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT e CNO opcional com alerta de validade."
-                />
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Documentos da empresa</h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT, CNO e documentos mensais agora ficam no módulo Documentos da Empresa, com histórico de versões.
+                  </p>
+                </div>
+                <Button asChild variant="outline" size="sm">
+                  <Link href="/empresa/documentos">Abrir Documentos da Empresa</Link>
+                </Button>
               </CardContent>
             </Card>
             </div>

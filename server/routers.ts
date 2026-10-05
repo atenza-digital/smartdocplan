@@ -28,8 +28,9 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { COMPANY_DOCUMENT_TYPES, COMPANY_MONTHLY_DOCUMENT_TIPO, latestCompanyDocuments } from "@shared/companyDocuments";
 import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
-import { buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
+import { buildCompanyMonthlyGrid, buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
 import { formatCompetencia, isCompetenciaAllowed, isValidCompetencia } from "@shared/recurring";
 import {
   formatCnpj,
@@ -44,14 +45,6 @@ import {
   isValidPhone,
 } from "../shared/formValidation";
 
-const COMPANY_DOCUMENT_TYPES = [
-  { tipo: "cartao_cnpj", nome: "Cartão CNPJ", obrigatorio: true },
-  { tipo: "contrato_social", nome: "Contrato Social", obrigatorio: true },
-  { tipo: "pcmso", nome: "PCMSO", obrigatorio: true },
-  { tipo: "pgr", nome: "PGR", obrigatorio: true },
-  { tipo: "ltcat", nome: "LTCAT", obrigatorio: true },
-  { tipo: "cno", nome: "CNO", obrigatorio: false },
-] as const;
 
 // â”€â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -632,22 +625,16 @@ const companyDocumentsRouter = router({
     }
 
     const docs = await db.select().from(companyDocuments).where(eq(companyDocuments.companyId, input.companyId));
-    const today = new Date();
-    const warningDate = new Date();
-    warningDate.setDate(warningDate.getDate() + 30);
-
-    const sentTypes = new Set(docs.map((doc) => doc.tipo));
-    const obrigatoriosPendentes = COMPANY_DOCUMENT_TYPES.filter((item) => item.obrigatorio && !sentTypes.has(item.tipo)).length;
-    const vencidos = docs.filter((doc) => doc.validade && new Date(doc.validade) < today).length;
-    const aVencer = docs.filter((doc) => {
-      if (!doc.validade) return false;
-      const validade = new Date(doc.validade);
-      return validade >= today && validade <= warningDate;
-    }).length;
+    // Só a versão atual de cada tipo conta: versões antigas vencidas não são pendência.
+    const latest = latestCompanyDocuments(docs);
+    const atuais = COMPANY_DOCUMENT_TYPES.map((item) => latest.get(item.tipo)).filter((doc): doc is NonNullable<typeof doc> => !!doc);
+    const obrigatoriosPendentes = COMPANY_DOCUMENT_TYPES.filter((item) => item.obrigatorio && !latest.has(item.tipo)).length;
+    const vencidos = atuais.filter((doc) => getValidityState(doc.validade) === "vencido").length;
+    const aVencer = atuais.filter((doc) => getValidityState(doc.validade) === "a_vencer").length;
 
     return {
       total: COMPANY_DOCUMENT_TYPES.length,
-      enviados: docs.length,
+      enviados: atuais.length,
       obrigatoriosPendentes,
       vencidos,
       aVencer,
@@ -663,20 +650,26 @@ const companyDocumentsRouter = router({
     observacao: z.string().optional(),
     fileNome: z.string(),
     fileBase64: z.string(),
+    recurringTypeId: z.number().optional(),
+    competencia: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
+    const mensal = await assertRecurringUpload(db, { recurringTypeId: input.recurringTypeId, competencia: input.competencia, companyId: input.companyId, alvo: "empresa" });
+    assertAccess(mensal || COMPANY_DOCUMENT_TYPES.some((item) => item.tipo === input.tipo.trim()), "Tipo de documento da empresa inválido.");
 
     const saved = await saveDocumentFile(input.fileBase64, `company_${input.companyId}`);
     const fileUrl = saved.url;
     try {
     await db.insert(companyDocuments).values({
       companyId: input.companyId,
-      tipo: input.tipo.trim(),
+      tipo: mensal ? COMPANY_MONTHLY_DOCUMENT_TIPO : input.tipo.trim(),
       nome: input.nome.trim(),
+      recurringTypeId: mensal ? input.recurringTypeId : undefined,
+      competencia: mensal ? input.competencia : undefined,
       fileUrl,
       fileKey: fileUrl.replace("/uploads/", ""),
       dataEmissao: input.dataEmissao || undefined,
@@ -1894,6 +1887,14 @@ const recurringDocsRouter = router({
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
     return buildEmployeeMonthlyGrid(db, employee, input.meses);
+  }),
+
+  /** Grade dos documentos mensais da própria empresa (Documentos da Empresa). */
+  companyGrid: protectedProcedure.input(z.object({ companyId: z.number(), meses: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    return buildCompanyMonthlyGrid(db, input.companyId, input.meses);
   }),
 
   /** Situação da empresa em uma competência (Pendências e Documentos da Empresa). */

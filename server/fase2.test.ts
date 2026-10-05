@@ -204,3 +204,31 @@ describe("Documentos mensais", () => {
     await expect(caller.recurringDocs.create({ companyId: 1, nome: "Folha de ponto", alvo: "colaborador", diaLimite: 31 })).rejects.toThrow(/1 a 28/);
   });
 });
+
+// ─── E. Documentos da Empresa ────────────────────────────────────────────────
+
+import { companyDocumentTypeKey, latestCompanyDocuments } from "@shared/companyDocuments";
+
+describe("Documentos da Empresa — versão atual", () => {
+  it("vale o envio mais recente de cada tipo e ignora mensais", () => {
+    const docs = [
+      { id: 1, tipo: "pcmso", createdAt: new Date(2025, 0, 1), recurringTypeId: null, validade: "2025-12-31" },
+      { id: 2, tipo: "pcmso", createdAt: new Date(2026, 0, 1), recurringTypeId: null, validade: "2027-01-01" },
+      { id: 3, tipo: "mensal", createdAt: new Date(2026, 8, 1), recurringTypeId: 7, validade: null },
+      { id: 4, tipo: "pgr", createdAt: new Date(2026, 1, 1), recurringTypeId: null, validade: null },
+    ];
+    const latest = latestCompanyDocuments(docs);
+    expect(latest.get("pcmso")?.id).toBe(2);
+    expect(latest.has("mensal")).toBe(false);
+    expect(latest.size).toBe(2);
+  });
+});
+
+describe("Documentos da Empresa — tipo canônico", () => {
+  it("aceita código ou nome, sem diferenciar acento e maiúsculas", () => {
+    expect(companyDocumentTypeKey("PGR")).toBe("pgr");
+    expect(companyDocumentTypeKey("Cartao CNPJ")).toBe("cartao_cnpj");
+    expect(companyDocumentTypeKey("Cartão CNPJ")).toBe("cartao_cnpj");
+    expect(companyDocumentTypeKey("outro tipo")).toBe("outro tipo");
+  });
+});
