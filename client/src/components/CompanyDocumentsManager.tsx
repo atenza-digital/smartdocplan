@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
+import { fileToBase64 } from "@/lib/files";
 
 const COMPANY_DOCUMENT_TYPES = [
   { tipo: "cartao_cnpj", nome: "Cartão CNPJ", obrigatorio: true },
@@ -34,15 +35,6 @@ type EditForm = {
   validade: string;
   observacao: string;
 };
-
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve((reader.result as string).split(",")[1] ?? "");
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
 
 function formatDate(value?: string | Date | null) {
   if (!value) return null;

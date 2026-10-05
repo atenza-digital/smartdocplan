@@ -11,13 +11,39 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   FolderOpen, FileText, CheckCircle2, AlertCircle, Clock,
   Upload, ArrowLeft, User, Calendar, Download, Briefcase, MapPin, Mail, Phone,
+  Eye, Pencil, Trash2,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { canManageCompanyData } from "@shared/permissions";
+import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
 
 type DocStatus = "valido" | "vencido" | "pendente" | "rejeitado" | "aguardando_validacao";
+
+type DocForm = {
+  categoria: string;
+  nome: string;
+  tipo: string;
+  dataEmissao: string;
+  validade: string;
+};
+
+const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "" };
+
+const docStatusLabels: Record<string, string> = {
+  valido: "Válido",
+  vencido: "Vencido",
+  pendente: "Pendente",
+  rejeitado: "Rejeitado",
+  aguardando_validacao: "Aguardando validação",
+};
 
 const docStatusColors: Record<string, string> = {
   valido: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
@@ -41,15 +67,14 @@ const categoriaLabels: Record<string, string> = {
 export default function EmpresaDossie() {
   const [, params] = useRoute("/empresa/colaboradores/:id");
   const employeeId = parseInt(params?.id ?? "0");
+  const { user } = useAuth();
+  const canManage = canManageCompanyData(user?.role ?? null);
   const [showUpload, setShowUpload] = useState(false);
-  const [uploadForm, setUploadForm] = useState({
-    categoria: "pessoal" as const,
-    nome: "",
-    tipo: "",
-    dataEmissao: "",
-    validade: "",
-    fileUrl: "",
-  });
+  const [editingDoc, setEditingDoc] = useState<any | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isReadingFile, setIsReadingFile] = useState(false);
+  const [uploadForm, setUploadForm] = useState<DocForm>(emptyDocForm);
 
   const { data: employee } = trpc.employees.get.useQuery(
     { id: employeeId },
@@ -72,15 +97,107 @@ export default function EmpresaDossie() {
     { enabled: (employee?.companyId ?? 0) > 0 && employeeId > 0 }
   );
 
+  const closeDocDialog = () => {
+    setShowUpload(false);
+    setEditingDoc(null);
+    setSelectedFile(null);
+    setUploadForm(emptyDocForm);
+  };
+
+  const openNewDoc = () => {
+    setEditingDoc(null);
+    setSelectedFile(null);
+    setUploadForm(emptyDocForm);
+    setShowUpload(true);
+  };
+
+  const openEditDoc = (doc: any) => {
+    setEditingDoc(doc);
+    setSelectedFile(null);
+    setUploadForm({
+      categoria: doc.categoria,
+      nome: doc.nome ?? "",
+      tipo: doc.tipo ?? "",
+      dataEmissao: doc.dataEmissao ? String(doc.dataEmissao).slice(0, 10) : "",
+      validade: doc.validade ? String(doc.validade).slice(0, 10) : "",
+    });
+    setShowUpload(true);
+  };
+
   const createDocMutation = trpc.employeeDocs.create.useMutation({
     onSuccess: () => {
-      toast.success("Documento cadastrado com sucesso!");
-      setShowUpload(false);
+      toast.success("Documento enviado com sucesso!");
+      closeDocDialog();
       refetch();
-      setUploadForm({ categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", fileUrl: "" });
     },
     onError: (e) => toast.error(e.message),
   });
+
+  const updateDocMutation = trpc.employeeDocs.update.useMutation({
+    onSuccess: () => {
+      toast.success("Documento atualizado com sucesso!");
+      closeDocDialog();
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const deleteDocMutation = trpc.employeeDocs.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Documento excluído.");
+      setDeleteTarget(null);
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const handleSelectFile = (file: File | null) => {
+    if (file && file.size > MAX_DOCUMENT_FILE_BYTES) {
+      toast.error("O arquivo deve ter no máximo 10 MB.");
+      setSelectedFile(null);
+      return;
+    }
+    setSelectedFile(file);
+  };
+
+  const handleSaveDoc = async () => {
+    let fileBase64: string | undefined;
+    if (selectedFile) {
+      setIsReadingFile(true);
+      try {
+        fileBase64 = await fileToBase64(selectedFile);
+      } catch {
+        toast.error("Não foi possível ler o arquivo selecionado.");
+        return;
+      } finally {
+        setIsReadingFile(false);
+      }
+    }
+    const fields = {
+      categoria: uploadForm.categoria as any,
+      nome: uploadForm.nome.trim(),
+      tipo: uploadForm.tipo,
+      dataEmissao: uploadForm.dataEmissao,
+      validade: uploadForm.validade,
+      fileNome: selectedFile?.name,
+      fileBase64,
+    };
+    if (editingDoc) {
+      updateDocMutation.mutate({ id: editingDoc.id, ...fields });
+    } else {
+      createDocMutation.mutate({
+        employeeId,
+        companyId: employee?.companyId ?? 0,
+        ...fields,
+        tipo: fields.tipo || undefined,
+        dataEmissao: fields.dataEmissao || undefined,
+        validade: fields.validade || undefined,
+        obrigatorio: true,
+      });
+    }
+  };
+
+  const isSavingDoc = isReadingFile || createDocMutation.isPending || updateDocMutation.isPending;
 
   if (!employee && employeeId > 0) {
     return (
@@ -233,12 +350,14 @@ export default function EmpresaDossie() {
             </Card>
 
             {/* Documentos por categoria */}
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
               <h3 className="font-semibold text-foreground">Documentos do Colaborador</h3>
-              <Button size="sm" onClick={() => setShowUpload(true)} className="bg-primary hover:bg-primary/90 text-primary-foreground">
-                <Upload className="w-4 h-4 mr-2" />
-                Enviar Documento
-              </Button>
+              {canManage && (
+                <Button size="sm" onClick={openNewDoc} className="bg-primary hover:bg-primary/90 text-primary-foreground">
+                  <Upload className="w-4 h-4 mr-2" />
+                  Enviar Documento
+                </Button>
+              )}
             </div>
 
             <Tabs defaultValue="todos">
@@ -252,11 +371,11 @@ export default function EmpresaDossie() {
               </TabsList>
 
               <TabsContent value="todos" className="mt-4">
-                <DocGrid docs={documentos} />
+                <DocGrid docs={documentos} canManage={canManage} onEdit={openEditDoc} onDelete={setDeleteTarget} />
               </TabsContent>
               {Object.keys(categoriaLabels).map((cat) => (
                 <TabsContent key={cat} value={cat} className="mt-4">
-                  <DocGrid docs={byCategoria(cat)} />
+                  <DocGrid docs={byCategoria(cat)} canManage={canManage} onEdit={openEditDoc} onDelete={setDeleteTarget} />
                 </TabsContent>
               ))}
             </Tabs>
@@ -265,15 +384,15 @@ export default function EmpresaDossie() {
       </div>
 
       {/* Modal Upload */}
-      <Dialog open={showUpload} onOpenChange={setShowUpload}>
-        <DialogContent className="sm:max-w-md">
+      <Dialog open={showUpload} onOpenChange={(open) => !open && closeDocDialog()}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Enviar Documento</DialogTitle>
+            <DialogTitle>{editingDoc ? "Editar Documento" : "Enviar Documento"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Categoria *</Label>
-              <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v as any })}>
+              <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(categoriaLabels).map(([k, v]) => (
@@ -299,38 +418,70 @@ export default function EmpresaDossie() {
               <Input type="date" value={uploadForm.validade} onChange={(e) => setUploadForm({ ...uploadForm, validade: e.target.value })} />
             </div>
             <div className="space-y-1.5">
-              <Label>URL do Arquivo (opcional)</Label>
-              <Input value={uploadForm.fileUrl} onChange={(e) => setUploadForm({ ...uploadForm, fileUrl: e.target.value })} placeholder="https://..." />
-              <p className="text-xs text-muted-foreground">Cole o link do documento ou faça upload via sistema de arquivos</p>
+              <Label htmlFor="dossie-arquivo">{editingDoc ? "Substituir arquivo (opcional)" : "Arquivo *"}</Label>
+              <Input
+                id="dossie-arquivo"
+                type="file"
+                accept={DOCUMENT_FILE_ACCEPT}
+                onChange={(e) => handleSelectFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="text-xs text-muted-foreground">
+                PDF, PNG ou JPG com até 10 MB.
+                {editingDoc?.fileUrl && !selectedFile ? " Se nenhum arquivo for escolhido, o atual é mantido." : ""}
+              </p>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowUpload(false)}>Cancelar</Button>
+            <Button variant="outline" onClick={closeDocDialog}>Cancelar</Button>
             <Button
-              onClick={() => createDocMutation.mutate({
-                employeeId,
-                companyId: employee?.companyId ?? 0,
-                categoria: uploadForm.categoria,
-                nome: uploadForm.nome,
-                tipo: uploadForm.tipo || undefined,
-                dataEmissao: uploadForm.dataEmissao || undefined,
-                validade: uploadForm.validade || undefined,
-                fileUrl: uploadForm.fileUrl || undefined,
-                obrigatorio: true,
-              })}
-              disabled={!uploadForm.nome || !uploadForm.categoria || createDocMutation.isPending}
+              onClick={handleSaveDoc}
+              disabled={!uploadForm.nome.trim() || !uploadForm.categoria || (!editingDoc && !selectedFile) || isSavingDoc}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
-              {createDocMutation.isPending ? "Salvando..." : "Salvar"}
+              {isSavingDoc ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Excluir documento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              O documento "{deleteTarget?.nome}" deixará de aparecer no dossiê. O registro fica guardado no histórico da auditoria.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault();
+                if (deleteTarget) deleteDocMutation.mutate({ id: deleteTarget.id });
+              }}
+              disabled={deleteDocMutation.isPending}
+              className="bg-destructive text-white hover:bg-destructive/90"
+            >
+              {deleteDocMutation.isPending ? "Excluindo..." : "Excluir"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </CompanyLayout>
   );
 }
 
-function DocGrid({ docs }: { docs: any[] }) {
+function DocGrid({
+  docs,
+  canManage,
+  onEdit,
+  onDelete,
+}: {
+  docs: any[];
+  canManage: boolean;
+  onEdit: (doc: any) => void;
+  onDelete: (doc: any) => void;
+}) {
   if (docs.length === 0) {
     return (
       <div className="text-center py-10 text-muted-foreground">
@@ -352,7 +503,7 @@ function DocGrid({ docs }: { docs: any[] }) {
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-semibold text-foreground line-clamp-1">{doc.nome}</p>
                   <Badge variant="outline" className={`text-xs shrink-0 ${docStatusColors[doc.status] ?? ""}`}>
-                    {doc.status}
+                    {docStatusLabels[doc.status] ?? doc.status}
                   </Badge>
                 </div>
                 {doc.tipo && <p className="text-xs text-muted-foreground mt-0.5">{doc.tipo}</p>}
@@ -366,17 +517,33 @@ function DocGrid({ docs }: { docs: any[] }) {
                     Validade: {new Date(doc.validade).toLocaleDateString("pt-BR")}
                   </p>
                 )}
-                {doc.fileUrl && (
-                  <div className="mt-2 flex flex-wrap items-center gap-3">
-                    <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="text-xs text-primary hover:underline inline-block">
-                      Ver documento
-                    </a>
-                    <a href={doc.fileUrl} download={doc.nome} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
-                      <Download className="h-3 w-3" />
-                      Download
-                    </a>
-                  </div>
-                )}
+                <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+                  {doc.fileUrl && (
+                    <>
+                      <a href={doc.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                        <Eye className="h-3 w-3" />
+                        Visualizar
+                      </a>
+                      <a href={doc.fileUrl} download={doc.nome} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                        <Download className="h-3 w-3" />
+                        Download
+                      </a>
+                    </>
+                  )}
+                  {canManage && (
+                    <>
+                      <button type="button" onClick={() => onEdit(doc)} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                        <Pencil className="h-3 w-3" />
+                        Editar
+                      </button>
+                      <button type="button" onClick={() => onDelete(doc)} className="inline-flex items-center gap-1 text-xs text-destructive hover:underline">
+                        <Trash2 className="h-3 w-3" />
+                        Excluir
+                      </button>
+                    </>
+                  )}
+                </div>
+                {doc.versao > 1 && <p className="text-xs text-muted-foreground mt-1">Versão {doc.versao}</p>}
               </div>
             </div>
           </CardContent>

@@ -57,9 +57,15 @@ export function registerDocumentAccess(app: Express) {
         .select({
           companyId: employeeDocuments.companyId,
           categoria: employeeDocuments.categoria,
+          status: employeeDocuments.status,
         })
         .from(employeeDocuments)
         .where(eq(employeeDocuments.fileUrl, fileUrl));
+      // Documento excluído (exclusão lógica) só continua acessível à plataforma, para auditoria.
+      const deletedForUser =
+        !isPlatformUser(user.role) &&
+        employeeFiles.length > 0 &&
+        employeeFiles.every(r => r.status === "excluido");
       const companyFiles = await db
         .select({ companyId: companyDocuments.companyId })
         .from(companyDocuments)
@@ -80,6 +86,7 @@ export function registerDocumentAccess(app: Express) {
         ) || employeeFiles.some(r => isHealthCategory(r.categoria));
       if (
         !records.length ||
+        deletedForUser ||
         (sensitive && !canAccessHealthData(user.role)) ||
         !records.every(
           r => isPlatformUser(user.role) || r.companyId === user.companyId

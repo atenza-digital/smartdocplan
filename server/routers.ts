@@ -1,4 +1,4 @@
-﻿import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME } from "@shared/const";
 import {
   canCreateRequests,
   canAccessHealthData,
@@ -24,7 +24,7 @@ import {
   legalRequirements, positionRequirements, users, documentTypeTemplates, requestDocumentUploads,
   companyUpdateRequests, userNotifications
 } from "../drizzle/schema";
-import { eq, and, desc, or, sql } from "drizzle-orm";
+import { eq, and, desc, or, sql, ne } from "drizzle-orm";
 import {
   formatCnpj,
   formatCpf,
@@ -175,6 +175,13 @@ async function getEmployeeByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id:
   const employee = result[0];
   if (!employee) throw new Error("Colaborador não encontrado");
   return employee;
+}
+
+async function getEmployeeDocByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
+  const result = await db!.select().from(employeeDocuments).where(eq(employeeDocuments.id, id)).limit(1);
+  const doc = result[0];
+  if (!doc || doc.status === "excluido") throw new Error("Documento do colaborador não encontrado");
+  return doc;
 }
 
 async function getPositionByIdOrThrow(db: Awaited<ReturnType<typeof getDb>>, id: number) {
@@ -1520,7 +1527,7 @@ const employeeDocsRouter = router({
     if (!db) return [];
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId)) return [];
-    const conditions = [eq(employeeDocuments.employeeId, input.employeeId)];
+    const conditions = [eq(employeeDocuments.employeeId, input.employeeId), ne(employeeDocuments.status, "excluido")];
     if (input.categoria) conditions.push(eq(employeeDocuments.categoria, input.categoria));
     const docs = await db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
     return docs.filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role));
@@ -1534,6 +1541,8 @@ const employeeDocsRouter = router({
     tipo: z.string().optional(),
     fileUrl: z.string().optional(),
     fileKey: z.string().optional(),
+    fileNome: z.string().optional(),
+    fileBase64: z.string().optional(),
     dataEmissao: z.string().optional(),
     validade: z.string().optional(),
     obrigatorio: z.boolean().default(true),
@@ -1547,12 +1556,98 @@ const employeeDocsRouter = router({
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(employee.companyId === input.companyId, "O colaborador não pertence à empresa informada.");
     assertAccess(!isHealthCategory(input.categoria) || !input.fileUrl || input.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
-    await db.insert(employeeDocuments).values({
-      ...input,
-      dataEmissao: input.dataEmissao || undefined,
-      validade: input.validade || undefined,
-      uploadedBy: ctx.user.id,
-    } as any);
+    const { fileBase64, fileNome, ...data } = input;
+    const saved = fileBase64 ? await saveDocumentFile(fileBase64, `employee_${input.employeeId}`) : null;
+    const fileUrl = saved?.url ?? data.fileUrl;
+    let createdDoc: { id: number } | undefined;
+    try {
+      [createdDoc] = await db.insert(employeeDocuments).values({
+        ...data,
+        fileUrl,
+        fileKey: saved ? saved.url.replace("/uploads/", "") : data.fileKey,
+        dataEmissao: data.dataEmissao || undefined,
+        validade: data.validade || undefined,
+        uploadedBy: ctx.user.id,
+      } as any).returning({ id: employeeDocuments.id });
+    } catch (error) { await saved?.cleanup(); throw error; }
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "criou_documento_colaborador",
+      entidade: "employee_documents",
+      entidadeId: createdDoc?.id ?? null,
+      dadosDepois: { colaboradorId: input.employeeId, categoria: input.categoria, nome: input.nome, arquivo: fileNome ?? null },
+    });
+    return { success: true, fileUrl };
+  }),
+
+  update: protectedProcedure.input(z.object({
+    id: z.number(),
+    categoria: z.enum(["pessoal","contratual","exame_medico","treinamento","advertencia","afastamento","atestado","opcional"]).optional(),
+    nome: z.string().min(1).optional(),
+    tipo: z.string().optional(),
+    dataEmissao: z.string().optional(),
+    validade: z.string().optional(),
+    observacao: z.string().optional(),
+    fileNome: z.string().optional(),
+    fileBase64: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar documentos de colaboradores.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const doc = await getEmployeeDocByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
+    const categoria = input.categoria ?? doc.categoria;
+    assertAccess((!isHealthCategory(doc.categoria) && !isHealthCategory(categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!isHealthCategory(categoria) || input.fileBase64 || !doc.fileUrl || doc.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
+    const saved = input.fileBase64 ? await saveDocumentFile(input.fileBase64, `employee_${doc.employeeId}`) : null;
+    const payload: Record<string, unknown> = {
+      categoria,
+      nome: input.nome?.trim() ?? doc.nome,
+      updatedAt: new Date(),
+    };
+    if (input.tipo !== undefined) payload.tipo = normalizeOptionalText(input.tipo) ?? null;
+    if (input.dataEmissao !== undefined) payload.dataEmissao = input.dataEmissao || null;
+    if (input.validade !== undefined) payload.validade = input.validade || null;
+    if (input.observacao !== undefined) payload.observacao = normalizeOptionalText(input.observacao) ?? null;
+    if (saved) {
+      // O arquivo anterior permanece no disco para histórico; o registro aponta para a nova versão.
+      payload.fileUrl = saved.url;
+      payload.fileKey = saved.url.replace("/uploads/", "");
+      payload.versao = doc.versao + 1;
+      payload.uploadedBy = ctx.user.id;
+    }
+    try {
+      await db.update(employeeDocuments).set(payload as any).where(eq(employeeDocuments.id, doc.id));
+    } catch (error) { await saved?.cleanup(); throw error; }
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: doc.companyId,
+      acao: saved ? "substituiu_documento_colaborador" : "editou_documento_colaborador",
+      entidade: "employee_documents",
+      entidadeId: doc.id,
+      dadosDepois: { documentoId: doc.id, categoria, nome: payload.nome, versao: payload.versao ?? doc.versao, arquivo: input.fileNome ?? null },
+    });
+    return { success: true };
+  }),
+
+  delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode excluir documentos de colaboradores.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const doc = await getEmployeeDocByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
+    assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    // Exclusão lógica: o registro e o arquivo são mantidos para histórico e auditoria.
+    await db.update(employeeDocuments).set({ status: "excluido", updatedAt: new Date() }).where(eq(employeeDocuments.id, doc.id));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: doc.companyId,
+      acao: "excluiu_documento_colaborador",
+      entidade: "employee_documents",
+      entidadeId: doc.id,
+      dadosDepois: { documentoId: doc.id, categoria: doc.categoria, nome: doc.nome },
+    });
     return { success: true };
   }),
 });
