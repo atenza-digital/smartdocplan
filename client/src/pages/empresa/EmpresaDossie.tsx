@@ -52,6 +52,7 @@ const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEm
 const docStatusLabels: Record<string, string> = {
   valido: "Válido",
   vencido: "Vencido",
+  a_vencer: "A vencer",
   pendente: "Pendente",
   rejeitado: "Rejeitado",
   aguardando_validacao: "Aguardando validação",
@@ -60,6 +61,7 @@ const docStatusLabels: Record<string, string> = {
 const docStatusColors: Record<string, string> = {
   valido: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
   vencido: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
+  a_vencer: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
   pendente: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
   rejeitado: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
   aguardando_validacao: "bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20",

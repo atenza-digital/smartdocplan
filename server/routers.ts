@@ -1935,9 +1935,11 @@ const employeeDocsRouter = router({
     return docs
       .filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role))
       .map(doc => {
-        // A situação de validade é derivada da data: um documento "válido" com validade passada aparece como vencido.
+        // A situação de validade é derivada da data: aprovado com validade passada aparece como vencido.
+        // Status de validade gravados em dados antigos ("vencido", "a_vencer") também seguem a data.
         const situacaoValidade = getValidityState(doc.validade);
-        return { ...doc, situacaoValidade, status: doc.status === "valido" && situacaoValidade === "vencido" ? "vencido" : doc.status };
+        const porValidade = ["valido", "vencido", "a_vencer"].includes(doc.status);
+        return { ...doc, situacaoValidade, status: porValidade ? (situacaoValidade === "vencido" ? "vencido" : "valido") : doc.status };
       });
   }),
 

@@ -232,3 +232,19 @@ describe("Documentos da Empresa — tipo canônico", () => {
     expect(companyDocumentTypeKey("outro tipo")).toBe("outro tipo");
   });
 });
+
+// ─── F. Alertas ──────────────────────────────────────────────────────────────
+
+import { documentAlertThreshold } from "@shared/documentAlerts";
+
+describe("Alertas de vencimento", () => {
+  it("faixas: até 30 dias, até 7 dias, vencido recente e nada fora disso", () => {
+    expect(documentAlertThreshold("2026-11-05", "2026-10-05")).toBeNull();
+    expect(documentAlertThreshold("2026-11-04", "2026-10-05")).toBe("30");
+    expect(documentAlertThreshold("2026-10-12", "2026-10-05")).toBe("7");
+    expect(documentAlertThreshold("2026-10-05", "2026-10-05")).toBe("7");
+    expect(documentAlertThreshold("2026-10-04", "2026-10-05")).toBe("vencido");
+    expect(documentAlertThreshold("2026-08-01", "2026-10-05")).toBeNull();
+    expect(documentAlertThreshold(null, "2026-10-05")).toBeNull();
+  });
+});
