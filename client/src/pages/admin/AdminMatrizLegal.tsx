@@ -289,7 +289,7 @@ export default function AdminMatrizLegal() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Requisito Legal" : "Novo Requisito Legal"}</DialogTitle>
           </DialogHeader>

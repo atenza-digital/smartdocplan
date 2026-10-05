@@ -237,7 +237,7 @@ export default function AdminUsuarios() {
 
       {/* Modal: Criar usuario */}
       <Dialog open={modal === "create"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Novo Usuário</DialogTitle>
           </DialogHeader>
@@ -300,7 +300,7 @@ export default function AdminUsuarios() {
 
       {/* Modal: Editar papel */}
       <Dialog open={modal === "editRole"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Alterar Papel — {selectedUser?.name}</DialogTitle>
           </DialogHeader>
@@ -349,7 +349,7 @@ export default function AdminUsuarios() {
 
       {/* Modal: Reset de senha */}
       <Dialog open={modal === "resetPassword"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Redefinir Senha — {selectedUser?.name}</DialogTitle>
           </DialogHeader>

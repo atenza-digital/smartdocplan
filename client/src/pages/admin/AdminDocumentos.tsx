@@ -196,7 +196,7 @@ export default function AdminDocumentos() {
 
       {/* Modal criar/editar */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editando ? "Editar Documento" : "Novo Documento"}</DialogTitle>
           </DialogHeader>

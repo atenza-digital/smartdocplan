@@ -336,7 +336,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
       )}
 
       <Dialog open={!!uploadModal} onOpenChange={() => setUploadModal(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Anexar documento</DialogTitle>
           </DialogHeader>
@@ -396,7 +396,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
       </Dialog>
 
       <Dialog open={!!avaliarModal} onOpenChange={() => setAvaliarModal(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Avaliar documento</DialogTitle>
           </DialogHeader>

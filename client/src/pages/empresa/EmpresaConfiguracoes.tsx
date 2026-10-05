@@ -897,7 +897,7 @@ export default function EmpresaConfiguracoes() {
       </div>
 
       <Dialog open={cargoModal} onOpenChange={setCargoModal}>
-        <DialogContent className="max-w-sm">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingCargoId ? "Editar Função" : "Nova Função"}</DialogTitle>
           </DialogHeader>
@@ -966,7 +966,7 @@ export default function EmpresaConfiguracoes() {
       </Dialog>
 
       <Dialog open={localModal} onOpenChange={setLocalModal}>
-        <DialogContent className="max-w-sm">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingLocalId ? "Editar Frente / Local" : "Novo Local de Trabalho"}</DialogTitle>
           </DialogHeader>
@@ -1063,7 +1063,7 @@ export default function EmpresaConfiguracoes() {
           }
         }}
       >
-        <DialogContent className="max-w-xl">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingRequirementId ? "Editar requisito da função" : "Novo requisito da função"}</DialogTitle>
           </DialogHeader>
@@ -1223,7 +1223,7 @@ export default function EmpresaConfiguracoes() {
           }
         }}
       >
-        <DialogContent className="max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingLegalId ? "Editar Requisito Legal" : "Adicionar Requisito Legal"}</DialogTitle>
           </DialogHeader>

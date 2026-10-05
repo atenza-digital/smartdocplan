@@ -1402,7 +1402,7 @@ export default function EmpresaNovaSolicitacao() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg overflow-hidden">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Anexar documento</DialogTitle>
           </DialogHeader>
@@ -1457,7 +1457,7 @@ export default function EmpresaNovaSolicitacao() {
       </Dialog>
 
       <Dialog open={cargoModalOpen} onOpenChange={setCargoModalOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Cadastrar função</DialogTitle>
           </DialogHeader>
@@ -1491,7 +1491,7 @@ export default function EmpresaNovaSolicitacao() {
       </Dialog>
 
       <Dialog open={localModalOpen} onOpenChange={setLocalModalOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Cadastrar frente / local</DialogTitle>
           </DialogHeader>

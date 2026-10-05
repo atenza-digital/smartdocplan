@@ -146,7 +146,7 @@ export default function EmpresaChamados() {
 
       {/* Modal Novo Chamado */}
       <Dialog open={showModal && canCreate} onOpenChange={setShowModal}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Abrir Novo Chamado</DialogTitle>
           </DialogHeader>

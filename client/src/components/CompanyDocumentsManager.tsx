@@ -328,7 +328,7 @@ export default function CompanyDocumentsManager({
       ) : null}
 
       <Dialog open={!!uploadTarget} onOpenChange={(open) => !open && setUploadTarget(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Enviar documento da empresa</DialogTitle>
           </DialogHeader>
@@ -370,7 +370,7 @@ export default function CompanyDocumentsManager({
       </Dialog>
 
       <Dialog open={!!editForm} onOpenChange={(open) => !open && setEditForm(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Editar documento da empresa</DialogTitle>
           </DialogHeader>

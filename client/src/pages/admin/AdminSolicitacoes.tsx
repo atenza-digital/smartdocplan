@@ -423,7 +423,7 @@ export default function AdminSolicitacoes() {
       </div>
 
       <Dialog open={detailOpen} onOpenChange={(open) => !open && setDetailOpen(false)}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-primary" />

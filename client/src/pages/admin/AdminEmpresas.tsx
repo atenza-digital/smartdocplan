@@ -272,7 +272,7 @@ export default function AdminEmpresas() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Empresa" : "Cadastrar Nova Empresa"}</DialogTitle>
           </DialogHeader>

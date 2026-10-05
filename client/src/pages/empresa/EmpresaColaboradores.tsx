@@ -339,14 +339,14 @@ export default function EmpresaColaboradores() {
           if (!open) setForm(emptyForm);
         }}
       >
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Cadastrar Novo Colaborador</DialogTitle>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div className="col-span-2 space-y-1.5">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
                 <Label>Nome Completo *</Label>
                 <Input
                   value={form.nome}
