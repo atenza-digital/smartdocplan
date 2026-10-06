@@ -18,7 +18,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { organizationRouter } from "./organization";
 import { vacationsRouter } from "./vacations";
 import { biRouter } from "./bi";
-import { saveDocumentFile, uploadRoot, validateDocumentFile } from "./uploadFiles";
+import { saveDocumentFile, validateDocumentFile } from "./uploadFiles";
 import { createRequestWithRequirements, requestCreationInput } from "./requestCreation";
 import { publicProcedure, protectedProcedure, adminProcedure, superAdminProcedure, router } from "./_core/trpc";
 import { z } from "zod";

@@ -27,9 +27,7 @@ import {
   MapPin,
   Pencil,
   Plus,
-  Shield,
   Trash2,
-  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Link } from "wouter";
@@ -39,13 +37,6 @@ import {
   isValidCnpj,
   isValidPhone,
 } from "@shared/formValidation";
-
-const roleLabel: Record<string, string> = {
-  company_admin: "Administrador da Empresa",
-  company_hr: "Profissional de RH",
-  company_manager: "Gestor",
-  company_viewer: "Consulta",
-};
 
 type LegalForm = {
   norma: string;

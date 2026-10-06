@@ -8,7 +8,7 @@ import {
   AlertTriangle, Building2, CalendarDays, ClipboardList, FileWarning, Ticket, TrendingUp, Users,
 } from "lucide-react";
 import {
-  STATUS_CHAMADO, STATUS_SOLICITACAO, TIPO_CHAMADO, TIPO_SOLICITACAO,
+  STATUS_SOLICITACAO, TIPO_CHAMADO, TIPO_SOLICITACAO,
   formatDias, formatNumero, formatPercent, qtd, rotuloPeriodo,
 } from "./biFormat";
 
