@@ -135,12 +135,12 @@ export default function AdminConfiguracoes() {
             <CardContent>
               <div className="space-y-3">
                 {[
-                  { role: "Administrador", perms: ["Acesso total", "Criar/editar usuários", "Configurações", "Auditoria completa"] },
-                  { role: "Analista RH", perms: ["Ver empresas", "Gerenciar solicitações", "Gerenciar chamados", "Ver auditoria"] },
-                  { role: "Auditor", perms: ["Ver empresas (somente leitura)", "Ver solicitações", "Ver chamados", "Ver auditoria"] },
-                  { role: "Admin Empresa", perms: ["Dashboard própria empresa", "Colaboradores", "Solicitações", "Chamados"] },
-                  { role: "RH Empresa", perms: ["Colaboradores", "Solicitações", "Documentos"] },
-                  { role: "Gestor", perms: ["Ver colaboradores", "Ver solicitações"] },
+                  { role: "Administrador Geral", perms: ["Acesso total", "Usuários", "Configurações", "Checklist de documentos", "Calendário da saúde", "Dados de saúde", "Auditoria com IP e navegador"] },
+                  { role: "Analista de RH", perms: ["Empresas e colaboradores", "Andamento das solicitações", "Validação de documentos", "Chamados", "Auditoria"] },
+                  { role: "Auditor", perms: ["Empresas (somente leitura)", "Solicitações", "Chamados", "Auditoria"] },
+                  { role: "Admin da empresa", perms: ["Painel da empresa", "Colaboradores", "Solicitações", "Chamados", "Parâmetros da empresa", "Estrutura da empresa"] },
+                  { role: "RH da empresa", perms: ["Colaboradores", "Solicitações", "Documentos", "Dados de saúde", "Parâmetros da empresa", "Estrutura da empresa"] },
+                  { role: "Gestor", perms: ["Ver colaboradores", "Ver solicitações", "Abrir chamados"] },
                   { role: "Consulta", perms: ["Somente visualização"] },
                 ].map(p => (
                   <div key={p.role} className="flex flex-wrap items-start gap-2 py-2 border-b border-border last:border-0">

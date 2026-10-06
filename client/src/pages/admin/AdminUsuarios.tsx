@@ -15,7 +15,7 @@ import { toast } from "sonner";
 
 const roleLabels: Record<string, string> = {
   platform_admin: "Admin Plataforma",
-  platform_analyst: "Analista RH",
+  platform_analyst: "Analista de RH",
   platform_auditor: "Auditor",
   company_admin: "Admin Empresa",
   company_hr: "RH Empresa",

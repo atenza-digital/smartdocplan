@@ -94,7 +94,7 @@ export async function createLocalUser(data: {
   companyId?: number | null;
 }) {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new Error("Banco de dados indisponível.");
   await db.insert(users).values({
     name: data.name,
     email: data.email,

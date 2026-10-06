@@ -184,7 +184,7 @@ export const biRouter = router({
         throw new Error("Acesso negado");
       }
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       const [empresa] = await rows<any>(db, sql`
         SELECT id, "razaoSocial", "nomeFantasia", cnpj, "logoUrl" FROM smartdocplan.companies WHERE id = ${input.companyId}`);
       if (!empresa) throw new Error("Empresa não encontrada");
@@ -203,7 +203,7 @@ export const biRouter = router({
 
   global: adminProcedure.input(periodInput).query(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const noPeriodo = (column: string) => sql`${localDay(column)} BETWEEN ${input.inicio}::date AND ${input.fim}::date`;
     const [empresas] = await rows<any>(db, sql`
       SELECT count(*) AS total,

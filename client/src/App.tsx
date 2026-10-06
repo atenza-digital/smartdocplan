@@ -14,7 +14,7 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 
 import { Loader2 } from "lucide-react";
-import { canManagePlatformSettings, canSeeCompanySettings } from "@shared/permissions";
+import { canManagePlatformSettings, canSeeCompanySettings, isPlatformUser } from "@shared/permissions";
 // Páginas carregadas sob demanda: cada tela vira um arquivo próprio e o carregamento inicial fica leve.
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminEmpresas = lazy(() => import("./pages/admin/AdminEmpresas"));
@@ -126,61 +126,83 @@ function Router() {
 
       <Route path="/admin">
         <AuthGuard>
-          <AdminDashboard />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminDashboard />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/empresas">
         <AuthGuard>
-          <AdminEmpresas />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminEmpresas />
+          </RoleGuard>
         </AuthGuard>
       </Route>
-      <Route path="/admin/estrutura"><AuthGuard><OrganizationRegisters /></AuthGuard></Route>
-      <Route path="/admin/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
+      <Route path="/admin/estrutura"><AuthGuard><RoleGuard allow={isPlatformUser} redirectTo="/empresa"><OrganizationRegisters /></RoleGuard></AuthGuard></Route>
+      <Route path="/admin/ferias"><AuthGuard><RoleGuard allow={isPlatformUser} redirectTo="/empresa"><Vacations /></RoleGuard></AuthGuard></Route>
       <Route path="/empresa/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
-      <Route path="/empresa/estrutura"><AuthGuard><OrganizationRegisters /></AuthGuard></Route>
+      <Route path="/empresa/estrutura"><AuthGuard><RoleGuard allow={canSeeCompanySettings} redirectTo="/empresa"><OrganizationRegisters /></RoleGuard></AuthGuard></Route>
       <Route path="/admin/colaboradores/:id">
         <AuthGuard>
-          <EmpresaDossie />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <EmpresaDossie />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/campanhas">
         <AuthGuard>
-          <AdminCampanhas />
+          <RoleGuard allow={canManagePlatformSettings} redirectTo="/admin">
+            <AdminCampanhas />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/validacao-documentos">
         <AuthGuard>
-          <AdminValidacaoDocumentos />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminValidacaoDocumentos />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/empresas/:id">
         <AuthGuard>
-          <AdminEmpresaDetalhe />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminEmpresaDetalhe />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/solicitacoes">
         <AuthGuard>
-          <AdminSolicitacoes />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminSolicitacoes />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/solicitacoes/nova">
         <AuthGuard>
-          <EmpresaNovaSolicitacao />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <EmpresaNovaSolicitacao />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/chamados">
         <AuthGuard>
-          <AdminChamados />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminChamados />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/auditoria">
         <AuthGuard>
-          <AdminAuditoria />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminAuditoria />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/bi">
         <AuthGuard>
-          <AdminBI />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <AdminBI />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/usuarios">
@@ -199,7 +221,9 @@ function Router() {
       </Route>
       <Route path="/admin/perfil">
         <AuthGuard>
-          <Perfil />
+          <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
+            <Perfil />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/admin/documentos">
@@ -291,9 +315,9 @@ function App() {
   return (
     <ErrorBoundary>
       <AccessibilityProvider>
-      <DisplayPreferencesProvider>
         <ThemeProvider defaultTheme="light" switchable>
           <LocalAuthProvider>
+          <DisplayPreferencesProvider>
             <TooltipProvider>
               <div className="flex h-dvh flex-col overflow-hidden bg-background">
                 <a href="#main-content" className="skip-to-content">
@@ -307,9 +331,9 @@ function App() {
                 <CookieBanner />
               </div>
             </TooltipProvider>
+          </DisplayPreferencesProvider>
           </LocalAuthProvider>
         </ThemeProvider>
-      </DisplayPreferencesProvider>
       </AccessibilityProvider>
     </ErrorBoundary>
   );

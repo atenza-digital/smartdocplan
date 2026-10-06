@@ -1,4 +1,5 @@
 import { COOKIE_NAME } from "@shared/const";
+import { TRPCError } from "@trpc/server";
 import {
   canCreateRequests,
   canAccessHealthData,
@@ -83,7 +84,7 @@ function canAccessCompany(userRole: string, userCompanyId: number | null | undef
 }
 
 function assertAccess(condition: unknown, message: string = "Acesso negado") {
-  if (!condition) throw new Error(message);
+  if (!condition) throw new TRPCError({ code: "FORBIDDEN", message });
 }
 
 function normalizeOptionalText(value?: string | null) {
@@ -319,7 +320,7 @@ const companiesRouter = router({
     const podeAlterar = ctx.user.role === "platform_admin" || (ctx.user.role === "company_admin" && ctx.user.companyId === input.companyId);
     assertAccess(podeAlterar, "Só o administrador da plataforma ou da própria empresa pode alterar a logo.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     let logoUrl: string | null = null;
     let saved: Awaited<ReturnType<typeof saveDocumentFile>> | null = null;
     if (input.fileBase64) {
@@ -339,7 +340,7 @@ const companiesRouter = router({
   parameters: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const [row] = await db.select({
       feriasMesesAquisicao: companies.feriasMesesAquisicao,
       feriasMesesParaSolicitar: companies.feriasMesesParaSolicitar,
@@ -357,7 +358,7 @@ const companiesRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar os parâmetros da empresa.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const [antes] = await db.select({
       feriasMesesAquisicao: companies.feriasMesesAquisicao,
       feriasMesesParaSolicitar: companies.feriasMesesParaSolicitar,
@@ -386,7 +387,7 @@ const companiesRouter = router({
     status: z.enum(["ativo", "inativo", "suspenso"]).default("ativo"),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const payload = normalizeCompanyPayload(input);
     await db.insert(companies).values(payload as any);
     await insertAuditLog({
@@ -409,7 +410,7 @@ const companiesRouter = router({
     status: z.enum(["ativo", "inativo", "suspenso"]).optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const { id, ...data } = input;
     const payload = normalizeCompanyPayload(data);
     await db.update(companies).set(payload).where(eq(companies.id, id));
@@ -475,7 +476,7 @@ const companyUpdateRequestsRouter = router({
     motivo: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode solicitar alteração cadastral.");
 
@@ -536,7 +537,7 @@ const companyUpdateRequestsRouter = router({
     requestId: z.number(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(companyUpdateRequests).where(eq(companyUpdateRequests.id, input.requestId)).limit(1);
     const request = result[0];
     if (!request) throw new Error("Solicitação não encontrada");
@@ -572,7 +573,7 @@ const companyUpdateRequestsRouter = router({
       tipo: "company_update_request_approved",
       titulo: "Atualização cadastral aprovada",
       mensagem: "A SmartDocPlan aprovou a atualização cadastral da empresa.",
-      link: "/empresa/configuracoes",
+      link: "/empresa/parametros?aba=empresa",
     });
 
     await insertAuditLog({
@@ -592,7 +593,7 @@ const companyUpdateRequestsRouter = router({
     motivo: z.string().min(3),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(companyUpdateRequests).where(eq(companyUpdateRequests.id, input.requestId)).limit(1);
     const request = result[0];
     if (!request) throw new Error("Solicitação não encontrada");
@@ -612,7 +613,7 @@ const companyUpdateRequestsRouter = router({
       tipo: "company_update_request_rejected",
       titulo: "Atualização cadastral devolvida",
       mensagem: input.motivo.trim(),
-      link: "/empresa/configuracoes",
+      link: "/empresa/parametros?aba=empresa",
     });
 
     await insertAuditLog({
@@ -651,7 +652,7 @@ const notificationsRouter = router({
 
   markRead: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.update(userNotifications).set({ lidaAt: new Date() } as any).where(and(
       eq(userNotifications.id, input.id),
       eq(userNotifications.userId, ctx.user.id),
@@ -661,7 +662,7 @@ const notificationsRouter = router({
 
   markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.update(userNotifications).set({ lidaAt: new Date() } as any).where(and(
       eq(userNotifications.userId, ctx.user.id),
       sql`${userNotifications.lidaAt} IS NULL`,
@@ -724,7 +725,7 @@ const companyDocumentsRouter = router({
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const mensal = await assertRecurringUpload(db, { recurringTypeId: input.recurringTypeId, competencia: input.competencia, companyId: input.companyId, alvo: "empresa" });
     assertAccess(mensal || COMPANY_DOCUMENT_TYPES.some((item) => item.tipo === input.tipo.trim()), "Tipo de documento da empresa inválido.");
 
@@ -762,7 +763,7 @@ const companyDocumentsRouter = router({
     observacao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
     const doc = result[0];
     if (!doc) throw new Error("Documento da empresa não encontrado");
@@ -791,7 +792,7 @@ const companyDocumentsRouter = router({
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
     const doc = result[0];
     if (!doc) throw new Error("Documento da empresa não encontrado");
@@ -855,7 +856,7 @@ const employeesRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar colaboradores.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     assertFullName(input.nome);
     if (!isValidCpf(input.cpf)) {
       throw new Error("Informe um CPF válido.");
@@ -894,7 +895,7 @@ const employeesRouter = router({
     telefone: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar colaboradores.");
@@ -1061,7 +1062,7 @@ const requestsRouter = router({
     observacoes: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const request = await getRequestByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
     assertAccess(!isHealthCategory(request.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
@@ -1181,7 +1182,7 @@ const ticketsRouter = router({
     const isPlatform = canManageRequestWorkflow(ctx.user.role);
     assertAccess(isPlatform || canCreateTickets(ctx.user.role), "Seu perfil não pode responder chamados.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const ticket = await getTicketByIdOrThrow(db, input.ticketId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId), "Acesso negado");
     assertAccess(isPlatform || ctx.user.companyId === ticket.companyId, "Acesso negado");
@@ -1214,7 +1215,7 @@ const ticketsRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canCreateTickets(ctx.user.role), "Seu perfil não pode abrir chamados.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.insert(tickets).values({ ...input, criadoPor: ctx.user.id });
     await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: "criou_chamado", entidade: "tickets", dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
     return { success: true };
@@ -1230,7 +1231,7 @@ const ticketsRouter = router({
     const encerrando = input.status === "resolvido" || input.status === "fechado";
     assertAccess(!encerrando || !!mensagem, "Escreva a resposta para a empresa antes de resolver ou fechar o chamado.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const ticket = await getTicketByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId), "Acesso negado");
     const mudouStatus = ticket.status !== input.status;
@@ -1289,7 +1290,7 @@ const positionsRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar cargos.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.insert(positions).values({
       ...input,
       nome: input.nome.trim(),
@@ -1313,7 +1314,7 @@ const positionsRouter = router({
     cbo: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const position = await getPositionByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar cargos.");
@@ -1357,7 +1358,7 @@ const worksitesRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar frentes de trabalho.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     if (input.dataInicio && input.dataFim && input.dataFim < input.dataInicio) throw new Error("A data final deve ser posterior à inicial.");
     await db.insert(worksites).values({
       ...input,
@@ -1385,7 +1386,7 @@ const worksitesRouter = router({
     status: z.enum(["ativo", "concluido", "cancelado"]).optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(worksites).where(eq(worksites.id, input.id)).limit(1);
     const worksite = result[0];
     if (!worksite) throw new Error("Frente / local não encontrado");
@@ -1509,7 +1510,7 @@ const positionRequirementsRouter = router({
     ordem: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const position = await getPositionByIdOrThrow(db, input.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
@@ -1562,7 +1563,7 @@ const positionRequirementsRouter = router({
     ordem: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(positionRequirements).where(eq(positionRequirements.id, input.id)).limit(1);
     const requirement = result[0];
     if (!requirement) throw new Error("Requisito da função não encontrado");
@@ -1604,7 +1605,7 @@ const positionRequirementsRouter = router({
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(positionRequirements).where(eq(positionRequirements.id, input.id)).limit(1);
     const requirement = result[0];
     if (!requirement) throw new Error("Requisito da função não encontrado");
@@ -1649,7 +1650,7 @@ const legalReqRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.insert(legalRequirements).values({
       ...input,
       norma: input.norma.trim(),
@@ -1676,7 +1677,7 @@ const legalReqRouter = router({
     descricao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.id)).limit(1);
     const requirement = result[0];
     if (!requirement) throw new Error("Requisito legal não encontrado");
@@ -1705,7 +1706,7 @@ const legalReqRouter = router({
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.id)).limit(1);
     const requirement = result[0];
     if (!requirement) throw new Error("Requisito legal não encontrado");
@@ -1819,10 +1820,10 @@ const usersRouter = router({
     companyId: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     // Verificar se email ja existe
     const existing = await getUserByEmail(input.email);
-    if (existing) throw new Error("E-mail ja cadastrado.");
+    if (existing) throw new Error("E-mail já cadastrado.");
     const bcrypt = await import("bcryptjs");
     const passwordHash = await bcrypt.default.hash(input.password, 12);
     await createLocalUser({
@@ -1841,7 +1842,7 @@ const usersRouter = router({
     ativo: z.boolean(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.update(users).set({ ativo: input.ativo }).where(eq(users.id, input.userId));
     await insertAuditLog({ userId: ctx.user.id, acao: input.ativo ? 'ativou_usuario' : 'desativou_usuario', entidade: 'users', entidadeId: input.userId });
     return { success: true };
@@ -1852,7 +1853,7 @@ const usersRouter = router({
     newPassword: z.string().min(6),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const bcrypt = await import("bcryptjs");
     const passwordHash = await bcrypt.default.hash(input.newPassword, 12);
     await db.update(users).set({ passwordHash }).where(eq(users.id, input.userId));
@@ -1882,7 +1883,7 @@ const usersRouter = router({
     worksiteIds: z.array(z.number()).max(200),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const [alvo] = await db.select({ id: users.id, companyId: users.companyId }).from(users).where(eq(users.id, input.userId)).limit(1);
     if (!alvo) throw new Error("Usuário não encontrado.");
     const ids = Array.from(new Set(input.worksiteIds));
@@ -1916,7 +1917,7 @@ const usersRouter = router({
     companyId: z.number().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.update(users).set({ role: input.role, companyId: input.companyId ?? null }).where(eq(users.id, input.userId));
     return { success: true };
   }),
@@ -1972,7 +1973,7 @@ const recurringDocsRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const [created] = await db.insert(recurringDocumentTypes).values({
       companyId: input.companyId, nome: input.nome, alvo: input.alvo, categoria: input.categoria,
       periodicidade: input.periodicidade, prazoDias: input.prazoDias,
@@ -1994,7 +1995,7 @@ const recurringDocsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, input.id)).limit(1);
     if (!tipo) throw new Error("Documento recorrente não encontrado.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, tipo.companyId), "Acesso negado");
@@ -2010,7 +2011,7 @@ const recurringDocsRouter = router({
   /** Grade do dossiê: tipos mensais do colaborador × últimas competências. */
   employeeGrid: protectedProcedure.input(z.object({ employeeId: z.number(), quantidade: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
     return buildEmployeeMonthlyGrid(db, employee, input.quantidade);
@@ -2019,7 +2020,7 @@ const recurringDocsRouter = router({
   /** Grade dos documentos recorrentes da própria empresa (Documentos da Empresa). */
   companyGrid: protectedProcedure.input(z.object({ companyId: z.number(), quantidade: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     return buildCompanyMonthlyGrid(db, input.companyId, input.quantidade);
   }),
@@ -2027,7 +2028,7 @@ const recurringDocsRouter = router({
   /** Situação da empresa em uma competência (Pendências e Documentos da Empresa). */
   companyOverview: protectedProcedure.input(z.object({ companyId: z.number(), quantos: z.number().int().min(1).max(6).default(1) })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     return buildCompanyMonthlyOverview(db, input.companyId, input.quantos);
   }),
@@ -2070,7 +2071,7 @@ const healthCampaignsRouter = router({
   save: protectedProcedure.input(z.object({ id: z.number().optional(), ...campaignInput })).mutation(async ({ ctx, input }) => {
     assertAccess(canManagePlatformSettings(ctx.user.role), "Só o Administrador Geral gerencia campanhas.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const { id, ...dados } = input;
     const values = {
       ...dados,
@@ -2138,7 +2139,7 @@ const employeeDocsRouter = router({
   /** Checklist do cargo: cada documento exigido, sua situação, a conformidade e a liberação do colaborador. */
   checklist: protectedProcedure.input(z.object({ employeeId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
     const result = await getEmployeeChecklist(db, employee);
@@ -2171,7 +2172,7 @@ const employeeDocsRouter = router({
     const motivo = normalizeOptionalText(input.motivo);
     if (input.decisao === "rejeitar" && !motivo) throw new Error("Informe o motivo da rejeição.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     const status = input.decisao === "aprovar" ? "valido" : "rejeitado";
@@ -2258,7 +2259,7 @@ const employeeDocsRouter = router({
     assertAccess(!isHealthCategory(input.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(employee.companyId === input.companyId, "O colaborador não pertence à empresa informada.");
     assertAccess(!isHealthCategory(input.categoria) || !input.fileUrl || input.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
@@ -2306,7 +2307,7 @@ const employeeDocsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar documentos de colaboradores.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     const categoria = input.categoria ?? doc.categoria;
@@ -2356,7 +2357,7 @@ const employeeDocsRouter = router({
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode excluir documentos de colaboradores.");
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
@@ -2447,7 +2448,7 @@ const documentTemplatesRouter = router({
     ordem: z.number().default(0),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.insert(documentTypeTemplates).values({ ...input, criadoPor: ctx.user.id } as any);
     return { success: true };
   }),
@@ -2464,7 +2465,7 @@ const documentTemplatesRouter = router({
     ordem: z.number().optional(),
   })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const { id, ...data } = input;
     await db.update(documentTypeTemplates).set(data as any).where(eq(documentTypeTemplates.id, id));
     return { success: true };
@@ -2472,7 +2473,7 @@ const documentTemplatesRouter = router({
 
   delete: superAdminProcedure.input(z.object({ id: z.number() })).mutation(async ({ input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     await db.update(documentTypeTemplates).set({ ativo: false }).where(eq(documentTypeTemplates.id, input.id));
     return { success: true };
   }),
@@ -2520,7 +2521,7 @@ const requestDocUploadsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const request = await getRequestByIdOrThrow(db, input.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
     assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(input.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
@@ -2529,23 +2530,12 @@ const requestDocUploadsRouter = router({
       "Seu perfil não pode enviar documentos da solicitação."
     );
 
-    // Salvar arquivo em disco local (simples, sem S3)
+    // Salvar arquivo em disco local, conferindo o conteúdo real (PDF, PNG ou JPEG)
     const { fileBase64, ...rest } = input;
-    const fs = await import("fs");
-    const path = await import("path");
-    const uploadsDir = uploadRoot();
-    if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-    const ext = input.fileNome.split(".").pop()?.toLowerCase() ?? "";
-    if (!["pdf", "png", "jpg", "jpeg"].includes(ext)) throw new Error("Envie um PDF, PNG ou JPEG.");
-    const { randomUUID } = await import("node:crypto");
-    const fileName = `req_${input.requestId}_${randomUUID()}.${ext}`;
-    const filePath = path.join(uploadsDir, fileName);
-    const buffer = Buffer.from(fileBase64, "base64");
-    if (!buffer.length || buffer.length > 10 * 1024 * 1024 || buffer.length !== input.fileTamanho) throw new Error("Arquivo inválido ou maior que 10 MB.");
-    fs.writeFileSync(filePath, buffer);
-
-    const fileUrl = `/uploads/${fileName}`;
+    const { buffer } = validateDocumentFile(fileBase64);
+    if (buffer.length !== input.fileTamanho) throw new Error("Arquivo inválido ou maior que 10 MB.");
+    const { url: fileUrl } = await saveDocumentFile(fileBase64, `req_${input.requestId}`);
+    const fileName = fileUrl.replace("/uploads/", "");
     const placeholderResult = await db.select().from(requestDocumentUploads).where(
       and(
         eq(requestDocumentUploads.requestId, input.requestId),
@@ -2601,7 +2591,7 @@ const requestDocUploadsRouter = router({
     validade: documentDateInput,
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode avaliar documentos.");
     const [document] = await db.select().from(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id));
     if (!document?.fileUrl) throw new Error("Anexe um arquivo antes de avaliar.");
@@ -2627,7 +2617,7 @@ const requestDocUploadsRouter = router({
   // Deletar upload
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
-    if (!db) throw new Error("DB unavailable");
+    if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(requestDocumentUploads).where(eq(requestDocumentUploads.id, input.id)).limit(1);
     const upload = result[0];
     if (!upload) throw new Error("Documento não encontrado");
@@ -2654,7 +2644,12 @@ export const appRouter = router({
   documentTemplates: documentTemplatesRouter,
   requestDocUploads: requestDocUploadsRouter,
   auth: router({
-    me: publicProcedure.query(opts => opts.ctx.user),
+    me: publicProcedure.query(({ ctx }) => {
+      if (!ctx.user) return null;
+      // Nunca devolver o hash da senha ao navegador.
+      const { passwordHash: _passwordHash, ...usuario } = ctx.user;
+      return usuario;
+    }),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       // Limpar o cookie com todas as variantes para garantir remoção

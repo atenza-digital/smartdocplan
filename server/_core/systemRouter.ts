@@ -26,13 +26,14 @@ export const systemRouter = router({
     .query(async () => {
       try {
         const db = await getDb();
-        if (!db) throw new Error("Database unavailable");
+        if (!db) throw new Error("Banco de dados indisponível.");
         await db.execute(sql`SELECT 1`);
         return {
           ok: true,
           version: process.env.BUILD_SHA || "development",
           appVersion: APP_VERSION,
-          ambiente: process.env.NODE_ENV === "production" ? "Produção" : "Desenvolvimento",
+          // APP_ENV distingue homologação de produção (as duas rodam com NODE_ENV=production).
+          ambiente: process.env.APP_ENV?.trim() || (process.env.NODE_ENV === "production" ? "Produção" : "Desenvolvimento"),
           banco: "PostgreSQL",
         };
       } catch {

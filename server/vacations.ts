@@ -50,7 +50,7 @@ function access(user: User, companyId: number, write = false) {
 }
 async function database() {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new Error("Banco de dados indisponível.");
   return db;
 }
 async function period(

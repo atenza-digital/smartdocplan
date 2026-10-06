@@ -161,7 +161,7 @@ describe("requests router", () => {
         titulo: "Admissao - Joao",
         prioridade: "media",
       })
-    ).rejects.toThrow("DB unavailable");
+    ).rejects.toThrow("Banco de dados indisponível.");
   });
 
   it("platform_admin pode abrir solicitação para qualquer empresa informada", async () => {
@@ -175,7 +175,7 @@ describe("requests router", () => {
         titulo: "Admissão - João",
         prioridade: "media",
       })
-    ).rejects.toThrow("DB unavailable");
+    ).rejects.toThrow("Banco de dados indisponível.");
   });
 });
 
@@ -250,7 +250,7 @@ describe("tickets router", () => {
         titulo: "Preciso de ajuda",
         prioridade: "media",
       })
-    ).rejects.toThrow("DB unavailable");
+    ).rejects.toThrow("Banco de dados indisponível.");
   });
 
   it("company_viewer não deve abrir chamados", async () => {

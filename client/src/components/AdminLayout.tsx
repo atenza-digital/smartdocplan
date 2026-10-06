@@ -61,7 +61,7 @@ const navItems: NavItem[] = [
   { href: "/admin/bi", icon: BarChart3, label: "BI Global" },
   { href: "/admin/usuarios", icon: Users, label: "Usuários", visible: canManagePlatformSettings },
   { href: "/admin/matriz-legal", icon: BookOpen, label: "Matriz Legal", visible: canManagePlatformSettings },
-  { href: "/admin/documentos", icon: FileCheck2, label: "Checklist Docs", visible: canManagePlatformSettings },
+  { href: "/admin/documentos", icon: FileCheck2, label: "Checklist de documentos", visible: canManagePlatformSettings },
   { href: "/admin/campanhas", icon: Ribbon, label: "Calendário da saúde", visible: canManagePlatformSettings },
   { href: "/admin/configuracoes", icon: Settings, label: "Configurações", visible: canManagePlatformSettings },
 ];
@@ -120,7 +120,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
 
   const roleLabel: Record<string, string> = {
     platform_admin: "Administrador",
-    platform_analyst: "Analista RH",
+    platform_analyst: "Analista de RH",
     platform_auditor: "Auditor",
   };
 

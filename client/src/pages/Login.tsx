@@ -34,7 +34,7 @@ export default function Login() {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-full bg-background flex flex-col">
+    <div className="h-full overflow-y-auto bg-background flex flex-col">
       {/* Header minimalista */}
       <header className="flex items-center justify-between px-6 py-4 [@media(max-height:760px)]:py-2 border-b border-border/50">
         <div className="flex items-center gap-3">
@@ -144,7 +144,7 @@ export default function Login() {
 
       {/* Footer */}
       <footer className="text-center py-4 [@media(max-height:760px)]:py-2 text-xs text-muted-foreground border-t border-border/50">
-        &copy; {new Date().getFullYear()} SmartDocPlan &mdash; Gestão Documental de RH
+        &copy; {new Date().getFullYear()} SmartDocPlan &mdash; Gestão Documental de RH e SST
       </footer>
     </div>
   );

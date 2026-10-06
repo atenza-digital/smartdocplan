@@ -2,6 +2,10 @@
 
 ## [Não publicado]
 
+- Segurança: a consulta do usuário logado deixa de devolver o hash da senha ao navegador; acesso negado responde como "proibido" (403) em vez de erro interno; telas do admin só abrem para a equipe SmartDocPlan (Calendário da saúde só para o Administrador Geral) e "Estrutura da empresa" só para admin e RH da empresa.
+- Solicitações: anexos aceitam só PDF, PNG ou JPG até 10 MB, conferindo o conteúdo real do arquivo no servidor; datas de nascimento e validade deixam de aparecer um dia antes.
+- Tamanho das janelas: a preferência fica guardada por usuário (quem divide o computador não herda a do outro) e passa a valer também nas janelas de confirmação.
+- Ajustes: login com rolagem em zoom alto; avisos de dados da empresa levam a Parâmetros da empresa; textos acentuados ("Banco de dados indisponível.", "E-mail já cadastrado.", "Analista de RH", "Checklist de documentos"); quadro de permissões por perfil atualizado; "Sobre a Plataforma" mostra o ambiente definido em `APP_ENV` (ex.: Homologação).
 - Migrations unificadas: um único executor (`server/_core/postgresMigrations.ts`) aplica a base inicial em banco vazio e as migrations incrementais; removidos o executor antigo de MySQL, o script avulso `migrate-v2.mjs` e o `db:push` do drizzle-kit (que poderia recriar tabelas). Banco existente não muda; banco novo sobe com estrutura idêntica.
 - Deploy: a porta direta da aplicação passa a escutar só no próprio servidor por padrão (`APP_BIND_IP=127.0.0.1`); o acesso público fica só pelo Traefik com HTTPS, e a conferência pós-deploy usa o domínio.
 - Configurações (admin): o cartão "Sobre a Plataforma" mostra PostgreSQL (antes "MySQL 8.0"), a versão real do sistema e o status da conexão com o banco verificado na hora.
@@ -37,7 +41,7 @@
 - Janelas de diálogo: cada usuário escolhe o tamanho (Pequeno, Médio ou Grande, cerca de 65% da tela) em Meu perfil e nas Configurações.
 - Kanban (Solicitações e Chamados): soltar um card abre o modal já com o novo status e o campo de observação ou mensagem no topo; a mudança só é gravada ao confirmar.
 - Usuários: vínculo com obras/locais da empresa (menu "Obras / locais" em Usuários) e auditoria mostrando as obras do usuário que fez a ação (migration 20261005_user_worksites).
-- Empresas: upload da logo (PNG/JPG até 2 MB) nas configurações da empresa e na ficha da empresa (admin), exibida no topo da área da empresa.
+- Empresas: upload da logo (PNG/JPG até 2 MB) em Parâmetros da empresa e na ficha da empresa (admin), exibida no topo da área da empresa.
 - BI (global e da empresa): filtros por semana, mês, ano, últimos 12 meses ou período personalizado (de/até), com gráfico de evolução, indicadores do período e ranking de empresas no global.
 - BI: exportação em PDF (global e da empresa) com capa, logos da SmartDocPlan e da empresa, resumo executivo, pontos de atenção, tabelas com barras, evolução no período e notas sobre os dados.
 - BI em PDF: corrigidos espaçamento dos títulos e cards, palavras quebradas com hífen, rodapé com número da página, títulos e itens soltos no fim da página; a evolução omite intervalos sem movimento.

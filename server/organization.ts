@@ -52,7 +52,7 @@ export const organizationRouter = router({
     .query(async ({ ctx, input }) => {
       authorize(ctx.user, input.companyId);
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       const table = tables[input.kind];
       return db
         .select()
@@ -75,7 +75,7 @@ export const organizationRouter = router({
     .mutation(async ({ ctx, input }) => {
       authorize(ctx.user, input.companyId, true);
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       return db.transaction(async tx => {
         const [company] = await tx
           .select()
@@ -108,7 +108,7 @@ export const organizationRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       return db.transaction(async tx => {
         const table = tables[input.kind];
         const [record] = await tx

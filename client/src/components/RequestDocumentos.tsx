@@ -21,7 +21,8 @@ import {
   Plus,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getDocumentDateBounds } from "@shared/formValidation";
+import { formatDateOnlyBr, getDocumentDateBounds } from "@shared/formValidation";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/files";
 
 // Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
 const DOC_DATES = getDocumentDateBounds();
@@ -65,9 +66,7 @@ const STATUS_CONFIG = {
 
 function formatDate(value?: string | null) {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("pt-BR");
+  return formatDateOnlyBr(value) || value;
 }
 
 export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canReview, readOnly }: Props) {
@@ -308,7 +307,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
             <Upload className="mr-1.5 h-3.5 w-3.5" />
             Enviar arquivo
           </Button>
-          <p className="mt-2 text-xs text-muted-foreground">PDF, JPG, PNG ou DOC — máx. 10MB</p>
+          <p className="mt-2 text-xs text-muted-foreground">PDF, PNG ou JPG até 10 MB</p>
         </div>
       )}
 
@@ -355,7 +354,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
               <Input
                 id="request-upload-file"
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept={DOCUMENT_FILE_ACCEPT}
                 onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
               />
             </div>

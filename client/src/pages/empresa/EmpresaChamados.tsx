@@ -127,7 +127,7 @@ export default function EmpresaChamados() {
               <Ticket className="w-10 h-10 mx-auto mb-3 opacity-30" />
               <p className="font-medium">Nenhum chamado aberto</p>
               <p className="text-sm">
-                {canCreate ? 'Clique em "Abrir Chamado" para solicitar suporte' : "Nenhum chamado disponivel para consulta."}
+                {canCreate ? 'Clique em "Abrir Chamado" para solicitar suporte' : "Nenhum chamado disponível para consulta."}
               </p>
             </div>
           )}

@@ -40,7 +40,8 @@ import {
   isValidCpf,
   normalizeCpf,
 } from "@shared/formValidation";
-import { getDocumentDateBounds } from "@shared/formValidation";
+import { formatDateOnlyBr, getDocumentDateBounds } from "@shared/formValidation";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/files";
 import { AddressFields } from "@/components/AddressFields";
 import { emptyAddress, type AddressValue } from "@shared/address";
 
@@ -225,7 +226,7 @@ export default function EmpresaNovaSolicitacao() {
         form.tipo === "admissao"
           ? { id: "hiring" as const, label: "Contratação", title: "Formato e prazo do contrato" }
           : null,
-        { id: "requirements" as const, label: "Requisitos", title: "Checklist Docs e Matriz Legal" },
+        { id: "requirements" as const, label: "Requisitos", title: "Checklist de documentos e Matriz Legal" },
         { id: "review" as const, label: "Revisão", title: "Conferência e abertura" },
       ].filter(Boolean) as Array<{ id: StepId; label: string; title: string }>,
     [form.tipo, isPlatformAdmin]
@@ -354,7 +355,7 @@ export default function EmpresaNovaSolicitacao() {
     }
 
     if (form.dataNascimento) {
-      details.push(`Data de nascimento: ${new Date(form.dataNascimento).toLocaleDateString("pt-BR")}`);
+      details.push(`Data de nascimento: ${formatDateOnlyBr(form.dataNascimento)}`);
     }
 
     if (matchedEmployee) {
@@ -362,7 +363,7 @@ export default function EmpresaNovaSolicitacao() {
     }
 
     details.push("");
-    details.push(`Checklist Docs aplicável: ${documentTemplates.length} item(ns).`);
+    details.push(`Checklist de documentos aplicável: ${documentTemplates.length} item(ns).`);
     if (documentTemplates.length) {
       details.push(`Itens previstos: ${documentTemplates.map((item) => item.nome).join(", ")}`);
     }
@@ -895,7 +896,7 @@ export default function EmpresaNovaSolicitacao() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileCheck2 className="h-5 w-5 text-primary" />
-                Checklist Docs aplicável ao processo
+                Checklist de documentos aplicável ao processo
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -903,7 +904,7 @@ export default function EmpresaNovaSolicitacao() {
                 <ClipboardCheck className="h-4 w-4" />
                 <AlertTitle>Checklist puxado pelo tipo de solicitação</AlertTitle>
                 <AlertDescription>
-                  Os itens abaixo vêm do módulo Checklist Docs, mas o anexo pode ser feito agora pelo solicitante ou depois por quem vai avaliar.
+                  Os itens abaixo vêm do módulo Checklist de documentos, mas o anexo pode ser feito agora pelo solicitante ou depois por quem vai avaliar.
                 </AlertDescription>
               </Alert>
 
@@ -971,7 +972,7 @@ export default function EmpresaNovaSolicitacao() {
                                 <p className="text-xs text-muted-foreground">
                                   {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
                                   {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
-                                  {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                                  {upload.validade ? ` • validade ${formatDateOnlyBr(upload.validade)}` : ""}
                                 </p>
                               </div>
                               <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
@@ -1018,7 +1019,7 @@ export default function EmpresaNovaSolicitacao() {
                           <p className="text-xs text-muted-foreground">
                             {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
                             {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
-                            {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                            {upload.validade ? ` • validade ${formatDateOnlyBr(upload.validade)}` : ""}
                           </p>
                         </div>
                         <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
@@ -1129,7 +1130,7 @@ export default function EmpresaNovaSolicitacao() {
                                 <p className="text-xs text-muted-foreground">
                                   {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
                                   {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
-                                  {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                                  {upload.validade ? ` • validade ${formatDateOnlyBr(upload.validade)}` : ""}
                                 </p>
                               </div>
                               <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
@@ -1372,7 +1373,7 @@ export default function EmpresaNovaSolicitacao() {
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm">
                   <div className="rounded-2xl border border-border bg-muted/30 p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Checklist Docs</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Checklist de documentos</p>
                     <p className="mt-1 font-medium text-foreground">
                       {documentTemplates.length} item(ns) para {selectedProcess.label.toLowerCase()}
                     </p>
@@ -1425,10 +1426,10 @@ export default function EmpresaNovaSolicitacao() {
               <Label>Arquivo</Label>
               <Input
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                accept={DOCUMENT_FILE_ACCEPT}
                 onChange={(event) => setSelectedUploadFile(event.target.files?.[0] ?? null)}
               />
-              <p className="text-xs text-muted-foreground">PDF, JPG, PNG, DOC ou DOCX com até 10MB.</p>
+              <p className="text-xs text-muted-foreground">PDF, PNG ou JPG até 10 MB.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Número do documento</Label>
