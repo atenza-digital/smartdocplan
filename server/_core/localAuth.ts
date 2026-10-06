@@ -12,7 +12,23 @@ import { auditLogs, users } from "../../drizzle/schema";
 import { ENV } from "./env";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./cookies";
-import { auditClientFields } from "./clientInfo";
+import { auditClientFields, requestClientInfo } from "./clientInfo";
+import { LOGIN_RULES, blockedMessage, loginLimiter, maskEmail } from "./loginRateLimit";
+
+/** Auditoria de autenticação (login, falha, bloqueio, troca de senha), com IP e navegador. */
+async function authAudit(action: string, opts: { userId?: number | null; companyId?: number | null; details?: unknown } = {}) {
+  const db = await getDb();
+  if (!db) return;
+  await db.insert(auditLogs).values({
+    ...auditClientFields(),
+    userId: opts.userId ?? null,
+    companyId: opts.companyId ?? null,
+    action,
+    entity: "users",
+    entityId: opts.userId ?? null,
+    details: opts.details ? JSON.stringify(opts.details) : null,
+  }).catch(() => { /* não bloquear a autenticação */ });
+}
 
 const SECRET = new TextEncoder().encode(ENV.cookieSecret);
 
@@ -83,19 +99,34 @@ export function registerLocalAuthRoutes(app: Express) {
         return res.status(400).json({ error: "Email e senha são obrigatórios." });
       }
 
-      const user = await getUserByEmail(email.toLowerCase().trim());
-      if (!user || !user.passwordHash) {
-        return res.status(401).json({ error: "Credenciais inválidas." });
+      const emailNormalizado = email.toLowerCase().trim();
+      const chaveEmail = `email:${emailNormalizado}`;
+      const chaveIp = `ip:${requestClientInfo(req).ip ?? "desconhecido"}`;
+      // Bloqueio por excesso de tentativas: responde antes de conferir a senha (mesmo que esteja certa).
+      const bloqueio = Math.max(loginLimiter.blockedFor(chaveEmail), loginLimiter.blockedFor(chaveIp));
+      if (bloqueio > 0) {
+        await authAudit("login_bloqueado", { details: { email: maskEmail(emailNormalizado) } });
+        return res.status(429).json({ error: blockedMessage(bloqueio) });
       }
+
+      const user = await getUserByEmail(emailNormalizado);
+      const falhou = async () => {
+        loginLimiter.registerFailure(chaveEmail, LOGIN_RULES.email);
+        loginLimiter.registerFailure(chaveIp, LOGIN_RULES.ip);
+        await authAudit("login_falhou", { userId: user?.id, companyId: user?.companyId, details: { email: maskEmail(emailNormalizado) } });
+        return res.status(401).json({ error: "Credenciais inválidas." });
+      };
+      if (!user || !user.passwordHash) return falhou();
 
       if (user.ativo === false) {
         return res.status(403).json({ error: "Usuário inativo. Entre em contato com o administrador." });
       }
 
       const valid = await bcrypt.compare(password, user.passwordHash);
-      if (!valid) {
-        return res.status(401).json({ error: "Credenciais inválidas." });
-      }
+      if (!valid) return falhou();
+
+      loginLimiter.reset(chaveEmail);
+      await authAudit("login", { userId: user.id, companyId: user.companyId });
 
       const token = await signLocalSession(user.id);
       await updateUserLastSignedIn(user.id);
@@ -139,9 +170,17 @@ export function registerLocalAuthRoutes(app: Express) {
       if (novaSenha === senhaAtual) {
         return res.status(400).json({ error: "A nova senha deve ser diferente da atual." });
       }
+      const chaveUsuario = `usuario:${user.id}`;
+      const bloqueio = loginLimiter.blockedFor(chaveUsuario);
+      if (bloqueio > 0) {
+        await authAudit("troca_senha_bloqueada", { userId: user.id, companyId: user.companyId });
+        return res.status(429).json({ error: blockedMessage(bloqueio) });
+      }
       if (!user.passwordHash || !(await bcrypt.compare(senhaAtual, user.passwordHash))) {
+        loginLimiter.registerFailure(chaveUsuario, LOGIN_RULES.usuario);
         return res.status(400).json({ error: "A senha atual está incorreta." });
       }
+      loginLimiter.reset(chaveUsuario);
 
       const db = await getDb();
       if (!db) return res.status(503).json({ error: "Banco de dados indisponível." });

@@ -14,6 +14,17 @@ const PAGE_SIZE = 50;
 
 const ACAO_LABELS: Record<string, string> = {
   acessou_documento: "Acessou documento",
+  login: "Entrou na plataforma",
+  login_falhou: "Tentativa de login com senha incorreta",
+  login_bloqueado: "Login bloqueado por excesso de tentativas",
+  troca_senha_bloqueada: "Troca de senha bloqueada por excesso de tentativas",
+  alterou_parametros_empresa: "Alterou parâmetros da empresa",
+  criou_campanha_saude: "Criou campanha do calendário da saúde",
+  editou_campanha_saude: "Editou campanha do calendário da saúde",
+  aprovou_documento_colaborador: "Aprovou documento do colaborador",
+  rejeitou_documento_colaborador: "Rejeitou documento do colaborador",
+  criou_documento_mensal: "Cadastrou documento recorrente",
+  editou_documento_mensal: "Editou documento recorrente",
   aprovar: "Aprovou férias",
   cancelar: "Cancelou férias",
   devolver: "Devolveu férias",
