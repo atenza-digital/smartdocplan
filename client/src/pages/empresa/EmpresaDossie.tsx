@@ -26,7 +26,6 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { canManageCompanyData, canManageRequestWorkflow } from "@shared/permissions";
 import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
 import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
-import { formatCompetencia } from "@shared/recurring";
 import { VACATION_SUGGESTION_LABELS } from "@shared/vacationSuggestion";
 import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
 import { Textarea } from "@/components/ui/textarea";
@@ -47,9 +46,10 @@ type DocForm = {
   requirementId: number | null;
   recurringTypeId: number | null;
   competencia: string | null;
+  periodoRotulo: string | null;
 };
 
-const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", requirementId: null, recurringTypeId: null, competencia: null };
+const emptyDocForm: DocForm = { categoria: "pessoal", nome: "", tipo: "", dataEmissao: "", validade: "", requirementId: null, recurringTypeId: null, competencia: null, periodoRotulo: null };
 
 const docStatusLabels: Record<string, string> = {
   valido: "Válido",
@@ -123,7 +123,7 @@ export default function EmpresaDossie() {
   );
   const proximasFerias = sugestoesFerias[0];
   const { data: mensais } = trpc.recurringDocs.employeeGrid.useQuery(
-    { employeeId, meses: 6 },
+    { employeeId, quantidade: 6 },
     { enabled: employeeId > 0 }
   );
   // Documentos, checklist e conformidade mudam juntos: recarrega os três após qualquer alteração.
@@ -172,6 +172,7 @@ export default function EmpresaDossie() {
       requirementId: doc.requirementId ?? null,
       recurringTypeId: null,
       competencia: null,
+      periodoRotulo: null,
     });
     setShowUpload(true);
   };
@@ -189,16 +190,17 @@ export default function EmpresaDossie() {
     setShowUpload(true);
   };
 
-  // Envio a partir da grade mensal: já preenche tipo, competência e nome.
+  // Envio a partir da grade de recorrentes: já preenche tipo, período e nome.
   const openMonthlyUpload = (row: MonthlyRow, cell: MonthlyCell) => {
     setEditingDoc(null);
     setSelectedFile(null);
     setUploadForm({
       ...emptyDocForm,
       categoria: row.tipo.categoria in categoriaLabels ? row.tipo.categoria : "outros",
-      nome: `${row.tipo.nome} ${formatCompetencia(cell.competencia)}`,
+      nome: `${row.tipo.nome} ${cell.rotulo}`,
       recurringTypeId: row.tipo.id,
       competencia: cell.competencia,
+      periodoRotulo: cell.rotulo,
     });
     setShowUpload(true);
   };
@@ -468,7 +470,7 @@ export default function EmpresaDossie() {
             )}
 
             {mensais && (
-              <MonthlyDocsGrid competencias={mensais.competencias} linhas={mensais.linhas as MonthlyRow[]} canSend={canManage} onSend={openMonthlyUpload} />
+              <MonthlyDocsGrid linhas={mensais.linhas as MonthlyRow[]} canSend={canManage} onSend={openMonthlyUpload} />
             )}
 
             <Card className="border-border">
@@ -557,7 +559,7 @@ export default function EmpresaDossie() {
           <div className="space-y-4 py-2">
             {uploadForm.competencia && (
               <p className="rounded-lg bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-foreground">
-                Documento mensal da competência {formatCompetencia(uploadForm.competencia)}.
+                Documento recorrente do período {uploadForm.periodoRotulo}.
               </p>
             )}
             {uploadForm.requirementId && (

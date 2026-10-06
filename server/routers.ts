@@ -32,7 +32,8 @@ import { addressForDb, addressInput } from "@shared/address";
 import { COMPANY_DOCUMENT_TYPES, COMPANY_MONTHLY_DOCUMENT_TIPO, latestCompanyDocuments } from "@shared/companyDocuments";
 import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
 import { buildCompanyMonthlyGrid, buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
-import { formatCompetencia, isCompetenciaAllowed, isValidCompetencia } from "@shared/recurring";
+import { PERIODICIDADES, asPeriodicidade, formatPeriod, isPeriodAllowed } from "@shared/recurring";
+import { brazilToday } from "@shared/vacations";
 import {
   formatCnpj,
   formatCpf,
@@ -1913,7 +1914,7 @@ const usersRouter = router({
 
 // â”€â”€â”€ EMPLOYEE DOCUMENTS ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
- * Documento mensal: tipo e competência vêm juntos, o tipo é ativo, da empresa e do alvo certo,
+ * Documento recorrente: tipo e período (competência) vêm juntos, o tipo é ativo, da empresa e do alvo certo,
  * a competência não é futura e ainda não existe documento para ela. Retorna true quando é mensal.
  */
 async function assertRecurringUpload(
@@ -1921,10 +1922,11 @@ async function assertRecurringUpload(
   opts: { recurringTypeId?: number; competencia?: string; companyId: number; alvo: "colaborador" | "empresa"; employeeId?: number }
 ) {
   if (!opts.recurringTypeId && !opts.competencia) return false;
-  if (!opts.recurringTypeId || !opts.competencia) throw new Error("Informe o tipo e a competência do documento mensal.");
-  if (!isCompetenciaAllowed(opts.competencia)) throw new Error("Competência inválida: use um mês até o atual.");
+  if (!opts.recurringTypeId || !opts.competencia) throw new Error("Informe o tipo e o período do documento recorrente.");
   const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, opts.recurringTypeId)).limit(1);
-  assertAccess(!!tipo && tipo.ativo && tipo.companyId === opts.companyId && tipo.alvo === opts.alvo, "Tipo de documento mensal inválido para esta empresa.");
+  assertAccess(!!tipo && tipo.ativo && tipo.companyId === opts.companyId && tipo.alvo === opts.alvo, "Tipo de documento recorrente inválido para esta empresa.");
+  const periodicidade = asPeriodicidade(tipo.periodicidade);
+  if (!isPeriodAllowed(opts.competencia, periodicidade, brazilToday())) throw new Error("Período inválido: use um período já iniciado deste documento.");
   const existing = opts.alvo === "colaborador"
     ? await db.select({ id: employeeDocuments.id }).from(employeeDocuments).where(and(
         eq(employeeDocuments.employeeId, opts.employeeId!), eq(employeeDocuments.recurringTypeId, opts.recurringTypeId),
@@ -1932,11 +1934,11 @@ async function assertRecurringUpload(
     : await db.select({ id: companyDocuments.id }).from(companyDocuments).where(and(
         eq(companyDocuments.companyId, opts.companyId), eq(companyDocuments.recurringTypeId, opts.recurringTypeId),
         eq(companyDocuments.competencia, opts.competencia))).limit(1);
-  if (existing.length) throw new Error(`Já existe ${tipo.nome} da competência ${formatCompetencia(opts.competencia)}. Use "Editar" para substituir o arquivo.`);
+  if (existing.length) throw new Error(`Já existe ${tipo.nome} do período ${formatPeriod(opts.competencia, periodicidade)}. Use "Editar" para substituir o arquivo.`);
   return true;
 }
 
-// Categorias permitidas para documentos mensais (sem dados de saúde).
+// Categorias permitidas para documentos recorrentes (sem dados de saúde).
 const RECURRING_CATEGORIES = ["pessoal", "contratual", "treinamento", "outros"] as const;
 
 const recurringDocsRouter = router({
@@ -1954,18 +1956,20 @@ const recurringDocsRouter = router({
     nome: z.string().trim().min(2, "Informe o nome do documento.").max(255),
     alvo: z.enum(["colaborador", "empresa"]),
     categoria: z.enum(RECURRING_CATEGORIES).default("outros"),
-    diaLimite: z.number().int().min(1, "O dia limite vai de 1 a 28.").max(28, "O dia limite vai de 1 a 28."),
+    periodicidade: z.enum(PERIODICIDADES).default("mensal"),
+    prazoDias: z.number().int().min(0, "O prazo vai de 0 a 90 dias.").max(90, "O prazo vai de 0 a 90 dias."),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos mensais.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const [created] = await db.insert(recurringDocumentTypes).values({
-      companyId: input.companyId, nome: input.nome, alvo: input.alvo, categoria: input.categoria, diaLimite: input.diaLimite,
+      companyId: input.companyId, nome: input.nome, alvo: input.alvo, categoria: input.categoria,
+      periodicidade: input.periodicidade, prazoDias: input.prazoDias,
     }).returning({ id: recurringDocumentTypes.id });
     await insertAuditLog({
       userId: ctx.user.id, companyId: input.companyId, acao: "criou_documento_mensal", entidade: "recurring_document_types",
-      entidadeId: created?.id ?? null, dadosDepois: { nome: input.nome, alvo: input.alvo, diaLimite: input.diaLimite },
+      entidadeId: created?.id ?? null, dadosDepois: { nome: input.nome, alvo: input.alvo, periodicidade: input.periodicidade, prazoDias: input.prazoDias },
     });
     return { success: true };
   }),
@@ -1974,48 +1978,48 @@ const recurringDocsRouter = router({
     id: z.number(),
     nome: z.string().trim().min(2, "Informe o nome do documento.").max(255).optional(),
     categoria: z.enum(RECURRING_CATEGORIES).optional(),
-    diaLimite: z.number().int().min(1, "O dia limite vai de 1 a 28.").max(28, "O dia limite vai de 1 a 28.").optional(),
+    periodicidade: z.enum(PERIODICIDADES).optional(),
+    prazoDias: z.number().int().min(0, "O prazo vai de 0 a 90 dias.").max(90, "O prazo vai de 0 a 90 dias.").optional(),
     ativo: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos mensais.");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, input.id)).limit(1);
-    if (!tipo) throw new Error("Documento mensal não encontrado.");
+    if (!tipo) throw new Error("Documento recorrente não encontrado.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, tipo.companyId), "Acesso negado");
     const { id, ...changes } = input;
     await db.update(recurringDocumentTypes).set({ ...changes, updatedAt: new Date() }).where(eq(recurringDocumentTypes.id, id));
     await insertAuditLog({
       userId: ctx.user.id, companyId: tipo.companyId, acao: "editou_documento_mensal", entidade: "recurring_document_types",
-      entidadeId: tipo.id, dadosDepois: { antes: { nome: tipo.nome, diaLimite: tipo.diaLimite, ativo: tipo.ativo }, depois: changes },
+      entidadeId: tipo.id, dadosDepois: { antes: { nome: tipo.nome, periodicidade: tipo.periodicidade, prazoDias: tipo.prazoDias, ativo: tipo.ativo }, depois: changes },
     });
     return { success: true };
   }),
 
   /** Grade do dossiê: tipos mensais do colaborador × últimas competências. */
-  employeeGrid: protectedProcedure.input(z.object({ employeeId: z.number(), meses: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
+  employeeGrid: protectedProcedure.input(z.object({ employeeId: z.number(), quantidade: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
-    return buildEmployeeMonthlyGrid(db, employee, input.meses);
+    return buildEmployeeMonthlyGrid(db, employee, input.quantidade);
   }),
 
-  /** Grade dos documentos mensais da própria empresa (Documentos da Empresa). */
-  companyGrid: protectedProcedure.input(z.object({ companyId: z.number(), meses: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
+  /** Grade dos documentos recorrentes da própria empresa (Documentos da Empresa). */
+  companyGrid: protectedProcedure.input(z.object({ companyId: z.number(), quantidade: z.number().int().min(1).max(24).default(6) })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    return buildCompanyMonthlyGrid(db, input.companyId, input.meses);
+    return buildCompanyMonthlyGrid(db, input.companyId, input.quantidade);
   }),
 
   /** Situação da empresa em uma competência (Pendências e Documentos da Empresa). */
-  companyOverview: protectedProcedure.input(z.object({ companyId: z.number(), competencia: z.string() })).query(async ({ ctx, input }) => {
-    if (!isValidCompetencia(input.competencia)) throw new Error("Competência inválida.");
+  companyOverview: protectedProcedure.input(z.object({ companyId: z.number(), quantos: z.number().int().min(1).max(6).default(1) })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("DB unavailable");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    return buildCompanyMonthlyOverview(db, input.companyId, input.competencia);
+    return buildCompanyMonthlyOverview(db, input.companyId, input.quantos);
   }),
 });
 
@@ -2196,7 +2200,7 @@ const employeeDocsRouter = router({
         dataEmissao: data.dataEmissao || undefined,
         validade: data.validade || undefined,
         uploadedBy: ctx.user.id,
-        // Documento mensal não passa pela validação da equipe (não interfere na liberação); os do checklist passam.
+        // Documento recorrente não passa pela validação da equipe (não interfere na liberação); os do checklist passam.
         ...(mensal ? { status: "valido" } : initialReviewFields(ctx.user)),
       } as any).returning({ id: employeeDocuments.id });
     } catch (error) { await saved?.cleanup(); throw error; }

@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Documentos recorrentes (antes "mensais"): periodicidade semanal, quinzenal, mensal, bimestral, trimestral, semestral ou anual e prazo em dias após o fim do período; os mensais já cadastrados foram convertidos sem perda (prazo igual ao antigo dia limite). Grade por documento no dossiê e na empresa, pendências do último período encerrado e alertas de atraso.
 - Tamanho das janelas: todos os diálogos passam a seguir a preferência do usuário (Pequeno, Médio ou Grande); antes alguns tinham largura fixa.
 - Área da empresa reorganizada: "Parâmetros da empresa" reúne dados e endereço, funções, locais, matriz legal, documentos recorrentes e prazos de férias; "Configurações" passa a ter só preferências pessoais (tema, acessibilidade, tamanho das janelas e atalho para Meu perfil), disponível para todos os perfis.
 - Parâmetros da empresa (nova tela no menu): meses até adquirir férias e meses para solicitar, contados da admissão (padrão 12 + 1). O formulário de férias e o dossiê sugerem o próximo período aquisitivo e o prazo, e admin, RH e equipe SmartDocPlan recebem aviso quando o colaborador adquire férias e quando o limite para solicitar se aproxima ou vence.

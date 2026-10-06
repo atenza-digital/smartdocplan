@@ -7,13 +7,12 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "
 import { toast } from "sonner";
 import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
-import { formatCompetencia } from "@shared/recurring";
 import { COMPANY_MONTHLY_DOCUMENT_TIPO } from "@shared/companyDocuments";
 
-/** Documentos mensais da própria empresa (ex.: guia do FGTS): grade por competência e envio. */
+/** Documentos recorrentes da própria empresa (ex.: guia do FGTS): grade por competência e envio. */
 export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; canEdit: boolean }) {
   const utils = trpc.useUtils();
-  const { data } = trpc.recurringDocs.companyGrid.useQuery({ companyId, meses: 6 }, { enabled: companyId > 0 });
+  const { data } = trpc.recurringDocs.companyGrid.useQuery({ companyId, quantidade: 6 }, { enabled: companyId > 0 });
   const [target, setTarget] = useState<{ row: MonthlyRow; cell: MonthlyCell } | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
@@ -31,13 +30,13 @@ export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; 
       await createMutation.mutateAsync({
         companyId,
         tipo: COMPANY_MONTHLY_DOCUMENT_TIPO,
-        nome: `${target.row.tipo.nome} ${formatCompetencia(target.cell.competencia)}`,
+        nome: `${target.row.tipo.nome} ${target.cell.rotulo}`,
         fileNome: file.name,
         fileBase64: await fileToBase64(file),
         recurringTypeId: target.row.tipo.id,
         competencia: target.cell.competencia,
       });
-      toast.success("Documento mensal enviado.");
+      toast.success("Documento recorrente enviado.");
       setTarget(null);
       setFile(null);
       await Promise.all([utils.recurringDocs.invalidate(), utils.companyDocuments.invalidate()]);
@@ -53,7 +52,7 @@ export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; 
   return (
     <>
       <MonthlyDocsGrid
-        competencias={data.competencias}
+        titulo="Documentos recorrentes da empresa"
         linhas={data.linhas as MonthlyRow[]}
         canSend={canEdit}
         onSend={(row, cell) => { setTarget({ row, cell }); setFile(null); }}
@@ -62,7 +61,7 @@ export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; 
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Enviar {target?.row.tipo.nome} {target ? formatCompetencia(target.cell.competencia) : ""}
+              Enviar {target?.row.tipo.nome} {target?.cell.rotulo}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5 py-2">

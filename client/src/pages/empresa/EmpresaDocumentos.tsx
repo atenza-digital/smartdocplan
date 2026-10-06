@@ -4,7 +4,7 @@ import { CompanyMonthlyDocs } from "@/components/CompanyMonthlyDocs";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canManageCompanyData } from "@shared/permissions";
 
-/** Módulo Documentos da Empresa: documentos fixos com versões (PCMSO, PGR…) e documentos mensais da empresa. */
+/** Módulo Documentos da Empresa: documentos fixos com versões (PCMSO, PGR…) e documentos recorrentes da empresa. */
 export default function EmpresaDocumentos() {
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
@@ -16,7 +16,7 @@ export default function EmpresaDocumentos() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Documentos da Empresa</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Documentos legais com histórico de versões e alerta de validade, e documentos mensais da empresa.
+            Documentos legais com histórico de versões e alerta de validade, e documentos recorrentes da empresa.
           </p>
         </div>
         <CompanyMonthlyDocs companyId={companyId} canEdit={canEdit} />

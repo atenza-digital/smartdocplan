@@ -7,7 +7,6 @@ import { canAccessHealthData, isHealthCategory, isPlatformUser } from "@shared/p
 import { documentAlertThreshold, documentAlertTitle } from "@shared/documentAlerts";
 import { COMPANY_DOCUMENT_TYPES, latestCompanyDocuments } from "@shared/companyDocuments";
 import { formatDateOnlyBr, normalizeTextSearch } from "@shared/formValidation";
-import { addCompetencia, competenciaOf, formatCompetencia } from "@shared/recurring";
 import { brazilToday } from "@shared/vacations";
 import { buildVacationSuggestions } from "./vacationSuggestions";
 
@@ -99,41 +98,36 @@ async function companyDocumentAlerts(db: Db, today: string): Promise<Alert[]> {
   return alerts;
 }
 
-/** Mensais atrasados nas duas últimas competências encerradas. */
+/** Recorrentes atrasados nos dois últimos períodos encerrados de cada tipo. */
 async function monthlyAlerts(db: Db, today: string): Promise<Alert[]> {
   const ativas = await db.select({ id: companies.id }).from(companies);
-  const [ano, mes, dia] = today.split("-").map(Number);
-  const referencia = new Date(ano, mes - 1, dia);
-  const ultima = addCompetencia(competenciaOf(referencia), -1);
   const alerts: Alert[] = [];
   for (const company of ativas) {
-    for (const competencia of [addCompetencia(ultima, -1), ultima]) {
-      const overview = await buildCompanyMonthlyOverview(db, company.id, competencia, referencia);
-      for (const item of overview.colaborador) {
-        const atrasados = item.faltando.filter((linha) => linha.estado === "atrasado");
-        if (!atrasados.length) continue;
-        alerts.push({
-          companyId: company.id,
-          key: `mensal_atraso_${company.id}_${item.tipo.id}_${competencia}`,
-          titulo: `${item.tipo.nome} ${formatCompetencia(competencia)} em atraso`,
-          mensagem: `${atrasados.length} colaborador(es) sem envio. O prazo era ${formatDateOnlyBr(item.prazo)}.`,
-          linkEmpresa: "/empresa/pendencias",
-          linkPlataforma: `/admin/empresas/${company.id}`,
-          saude: false,
-        });
-      }
-      for (const item of overview.empresa) {
-        if (item.estado !== "atrasado") continue;
-        alerts.push({
-          companyId: company.id,
-          key: `mensal_atraso_${company.id}_${item.tipo.id}_${competencia}`,
-          titulo: `${item.tipo.nome} ${formatCompetencia(competencia)} em atraso`,
-          mensagem: `Documento mensal da empresa não enviado. O prazo era ${formatDateOnlyBr(item.prazo)}.`,
-          linkEmpresa: "/empresa/documentos",
-          linkPlataforma: `/admin/empresas/${company.id}`,
-          saude: false,
-        });
-      }
+    const overview = await buildCompanyMonthlyOverview(db, company.id, 2, today);
+    for (const item of overview.colaborador) {
+      const atrasados = item.faltando.filter((linha) => linha.estado === "atrasado");
+      if (!atrasados.length) continue;
+      alerts.push({
+        companyId: company.id,
+        key: `recorrente_atraso_${company.id}_${item.tipo.id}_${item.competencia}`,
+        titulo: `${item.tipo.nome} ${item.rotulo} em atraso`,
+        mensagem: `${atrasados.length} colaborador(es) sem envio. O prazo era ${formatDateOnlyBr(item.prazo)}.`,
+        linkEmpresa: "/empresa/pendencias",
+        linkPlataforma: `/admin/empresas/${company.id}`,
+        saude: false,
+      });
+    }
+    for (const item of overview.empresa) {
+      if (item.estado !== "atrasado") continue;
+      alerts.push({
+        companyId: company.id,
+        key: `recorrente_atraso_${company.id}_${item.tipo.id}_${item.competencia}`,
+        titulo: `${item.tipo.nome} ${item.rotulo} em atraso`,
+        mensagem: `Documento recorrente da empresa não enviado. O prazo era ${formatDateOnlyBr(item.prazo)}.`,
+        linkEmpresa: "/empresa/documentos",
+        linkPlataforma: `/admin/empresas/${company.id}`,
+        saude: false,
+      });
     }
   }
   return alerts;
@@ -200,7 +194,7 @@ async function deliver(db: Db, alerts: Alert[], recipients: Recipient[]) {
   return values.length;
 }
 
-/** Avisos de vencimento (30 dias, 7 dias, vencido) e de documentos mensais atrasados. */
+/** Avisos de vencimento (30 dias, 7 dias, vencido) e de documentos recorrentes atrasados. */
 export async function notifyDocumentAlerts(db: Db, today = brazilToday()) {
   const alerts = [
     ...(await employeeDocumentAlerts(db, today)),

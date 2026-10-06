@@ -484,7 +484,7 @@ export default function EmpresaParametros() {
             </TabsTrigger>
             <TabsTrigger value="mensais" className="text-xs">
               <CalendarClock className="mr-1 h-3.5 w-3.5" />
-              Documentos mensais
+              Documentos recorrentes
             </TabsTrigger>
             <TabsTrigger value="ferias" className="text-xs">
               <CalendarDays className="mr-1 h-3.5 w-3.5" />
@@ -618,7 +618,7 @@ export default function EmpresaParametros() {
                 <div>
                   <h3 className="text-base font-semibold text-foreground">Documentos da empresa</h3>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT, CNO e documentos mensais agora ficam no módulo Documentos da Empresa, com histórico de versões.
+                    Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT, CNO e documentos recorrentes agora ficam no módulo Documentos da Empresa, com histórico de versões.
                   </p>
                 </div>
                 <Button asChild variant="outline" size="sm">

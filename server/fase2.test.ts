@@ -158,50 +158,77 @@ describe("Validação de documentos — permissões", () => {
   });
 });
 
-// ─── D. Documentos mensais ───────────────────────────────────────────────────
+// ─── D/L. Documentos recorrentes ─────────────────────────────────────────────
 
-import { addCompetencia, competenciaApplies, isCompetenciaAllowed, recentCompetencias, recurringCellState, recurringDeadline } from "@shared/recurring";
+import { formatPeriod, isPeriodAllowed, nextPeriodStart, periodApplies, periodEnd, periodStart, recentPeriods, recurringCellState, recurringDeadline } from "@shared/recurring";
 
-describe("Documentos mensais", () => {
-  it("prazo é o dia limite do mês seguinte, inclusive na virada do ano", () => {
-    expect(recurringDeadline("2026-09", 10)).toBe("2026-10-10");
-    expect(recurringDeadline("2026-12", 5)).toBe("2027-01-05");
+describe("Documentos recorrentes", () => {
+  const HOJE = "2026-10-05"; // segunda-feira
+
+  it("início e fim de cada periodicidade", () => {
+    expect(periodStart("2026-10-08", "semanal")).toBe("2026-10-05");
+    expect(periodStart("2026-10-04", "semanal")).toBe("2026-09-28"); // domingo pertence à semana anterior
+    expect(periodEnd("2026-09-28", "semanal")).toBe("2026-10-04");
+    expect(periodStart("2026-10-20", "quinzenal")).toBe("2026-10-16");
+    expect(periodEnd("2026-02-16", "quinzenal")).toBe("2026-02-28");
+    expect(periodStart("2026-10-20", "bimestral")).toBe("2026-09-01");
+    expect(periodStart("2026-10-20", "trimestral")).toBe("2026-10-01");
+    expect(periodStart("2026-10-20", "semestral")).toBe("2026-07-01");
+    expect(periodEnd("2026-01-01", "anual")).toBe("2026-12-31");
+    expect(nextPeriodStart("2026-12-16", "quinzenal")).toBe("2027-01-01");
   });
 
-  it("últimas competências encerradas não incluem o mês corrente", () => {
-    expect(recentCompetencias(3, REF)).toEqual(["2026-07", "2026-08", "2026-09"]);
-    expect(addCompetencia("2026-01", -1)).toBe("2025-12");
+  it("prazo em dias após o fim; mensal com 10 dias equivale ao antigo dia 10 do mês seguinte", () => {
+    expect(recurringDeadline("2026-09-01", "mensal", 10)).toBe("2026-10-10");
+    expect(recurringDeadline("2026-12-01", "mensal", 5)).toBe("2027-01-05");
+    expect(recurringDeadline("2026-09-28", "semanal", 2)).toBe("2026-10-06");
   });
 
-  it("situação pelo prazo: no prazo até o dia limite, atrasado depois", () => {
-    expect(recurringCellState(null, "2026-09", 10, new Date(2026, 9, 10))).toBe("a_enviar");
-    expect(recurringCellState(null, "2026-09", 10, new Date(2026, 9, 11))).toBe("atrasado");
-    expect(recurringCellState({ status: "valido" }, "2026-09", 10, new Date(2026, 9, 20))).toBe("aprovado");
-    expect(recurringCellState({ status: "rejeitado" }, "2026-09", 10, REF)).toBe("rejeitado");
+  it("últimos períodos encerrados não incluem o atual", () => {
+    expect(recentPeriods("mensal", 3, HOJE)).toEqual(["2026-07-01", "2026-08-01", "2026-09-01"]);
+    expect(recentPeriods("semanal", 2, HOJE)).toEqual(["2026-09-21", "2026-09-28"]);
+    expect(recentPeriods("anual", 1, HOJE)).toEqual(["2025-01-01"]);
   });
 
-  it("competência futura não é aceita", () => {
-    expect(isCompetenciaAllowed("2026-10", REF)).toBe(true);
-    expect(isCompetenciaAllowed("2026-11", REF)).toBe(false);
-    expect(isCompetenciaAllowed("2026-13", REF)).toBe(false);
+  it("rótulos legíveis", () => {
+    expect(formatPeriod("2026-09-28", "semanal")).toBe("28/09 a 04/10/2026");
+    expect(formatPeriod("2026-09-16", "quinzenal")).toBe("2ª quinz. 09/2026");
+    expect(formatPeriod("2026-09-01", "mensal")).toBe("09/2026");
+    expect(formatPeriod("2026-07-01", "trimestral")).toBe("3º tri/2026");
+  });
+
+  it("situação pelo prazo", () => {
+    expect(recurringCellState(null, "2026-09-01", "mensal", 10, "2026-10-10")).toBe("a_enviar");
+    expect(recurringCellState(null, "2026-09-01", "mensal", 10, "2026-10-11")).toBe("atrasado");
+    expect(recurringCellState({ status: "valido" }, "2026-09-01", "mensal", 10, "2026-10-20")).toBe("aprovado");
+    expect(recurringCellState({ status: "rejeitado" }, "2026-09-01", "mensal", 10, HOJE)).toBe("rejeitado");
+  });
+
+  it("período aceito: início válido, não futuro; o atual é aceito", () => {
+    expect(isPeriodAllowed("2026-10-05", "semanal", HOJE)).toBe(true);
+    expect(isPeriodAllowed("2026-10-12", "semanal", HOJE)).toBe(false);
+    expect(isPeriodAllowed("2026-10-06", "semanal", HOJE)).toBe(false); // não é início de semana
+    expect(isPeriodAllowed("2026-02-30", "mensal", HOJE)).toBe(false);
   });
 
   it("não cobra antes da admissão, de desligado nem antes do cadastro do tipo", () => {
-    const tipoCriadoEm = new Date(2026, 8, 15); // 15/09/2026
-    expect(competenciaApplies("2026-08", { dataAdmissao: "2026-09-01", tipoCriadoEm })).toBe(false);
-    expect(competenciaApplies("2026-09", { dataAdmissao: "2026-09-01", tipoCriadoEm })).toBe(true);
-    expect(competenciaApplies("2026-09", { status: "desligado", tipoCriadoEm })).toBe(false);
-    expect(competenciaApplies("2026-07", { tipoCriadoEm })).toBe(false);
+    const tipoCriadoEm = "2026-09-15";
+    expect(periodApplies("2026-08-01", "mensal", { dataAdmissao: "2026-09-01", tipoCriadoEm })).toBe(false);
+    expect(periodApplies("2026-09-01", "mensal", { dataAdmissao: "2026-09-01", tipoCriadoEm })).toBe(true);
+    expect(periodApplies("2026-09-01", "mensal", { status: "desligado", tipoCriadoEm })).toBe(false);
+    expect(periodApplies("2026-07-01", "mensal", { tipoCriadoEm })).toBe(false);
+    expect(periodApplies("2026-09-07", "semanal", { tipoCriadoEm })).toBe(true); // semana anterior à do cadastro
+    expect(periodApplies("2026-08-31", "semanal", { tipoCriadoEm })).toBe(false);
   });
 
-  it.each(["company_viewer", "company_manager", "platform_auditor"])("%s não cadastra documento mensal", async (role) => {
+  it.each(["company_viewer", "company_manager", "platform_auditor"])("%s não cadastra documento recorrente", async (role) => {
     const caller = appRouter.createCaller(makeCtx({ role: role as any, companyId: role.startsWith("company") ? 1 : null }));
-    await expect(caller.recurringDocs.create({ companyId: 1, nome: "Folha de ponto", alvo: "colaborador", diaLimite: 10 })).rejects.toThrow(/não pode configurar/);
+    await expect(caller.recurringDocs.create({ companyId: 1, nome: "Folha de ponto", alvo: "colaborador", periodicidade: "mensal", prazoDias: 10 })).rejects.toThrow(/não pode configurar/);
   });
 
-  it("dia limite fora de 1 a 28 é recusado", async () => {
+  it("prazo fora de 0 a 90 dias é recusado", async () => {
     const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
-    await expect(caller.recurringDocs.create({ companyId: 1, nome: "Folha de ponto", alvo: "colaborador", diaLimite: 31 })).rejects.toThrow(/1 a 28/);
+    await expect(caller.recurringDocs.create({ companyId: 1, nome: "Folha de ponto", alvo: "colaborador", periodicidade: "semanal", prazoDias: 120 })).rejects.toThrow(/0 a 90/);
   });
 });
 

@@ -5,15 +5,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CalendarClock } from "lucide-react";
-import { RECURRING_STATE_LABELS, formatCompetencia, recentCompetencias } from "@shared/recurring";
+import { PERIODICIDADE_LABELS, RECURRING_STATE_LABELS } from "@shared/recurring";
 import { formatDateOnlyBr } from "@shared/formValidation";
 import { RECURRING_STATE_COLORS } from "@/components/MonthlyDocsGrid";
 
-/** Pendências de documentos mensais da empresa numa competência: quem ainda não enviou cada tipo. */
+/** Pendências de documentos recorrentes: quem ainda não enviou, nos últimos períodos encerrados de cada tipo. */
 export function MonthlyPendencies({ companyId }: { companyId: number }) {
-  const competencias = recentCompetencias(6).reverse();
-  const [competencia, setCompetencia] = useState(competencias[0]);
-  const { data } = trpc.recurringDocs.companyOverview.useQuery({ companyId, competencia }, { enabled: companyId > 0 });
+  const [quantos, setQuantos] = useState("1");
+  const { data } = trpc.recurringDocs.companyOverview.useQuery({ companyId, quantos: Number(quantos) }, { enabled: companyId > 0 });
 
   if (!data || (data.colaborador.length === 0 && data.empresa.length === 0)) return null;
 
@@ -23,21 +22,26 @@ export function MonthlyPendencies({ companyId }: { companyId: number }) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardTitle className="text-base font-semibold flex items-center gap-2">
             <CalendarClock className="w-4 h-4 text-primary" />
-            Documentos mensais
+            Documentos recorrentes
           </CardTitle>
-          <Select value={competencia} onValueChange={setCompetencia}>
-            <SelectTrigger className="w-44" aria-label="Competência"><SelectValue /></SelectTrigger>
+          <Select value={quantos} onValueChange={setQuantos}>
+            <SelectTrigger className="w-56" aria-label="Períodos exibidos"><SelectValue /></SelectTrigger>
             <SelectContent>
-              {competencias.map((c) => <SelectItem key={c} value={c}>Competência {formatCompetencia(c)}</SelectItem>)}
+              <SelectItem value="1">Último período encerrado</SelectItem>
+              <SelectItem value="2">Últimos 2 períodos</SelectItem>
+              <SelectItem value="3">Últimos 3 períodos</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {data.colaborador.map((item) => (
-          <div key={item.tipo.id} className="rounded-lg border border-border p-3">
+          <div key={`${item.tipo.id}-${item.competencia}`} className="rounded-lg border border-border p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium text-foreground">{item.tipo.nome}</p>
+              <p className="text-sm font-medium text-foreground">
+                {item.tipo.nome} · {item.rotulo}
+                <span className="ml-2 text-xs font-normal text-muted-foreground">{PERIODICIDADE_LABELS[item.tipo.periodicidade]}</span>
+              </p>
               <p className="text-xs text-muted-foreground">
                 {item.enviados} de {item.total} enviados · prazo {formatDateOnlyBr(item.prazo)}
               </p>
@@ -63,9 +67,9 @@ export function MonthlyPendencies({ companyId }: { companyId: number }) {
             <p className="text-sm font-medium text-foreground">Da empresa</p>
             <ul className="mt-2 flex flex-wrap gap-2">
               {data.empresa.map((item) => (
-                <li key={item.tipo.id}>
+                <li key={`${item.tipo.id}-${item.competencia}`}>
                   <Badge variant="outline" className={RECURRING_STATE_COLORS[item.estado]}>
-                    {item.tipo.nome} · {RECURRING_STATE_LABELS[item.estado]}
+                    {item.tipo.nome} {item.rotulo} · {RECURRING_STATE_LABELS[item.estado]}
                   </Badge>
                 </li>
               ))}

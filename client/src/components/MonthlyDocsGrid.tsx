@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { CalendarClock } from "lucide-react";
-import { RECURRING_STATE_LABELS, formatCompetencia, type RecurringCellState } from "@shared/recurring";
+import { PERIODICIDADE_LABELS, RECURRING_STATE_LABELS, type Periodicidade, type RecurringCellState } from "@shared/recurring";
 import { formatDateOnlyBr } from "@shared/formValidation";
 
 export const RECURRING_STATE_COLORS: Record<RecurringCellState, string> = {
@@ -12,25 +12,33 @@ export const RECURRING_STATE_COLORS: Record<RecurringCellState, string> = {
 };
 
 export type MonthlyCell = {
-  competencia: string;
+  competencia: string; // início do período (AAAA-MM-DD)
+  rotulo: string;
+  fim: string;
   aplica: boolean;
   prazo: string;
   estado: RecurringCellState;
   documento: { id: number; nome: string; fileUrl: string | null } | null;
 };
-export type MonthlyRow = { tipo: { id: number; nome: string; categoria: string; diaLimite: number }; celulas: MonthlyCell[] };
+export type MonthlyRow = {
+  tipo: { id: number; nome: string; categoria: string; periodicidade: Periodicidade; prazoDias: number };
+  celulas: MonthlyCell[];
+};
 
-/** Grade de documentos mensais do colaborador: tipos × competências. Clicar numa competência sem envio abre o envio. */
+/**
+ * Grade de documentos recorrentes: cada linha é um tipo com seus últimos períodos encerrados
+ * (cada tipo tem a sua periodicidade). Clicar num período sem envio abre o envio.
+ */
 export function MonthlyDocsGrid({
-  competencias,
   linhas,
   canSend,
   onSend,
+  titulo = "Documentos recorrentes",
 }: {
-  competencias: string[];
   linhas: MonthlyRow[];
   canSend: boolean;
   onSend: (row: MonthlyRow, cell: MonthlyCell) => void;
+  titulo?: string;
 }) {
   if (linhas.length === 0) return null;
   return (
@@ -38,52 +46,49 @@ export function MonthlyDocsGrid({
       <CardContent className="p-5">
         <h3 className="font-semibold text-foreground flex items-center gap-2">
           <CalendarClock className="h-4 w-4 text-primary" />
-          Documentos mensais
+          {titulo}
         </h3>
-        <p className="text-sm text-muted-foreground">Últimas competências encerradas. O prazo é o dia limite do mês seguinte.</p>
-        <div className="mt-4 overflow-x-auto">
-          <table className="w-full min-w-[36rem] border-separate border-spacing-1 text-xs">
-            <thead>
-              <tr>
-                <th className="text-left font-medium text-muted-foreground">Documento</th>
-                {competencias.map((c) => <th key={c} className="font-medium text-muted-foreground">{formatCompetencia(c)}</th>)}
-              </tr>
-            </thead>
-            <tbody>
-              {linhas.map((row) => (
-                <tr key={row.tipo.id}>
-                  <td className="pr-2 font-medium text-foreground">
-                    {row.tipo.nome}
-                    <span className="block font-normal text-muted-foreground">até dia {row.tipo.diaLimite}</span>
-                  </td>
-                  {row.celulas.map((cell) => {
-                    if (!cell.aplica) return <td key={cell.competencia} className="text-center text-muted-foreground">—</td>;
-                    const label = RECURRING_STATE_LABELS[cell.estado];
-                    const title = `${row.tipo.nome} ${formatCompetencia(cell.competencia)}: ${label}. Prazo ${formatDateOnlyBr(cell.prazo)}.`;
-                    const className = `w-full rounded-md border px-1.5 py-1 text-center ${RECURRING_STATE_COLORS[cell.estado]}`;
-                    if (cell.documento?.fileUrl) {
-                      return (
-                        <td key={cell.competencia}>
-                          <a href={cell.documento.fileUrl} target="_blank" rel="noopener noreferrer" title={title} className={`block hover:underline ${className}`}>{label}</a>
-                        </td>
-                      );
-                    }
+        <p className="text-sm text-muted-foreground">Últimos períodos encerrados de cada documento. O prazo conta a partir do fim do período.</p>
+        <div className="mt-4 space-y-3">
+          {linhas.map((row) => (
+            <div key={row.tipo.id} className="rounded-lg border border-border p-3">
+              <p className="text-sm font-medium text-foreground">
+                {row.tipo.nome}
+                <span className="ml-2 font-normal text-xs text-muted-foreground">
+                  {PERIODICIDADE_LABELS[row.tipo.periodicidade]} · prazo de {row.tipo.prazoDias} dia(s) após o fim do período
+                </span>
+              </p>
+              <ul className="mt-2 flex flex-wrap gap-2">
+                {row.celulas.map((cell) => {
+                  if (!cell.aplica) {
                     return (
-                      <td key={cell.competencia}>
-                        {canSend && !cell.documento ? (
-                          <button type="button" title={`${title} Clique para enviar.`} onClick={() => onSend(row, cell)} className={`${className} hover:ring-1 hover:ring-primary`}>
-                            {label}
-                          </button>
-                        ) : (
-                          <span title={title} className={`block ${className}`}>{label}</span>
-                        )}
-                      </td>
+                      <li key={cell.competencia} className="rounded-md border border-dashed border-border px-2 py-1 text-xs text-muted-foreground" title="Não se aplica a este período">
+                        {cell.rotulo} · —
+                      </li>
                     );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  }
+                  const label = RECURRING_STATE_LABELS[cell.estado];
+                  const title = `${row.tipo.nome} ${cell.rotulo}: ${label}. Prazo ${formatDateOnlyBr(cell.prazo)}.`;
+                  const className = `inline-block rounded-md border px-2 py-1 text-xs ${RECURRING_STATE_COLORS[cell.estado]}`;
+                  return (
+                    <li key={cell.competencia}>
+                      {cell.documento?.fileUrl ? (
+                        <a href={cell.documento.fileUrl} target="_blank" rel="noopener noreferrer" title={title} className={`${className} hover:underline`}>
+                          {cell.rotulo} · {label}
+                        </a>
+                      ) : canSend && !cell.documento ? (
+                        <button type="button" title={`${title} Clique para enviar.`} onClick={() => onSend(row, cell)} className={`${className} hover:ring-1 hover:ring-primary`}>
+                          {cell.rotulo} · {label}
+                        </button>
+                      ) : (
+                        <span title={title} className={className}>{cell.rotulo} · {label}</span>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          ))}
         </div>
       </CardContent>
     </Card>
