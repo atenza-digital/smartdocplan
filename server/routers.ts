@@ -13,6 +13,7 @@ import {
 } from "@shared/permissions";
 import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
 import { getSessionCookieOptions } from "./_core/cookies";
+import { revokeSessionFromCookie } from "./_core/localAuth";
 import { systemRouter } from "./_core/systemRouter";
 import { organizationRouter } from "./organization";
 import { vacationsRouter } from "./vacations";
@@ -2650,7 +2651,8 @@ export const appRouter = router({
       const { passwordHash: _passwordHash, ...usuario } = ctx.user;
       return usuario;
     }),
-    logout: publicProcedure.mutation(({ ctx }) => {
+    logout: publicProcedure.mutation(async ({ ctx }) => {
+      await revokeSessionFromCookie(ctx.req.headers.cookie);
       const cookieOptions = getSessionCookieOptions(ctx.req);
       // Limpar o cookie com todas as variantes para garantir remoção
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: 0 });

@@ -125,12 +125,12 @@ Ponto importante:
 
 ## 5.3 Seed inicial
 
-Ao subir o backend, o sistema tenta criar um administrador padrão se ele ainda não existir.
+Ao subir o backend, o sistema cria o administrador padrão se ele ainda não existir e se a variável `ADMIN_INITIAL_PASSWORD` estiver definida (mínimo 8 caracteres). A senha não fica no código nem aparece no log; troque-a no primeiro acesso.
 
 Usuário inicial:
 
 - e-mail: `admin@smartdocplan.com`
-- senha: `Admin@2024!`
+- senha: valor de `ADMIN_INITIAL_PASSWORD`
 - perfil: `platform_admin`
 
 ## 5.4 OAuth

@@ -14,6 +14,7 @@ import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./cookies";
 import { auditClientFields, requestClientInfo } from "./clientInfo";
 import { LOGIN_RULES, blockedMessage, loginLimiter, maskEmail } from "./loginRateLimit";
+import { isSessionRevoked, revokeSessionToken, revokeUserSessionsBefore } from "./sessionRevocation";
 
 /** Auditoria de autenticação (login, falha, bloqueio, troca de senha), com IP e navegador. */
 async function authAudit(action: string, opts: { userId?: number | null; companyId?: number | null; details?: unknown } = {}) {
@@ -38,15 +39,17 @@ export async function signLocalSession(userId: number): Promise<string> {
   const exp = Math.floor((Date.now() + ONE_YEAR_MS) / 1000);
   return new SignJWT({ userId, type: "local" })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
+    .setIssuedAt()
     .setExpirationTime(exp)
     .sign(SECRET);
 }
 
-export async function verifyLocalSession(token: string): Promise<{ userId: number } | null> {
+export async function verifyLocalSession(token: string): Promise<{ userId: number; issuedAt: number; expiresAt?: number } | null> {
   try {
     const { payload } = await jwtVerify(token, SECRET, { algorithms: ["HS256"] });
     if (typeof payload.userId === "number" && payload.type === "local") {
-      return { userId: payload.userId };
+      // Tokens emitidos antes desta versão não têm `iat`: contam como 0 (mais antigos que qualquer corte).
+      return { userId: payload.userId, issuedAt: payload.iat ?? 0, expiresAt: payload.exp };
     }
     return null;
   } catch {
@@ -62,27 +65,48 @@ export async function getUserFromLocalSession(cookieHeader: string | undefined) 
 
   const session = await verifyLocalSession(token);
   if (!session) return null;
+  if (await isSessionRevoked(token, session.userId, session.issuedAt)) return null;
 
   const user = await getUserById(session.userId);
   return user?.ativo ? user : null;
 }
 
+/** Encerra a sessão do cookie (logout). Falha ao gravar não impede o logout: o cookie é apagado igual. */
+export async function revokeSessionFromCookie(cookieHeader: string | undefined) {
+  try {
+    const token = cookieHeader ? parseCookies(cookieHeader)[COOKIE_NAME] : undefined;
+    if (!token) return;
+    const session = await verifyLocalSession(token);
+    if (session) await revokeSessionToken(token, session.userId, session.expiresAt);
+  } catch (err) {
+    console.warn("[Auth] Não foi possível encerrar a sessão no servidor:", err);
+  }
+}
+
 // ─── Seed do usuário admin inicial ───────────────────────────────────────────
 
+/**
+ * Cria o administrador inicial só em banco sem esse usuário, com a senha de ADMIN_INITIAL_PASSWORD.
+ * A senha nunca fica no código nem aparece no log.
+ */
 export async function seedAdminUser() {
   try {
     const existing = await getUserByEmail("admin@smartdocplan.com");
-    if (!existing) {
-      const hash = await bcrypt.hash("Admin@2024!", 12);
-      await createLocalUser({
-        name: "Administrador",
-        email: "admin@smartdocplan.com",
-        passwordHash: hash,
-        role: "platform_admin",
-        companyId: null,
-      });
-      console.log("[Auth] Admin inicial criado: admin@smartdocplan.com / Admin@2024!");
+    if (existing) return;
+    const senha = process.env.ADMIN_INITIAL_PASSWORD?.trim();
+    if (!senha || senha.length < 8) {
+      console.warn("[Auth] Admin inicial não criado: defina ADMIN_INITIAL_PASSWORD (mínimo 8 caracteres).");
+      return;
     }
+    const hash = await bcrypt.hash(senha, 12);
+    await createLocalUser({
+      name: "Administrador",
+      email: "admin@smartdocplan.com",
+      passwordHash: hash,
+      role: "platform_admin",
+      companyId: null,
+    });
+    console.log("[Auth] Admin inicial criado: admin@smartdocplan.com");
   } catch (err) {
     console.warn("[Auth] Não foi possível criar o admin inicial:", err);
   }
@@ -148,7 +172,8 @@ export function registerLocalAuthRoutes(app: Express) {
   });
 
   // POST /api/auth/logout
-  app.post("/api/auth/logout", (req, res) => {
+  app.post("/api/auth/logout", async (req, res) => {
+    await revokeSessionFromCookie(req.headers.cookie);
     const cookieOptions = getSessionCookieOptions(req);
     res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
     return res.json({ success: true });
@@ -186,6 +211,9 @@ export function registerLocalAuthRoutes(app: Express) {
       if (!db) return res.status(503).json({ error: "Banco de dados indisponível." });
       const passwordHash = await bcrypt.hash(novaSenha, 12);
       await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
+      // Senha nova encerra as outras sessões; esta continua com um token novo.
+      await revokeUserSessionsBefore(user.id);
+      res.cookie(COOKIE_NAME, await signLocalSession(user.id), getSessionCookieOptions(req));
       await db.insert(auditLogs).values({
         ...auditClientFields(),
         userId: user.id,

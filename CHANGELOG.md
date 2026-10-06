@@ -2,6 +2,10 @@
 
 ## [Não publicado]
 
+- Segurança: sair da plataforma encerra a sessão também no servidor (o mesmo token deixa de valer) e trocar a senha encerra as outras sessões do usuário; quem já está logado continua logado. Nova tabela `session_revocations` (migration só de adição), limpa de hora em hora.
+- Segurança: o administrador inicial só é criado com a senha da variável `ADMIN_INITIAL_PASSWORD`; a senha deixou de ficar no código e de aparecer no log.
+- Documentos recorrentes: períodos anteriores à admissão (ou ao cadastro do tipo) aparecem como "Não se aplica" em vez de "Atrasado".
+- `todo.md` revisado, com itens já entregues marcados.
 - Segurança: a consulta do usuário logado deixa de devolver o hash da senha ao navegador; acesso negado responde como "proibido" (403) em vez de erro interno; telas do admin só abrem para a equipe SmartDocPlan (Calendário da saúde só para o Administrador Geral) e "Estrutura da empresa" só para admin e RH da empresa.
 - Solicitações: anexos aceitam só PDF, PNG ou JPG até 10 MB, conferindo o conteúdo real do arquivo no servidor; datas de nascimento e validade deixam de aparecer um dia antes.
 - Tamanho das janelas: a preferência fica guardada por usuário (quem divide o computador não herda a do outro) e passa a valer também nas janelas de confirmação.

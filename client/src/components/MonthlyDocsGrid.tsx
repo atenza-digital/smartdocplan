@@ -9,6 +9,7 @@ export const RECURRING_STATE_COLORS: Record<RecurringCellState, string> = {
   rejeitado: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
   a_enviar: "bg-muted text-muted-foreground border-border",
   atrasado: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/30",
+  nao_se_aplica: "border-dashed border-border text-muted-foreground",
 };
 
 export type MonthlyCell = {

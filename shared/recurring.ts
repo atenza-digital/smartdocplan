@@ -18,7 +18,7 @@ export const PERIODICIDADE_LABELS: Record<Periodicidade, string> = {
   anual: "Anual",
 };
 
-export type RecurringCellState = "aprovado" | "aguardando_validacao" | "rejeitado" | "a_enviar" | "atrasado";
+export type RecurringCellState = "aprovado" | "aguardando_validacao" | "rejeitado" | "a_enviar" | "atrasado" | "nao_se_aplica";
 
 export const RECURRING_STATE_LABELS: Record<RecurringCellState, string> = {
   aprovado: "Enviado",
@@ -26,6 +26,7 @@ export const RECURRING_STATE_LABELS: Record<RecurringCellState, string> = {
   rejeitado: "Rejeitado",
   a_enviar: "No prazo",
   atrasado: "Atrasado",
+  nao_se_aplica: "Não se aplica",
 };
 
 const pad = (value: number) => String(value).padStart(2, "0");

@@ -394,6 +394,16 @@ export const auditLogs = smartdocSchema.table("audit_logs", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
+// --- SESSÕES ENCERRADAS (logout por token; troca de senha encerra as sessões anteriores do usuário) ---
+export const sessionRevocations = smartdocSchema.table("session_revocations", {
+  id: serial("id").primaryKey(),
+  tokenHash: varchar("tokenHash", { length: 64 }), // SHA-256 do token; o token em si não é guardado
+  userId: integer("userId").notNull(),
+  revokedBefore: timestamp("revokedBefore"), // tokens emitidos antes deste instante deixam de valer
+  expiresAt: timestamp("expiresAt").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 // --- DOCUMENT TYPE TEMPLATES (admin configura quais docs exigir por tipo de solicitaÃ§Ã£o) ---
 export const documentTypeTemplates = smartdocSchema.table("document_type_templates", {
   id: serial("id").primaryKey(),

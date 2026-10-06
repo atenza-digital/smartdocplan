@@ -12,6 +12,7 @@ import { notifyVacationDeadlines } from "../vacations";
 import { runDocumentJobs } from "../documentJobs";
 import { createContext } from "./context";
 import { clientInfoMiddleware } from "./clientInfo";
+import { cleanupSessionRevocations } from "./sessionRevocation";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -70,6 +71,8 @@ async function startServer() {
   const checkDocuments = () => runDocumentJobs().catch(error => console.error("[Documentos] Falha na rotina de documentos:", error.message));
   void checkDocuments();
   setInterval(checkDocuments, 60 * 60 * 1000).unref();
+  const cleanupSessions = () => cleanupSessionRevocations().catch(error => console.error("[Sessões] Falha na limpeza:", error.message));
+  setInterval(cleanupSessions, 60 * 60 * 1000).unref();
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {

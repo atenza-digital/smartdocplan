@@ -42,13 +42,15 @@ function buildRows(
       tipo: resumo,
       celulas: recentPeriods(resumo.periodicidade, quantidade, today).map((inicio) => {
         const doc = docs.find((d) => d.recurringTypeId === tipo.id && d.competencia === inicio) ?? null;
+        const aplica = applies(tipo, inicio) || !!doc;
         return {
           competencia: inicio,
           rotulo: formatPeriod(inicio, resumo.periodicidade),
           fim: periodEnd(inicio, resumo.periodicidade),
-          aplica: applies(tipo, inicio) || !!doc,
+          aplica,
           prazo: recurringDeadline(inicio, resumo.periodicidade, resumo.prazoDias),
-          estado: recurringCellState(doc ? { status: doc.status ?? "valido" } : null, inicio, resumo.periodicidade, resumo.prazoDias, today),
+          // Período anterior à admissão (ou ao cadastro do tipo) não conta como atraso.
+          estado: !aplica ? ("nao_se_aplica" as const) : recurringCellState(doc ? { status: doc.status ?? "valido" } : null, inicio, resumo.periodicidade, resumo.prazoDias, today),
           documento: doc ? { id: doc.id, nome: doc.nome, fileUrl: doc.fileUrl } : null,
         };
       }),

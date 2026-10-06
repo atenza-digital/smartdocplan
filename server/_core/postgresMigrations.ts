@@ -22,6 +22,7 @@ export const MIGRATIONS = [
   "20261006_recurring_periodicity.sql",
   "20261007_health_campaigns.sql",
   "20261007_audit_client_info.sql",
+  "20261008_session_revocations.sql",
 ];
 
 const BASELINE = "0000_sleepy_cargill.sql";

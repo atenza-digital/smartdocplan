@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { requestClientInfo } from "./_core/clientInfo";
 import { summarizeUserAgent } from "@shared/userAgent";
+import { hashSessionToken, isTokenRevoked } from "./_core/sessionRevocation";
 
 describe("Auditoria — IP e navegador", () => {
   it("limpa IPv6 mapeado e corta o user-agent", () => {
@@ -86,5 +87,31 @@ describe("Migrations", () => {
     const arquivos = readdirSync("drizzle/migrations").filter((f) => f.endsWith(".sql")).sort();
     expect([...MIGRATIONS].sort()).toEqual(arquivos);
     expect(new Set(MIGRATIONS).size).toBe(MIGRATIONS.length);
+  });
+});
+
+describe("Sessão encerrada (logout e troca de senha)", () => {
+  const hash = hashSessionToken("token-a");
+
+  it("token do logout é recusado; outro token do mesmo usuário continua", () => {
+    const rows = [{ tokenHash: hash, revokedBefore: null }];
+    expect(isTokenRevoked(rows, hash, 1_800_000_000)).toBe(true);
+    expect(isTokenRevoked(rows, hashSessionToken("token-b"), 1_800_000_000)).toBe(false);
+  });
+
+  it("troca de senha recusa tokens emitidos antes do corte e aceita o novo", () => {
+    const rows = [{ tokenHash: null, revokedBefore: new Date(1_800_000_000 * 1000) }];
+    expect(isTokenRevoked(rows, hash, 1_799_999_999)).toBe(true);
+    expect(isTokenRevoked(rows, hash, 1_800_000_000)).toBe(false);
+    // token antigo, sem `iat`
+    expect(isTokenRevoked(rows, hash, 0)).toBe(true);
+  });
+
+  it("sem registros, o token vale", () => {
+    expect(isTokenRevoked([], hash, 0)).toBe(false);
+  });
+
+  it("a migration da tabela está na lista do executor", () => {
+    expect(MIGRATIONS).toContain("20261008_session_revocations.sql");
   });
 });
