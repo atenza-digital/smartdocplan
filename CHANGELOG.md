@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Correção: a separação manual das bibliotecas em arquivos próprios deixava a tela em branco no build de produção (dependência circular entre os pacotes); o Vite volta a dividir os arquivos sozinho, e as telas continuam carregando sob demanda.
 - Deploy de homologação: grava `APP_ENV=Homologação` no `.env` do servidor (ou o valor da variável `APP_ENV` do GitHub), sem sobrescrever um `APP_ENV` já definido no secret.
 - Segurança: sair da plataforma encerra a sessão também no servidor (o mesmo token deixa de valer) e trocar a senha encerra as outras sessões do usuário; quem já está logado continua logado. Nova tabela `session_revocations` (migration só de adição), limpa de hora em hora.
 - Segurança: o administrador inicial só é criado com a senha da variável `ADMIN_INITIAL_PASSWORD`; a senha deixou de ficar no código e de aparecer no log.
@@ -14,7 +15,7 @@
 - Migrations unificadas: um único executor (`server/_core/postgresMigrations.ts`) aplica a base inicial em banco vazio e as migrations incrementais; removidos o executor antigo de MySQL, o script avulso `migrate-v2.mjs` e o `db:push` do drizzle-kit (que poderia recriar tabelas). Banco existente não muda; banco novo sobe com estrutura idêntica.
 - Deploy: a porta direta da aplicação passa a escutar só no próprio servidor por padrão (`APP_BIND_IP=127.0.0.1`); o acesso público fica só pelo Traefik com HTTPS, e a conferência pós-deploy usa o domínio.
 - Configurações (admin): o cartão "Sobre a Plataforma" mostra PostgreSQL (antes "MySQL 8.0"), a versão real do sistema e o status da conexão com o banco verificado na hora.
-- Desempenho: cada tela é carregada sob demanda e as bibliotecas grandes ficam em arquivos próprios (cache do navegador); o arquivo principal caiu de 2,2 MB para cerca de 150 KB e os gráficos só são baixados no BI.
+- Desempenho: cada tela é carregada sob demanda e as bibliotecas grandes ficam em arquivos próprios (cache do navegador); o arquivo principal caiu de 2,2 MB para cerca de 720 KB.
 - Segurança: login e troca de senha bloqueiam por 15 minutos após 5 erros do mesmo e-mail (ou 20 do mesmo IP) em 15 minutos, com mensagem "Muitas tentativas"; login, falhas e bloqueios passam a ser registrados na auditoria (e-mail mascarado).
 - Auditoria: cada registro grava o IP e o navegador de quem fez a ação (visíveis só ao Administrador Geral, por serem dados pessoais); o servidor passa a considerar o IP real repassado pelo proxy.
 - Calendário da saúde (admin › Calendário da saúde): campanhas mensais com banner que cada pessoa pode fechar, faixa e laço no topo e a cor da campanha aplicada à plataforma inteira (ajustada para manter contraste; desligada no alto contraste). As 12 campanhas do ano vêm como rascunho para revisão, só o Administrador Geral ativa e há "Ver tema na plataforma" para pré-visualizar só no próprio navegador.
