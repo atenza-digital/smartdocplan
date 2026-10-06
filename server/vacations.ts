@@ -23,6 +23,8 @@ import {
 import { getDb } from "./db";
 import { protectedProcedure, router } from "./_core/trpc";
 import { saveDocumentFile, validateDocumentFile } from "./uploadFiles";
+import { buildVacationSuggestions } from "./vacationSuggestions";
+import { auditClientFields } from "./_core/clientInfo";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -48,7 +50,7 @@ function access(user: User, companyId: number, write = false) {
 }
 async function database() {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new Error("Banco de dados indisponível.");
   return db;
 }
 async function period(
@@ -151,6 +153,7 @@ async function event(
   await tx
     .insert(auditLogs)
     .values({
+      ...auditClientFields(),
       companyId: record.companyId,
       userId: user.id,
       action: `ferias_${action}`,
@@ -194,6 +197,14 @@ async function notify(
       );
 }
 export const vacationsRouter = router({
+  /** Próximas férias sugeridas pelos parâmetros da empresa (a partir da admissão). Uma por colaborador. */
+  suggestions: protectedProcedure
+    .input(z.object({ companyId: id, employeeId: id.optional() }))
+    .query(async ({ ctx, input }) => {
+      access(ctx.user, input.companyId);
+      const db = await database();
+      return buildVacationSuggestions(db, { companyId: input.companyId, employeeIds: input.employeeId ? [input.employeeId] : undefined });
+    }),
   list: protectedProcedure
     .input(z.object({ companyId: id, employeeId: id.optional() }))
     .query(async ({ ctx, input }) => {

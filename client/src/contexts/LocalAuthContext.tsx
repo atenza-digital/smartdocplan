@@ -70,7 +70,8 @@ export function LocalAuthProvider({ children }: { children: React.ReactNode }) {
       credentials: "include",
       body: JSON.stringify({ email, password }),
     });
-    const data = await res.json();
+    // Resposta que não seja JSON (ex.: proxy fora do ar) não pode quebrar a tela de login.
+    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       setState(s => ({ ...s, loading: false, error: data.error ?? "Erro ao fazer login." }));
       throw new Error(data.error ?? "Erro ao fazer login.");

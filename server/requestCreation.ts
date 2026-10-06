@@ -16,6 +16,7 @@ import {
   requestDocumentUploads,
   auditLogs,
 } from "../drizzle/schema";
+import { auditClientFields } from "./_core/clientInfo";
 
 const id = z.number().int().positive();
 export const requestCreationInput = z.object({
@@ -44,7 +45,7 @@ export async function createRequestWithRequirements(
   userId: number
 ) {
   const db = await getDb();
-  if (!db) throw new Error("DB unavailable");
+  if (!db) throw new Error("Banco de dados indisponível.");
   return db.transaction(async tx => {
     const [company] = await tx
       .select()
@@ -147,6 +148,7 @@ export async function createRequestWithRequirements(
     await tx
       .insert(auditLogs)
       .values({
+        ...auditClientFields(),
         userId,
         companyId: input.companyId,
         action: "criou_solicitacao",

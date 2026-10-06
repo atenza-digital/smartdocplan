@@ -5,12 +5,14 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerLocalAuthRoutes, seedAdminUser } from "./localAuth";
-import { runAutoMigrations } from "./migrations";
 import { runPostgresMigrations } from "./postgresMigrations";
 import { appRouter } from "../routers";
 import { registerDocumentAccess } from "../documentAccess";
 import { notifyVacationDeadlines } from "../vacations";
+import { runDocumentJobs } from "../documentJobs";
 import { createContext } from "./context";
+import { clientInfoMiddleware } from "./clientInfo";
+import { cleanupSessionRevocations } from "./sessionRevocation";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -34,6 +36,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // Um proxy na frente (Traefik): req.ip passa a ser o IP real do usuário. Não usar `true`, para não confiar em X-Forwarded-For forjado.
+  app.set("trust proxy", 1);
+  app.use(clientInfoMiddleware);
   const server = createServer(app);
   // Do not serve a new version against an incompatible PostgreSQL schema.
   if (process.env.DATABASE_URL?.startsWith("postgres")) await runPostgresMigrations();
@@ -44,12 +49,6 @@ async function startServer() {
   registerLocalAuthRoutes(app);
   // OAuth callback under /api/oauth/callback (mantido para compat)
   registerOAuthRoutes(app);
-  // Executar migrações automáticas (sem crashar o servidor se falhar)
-  try {
-    await runAutoMigrations();
-  } catch (migrationErr: any) {
-    console.error("[Migration] Erro inesperado nas migrações:", migrationErr.message);
-  }
   // Seed do admin inicial
   try {
     await seedAdminUser();
@@ -69,6 +68,11 @@ async function startServer() {
   const checkVacationDeadlines = () => notifyVacationDeadlines().catch(error => console.error("[Férias] Falha ao verificar prazos:", error.message));
   void checkVacationDeadlines();
   setInterval(checkVacationDeadlines, 60 * 60 * 1000).unref();
+  const checkDocuments = () => runDocumentJobs().catch(error => console.error("[Documentos] Falha na rotina de documentos:", error.message));
+  void checkDocuments();
+  setInterval(checkDocuments, 60 * 60 * 1000).unref();
+  const cleanupSessions = () => cleanupSessionRevocations().catch(error => console.error("[Sessões] Falha na limpeza:", error.message));
+  setInterval(cleanupSessions, 60 * 60 * 1000).unref();
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
   } else {

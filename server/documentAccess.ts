@@ -6,6 +6,7 @@ import { getDb } from "./db";
 import { uploadRoot } from "./uploadFiles";
 import { getUserFromLocalSession } from "./_core/localAuth";
 import {
+  companies,
   companyDocuments,
   employeeDocuments,
   requestDocumentUploads,
@@ -18,6 +19,7 @@ import {
   isHealthCategory,
   isPlatformUser,
 } from "../shared/permissions";
+import { auditClientFields } from "./_core/clientInfo";
 
 // Keep legacy URLs working, but never allow them to fall through to static serving.
 export function registerDocumentAccess(app: Express) {
@@ -57,13 +59,34 @@ export function registerDocumentAccess(app: Express) {
         .select({
           companyId: employeeDocuments.companyId,
           categoria: employeeDocuments.categoria,
+          status: employeeDocuments.status,
         })
         .from(employeeDocuments)
         .where(eq(employeeDocuments.fileUrl, fileUrl));
+      // Documento excluído (exclusão lógica) só continua acessível à plataforma, para auditoria.
+      const deletedForUser =
+        !isPlatformUser(user.role) &&
+        employeeFiles.length > 0 &&
+        employeeFiles.every(r => r.status === "excluido");
       const companyFiles = await db
         .select({ companyId: companyDocuments.companyId })
         .from(companyDocuments)
         .where(eq(companyDocuments.fileUrl, fileUrl));
+      // Logo da empresa: liberada para a plataforma e para a própria empresa, sem registro de acesso.
+      const logoOwners = await db
+        .select({ companyId: companies.id })
+        .from(companies)
+        .where(eq(companies.logoUrl, fileUrl));
+      if (logoOwners.length) {
+        if (!isPlatformUser(user.role) && !logoOwners.some(r => r.companyId === user.companyId)) {
+          res.sendStatus(404);
+          return;
+        }
+        await access(path);
+        res.set("Cache-Control", "private, max-age=300");
+        res.sendFile(path, { dotfiles: "deny" });
+        return;
+      }
       const vacationFiles = await db
         .select({ companyId: vacations.companyId })
         .from(vacations)
@@ -80,6 +103,7 @@ export function registerDocumentAccess(app: Express) {
         ) || employeeFiles.some(r => isHealthCategory(r.categoria));
       if (
         !records.length ||
+        deletedForUser ||
         (sensitive && !canAccessHealthData(user.role)) ||
         !records.every(
           r => isPlatformUser(user.role) || r.companyId === user.companyId
@@ -100,6 +124,7 @@ export function registerDocumentAccess(app: Express) {
         await access(path);
       }
       await db.insert(auditLogs).values({
+        ...auditClientFields(),
         userId: user.id,
         companyId: records[0].companyId,
         action: "acessou_documento",

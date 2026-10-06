@@ -62,6 +62,8 @@ printf '%s\n' \
   "TRAEFIK_ENTRYPOINTS=${TRAEFIK_ENTRYPOINTS:-websecure}" \
   "TRAEFIK_CERTRESOLVER=${TRAEFIK_CERTRESOLVER:-letsencrypt}" \
   "TRAEFIK_DOCKER_NETWORK=${TRAEFIK_DOCKER_NETWORK:-smartdocplan_net}" >> .env.next
+# Nome do ambiente no cartão "Sobre a Plataforma"; o valor do secret, se existir, prevalece.
+grep -q '^APP_ENV=' .env.next || printf 'APP_ENV=%s\n' "${APP_ENV:-Homologação}" >> .env.next
 changed=1
 mv .env.next .env
 cp incoming/docker-compose.yml docker-compose.yml

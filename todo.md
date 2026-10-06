@@ -1,5 +1,7 @@
 # Smart Doc Plan - TODO
 
+> Histórico do início do projeto. O registro do que foi entregue fica no `CHANGELOG.md` e as melhorias pendentes no `BACKLOG.md`. Revisado em 06/10/2026.
+
 ## Sistema de Temas
 - [x] Configurar variáveis CSS com paleta de cores da marca (teal/turquesa) no index.css
 - [x] Definir tokens de cor para tema claro (.light) e tema escuro (.dark)
@@ -69,10 +71,10 @@
 
 ## Pendências Futuras
 - [ ] Exportação de dossiê em PDF/ZIP
-- [ ] Alertas automáticos de vencimento (90/30/7 dias)
+- [x] Alertas automáticos de vencimento (30 dias, 7 dias e vencido)
 - [ ] Integração automática de documentos ao dossiê ao concluir solicitação
-- [ ] Obras/CNOs: cadastro e gestão
-- [ ] Cargos: cadastro por empresa
+- [x] Obras/CNOs: cadastro e gestão (locais de trabalho, com CEP)
+- [x] Cargos: cadastro por empresa (funções, em Parâmetros da empresa)
 
 ## Correções e Novas Funcionalidades (Sprint 2)
 
@@ -103,7 +105,7 @@
 
 ### Kanban de Solicitações (Admin Interno)
 - [x] Criar AdminKanban com colunas: Nova → Em Análise → Aguardando Docs → Aprovado → Concluído
-- [ ] Drag-and-drop de cards entre colunas (pendente)
+- [x] Drag-and-drop de cards entre colunas, com confirmação
 - [x] Card com dados do colaborador, tipo de solicitação e empresa
 - [x] Modal de avaliação com parecer técnico e mudança de status
 - [ ] Ao concluir: integrar documentos gerados ao dossiê do colaborador (pendente)
@@ -113,4 +115,4 @@
 - [x] Abertura de chamados de suporte
 - [x] Dashboard com indicadores dos colaboradores da empresa
 - [x] Acesso ao dossiê dos colaboradores vinculados
-- [ ] Download de relatórios em PDF (pendente)
+- [x] Download de relatórios em PDF (BI da empresa e global)

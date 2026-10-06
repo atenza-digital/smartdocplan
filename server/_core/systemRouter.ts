@@ -4,6 +4,17 @@ import { adminProcedure, publicProcedure, router } from "./trpc";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+
+// Versão do sistema (package.json), lida uma vez na subida.
+const APP_VERSION = (() => {
+  try {
+    return (JSON.parse(readFileSync(resolve("package.json"), "utf-8")) as { version?: string }).version ?? null;
+  } catch {
+    return null;
+  }
+})();
 
 export const systemRouter = router({
   health: publicProcedure
@@ -15,9 +26,16 @@ export const systemRouter = router({
     .query(async () => {
       try {
         const db = await getDb();
-        if (!db) throw new Error("Database unavailable");
+        if (!db) throw new Error("Banco de dados indisponível.");
         await db.execute(sql`SELECT 1`);
-        return { ok: true, version: process.env.BUILD_SHA || "development" };
+        return {
+          ok: true,
+          version: process.env.BUILD_SHA || "development",
+          appVersion: APP_VERSION,
+          // APP_ENV distingue homologação de produção (as duas rodam com NODE_ENV=production).
+          ambiente: process.env.APP_ENV?.trim() || (process.env.NODE_ENV === "production" ? "Produção" : "Desenvolvimento"),
+          banco: "PostgreSQL",
+        };
       } catch {
         throw new TRPCError({
           code: "SERVICE_UNAVAILABLE",

@@ -66,7 +66,7 @@ export default function PlatformCompanyScopeSwitch({
       </div>
 
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Visão da empresa</DialogTitle>
           </DialogHeader>

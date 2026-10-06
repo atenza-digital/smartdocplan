@@ -27,6 +27,17 @@ import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { canCreateRequests, canManageRequestWorkflow } from "@shared/permissions";
+import { NEXT_REQUEST_STATUS, canTransitionRequest } from "@shared/requestStatus";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import { KanbanCard, KanbanColumn, KanbanDragOverlay } from "@/components/kanban";
 
 const STATUS_COLUMNS = [
   { key: "nova", label: "Novas", color: "bg-blue-500", textColor: "text-blue-700 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-950/30", border: "border-blue-200 dark:border-blue-800" },
@@ -54,15 +65,7 @@ const PRIORIDADE_COLORS: Record<string, string> = {
   urgente: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
 };
 
-const NEXT_STATUS: Record<string, string[]> = {
-  nova: ["em_analise", "aguardando_documentos", "rejeitado"],
-  em_analise: ["aguardando_documentos", "aguardando_correcao", "aprovado", "rejeitado"],
-  aguardando_documentos: ["em_analise", "aprovado", "rejeitado"],
-  aguardando_correcao: ["em_analise", "rejeitado"],
-  aprovado: ["concluido", "rejeitado"],
-  concluido: [],
-  rejeitado: [],
-};
+const NEXT_STATUS: Record<string, readonly string[]> = NEXT_REQUEST_STATUS;
 
 type ViewMode = "kanban" | "lista";
 
@@ -79,10 +82,39 @@ export default function AdminSolicitacoes() {
   const [novoStatus, setNovoStatus] = useState("");
   const [observacoes, setObservacoes] = useState("");
 
-  const { data: solicitacoes = [], isLoading, refetch } = trpc.requests.list.useQuery({
-    companyId: parseInt(filterEmpresa, 10),
-  });
+  const [draggingStatus, setDraggingStatus] = useState<string | null>(null);
+  const [activeId, setActiveId] = useState<number | null>(null);
+  const [statusFromDrop, setStatusFromDrop] = useState(false);
+
+  const listInput = { companyId: parseInt(filterEmpresa, 10) };
+  const { data: solicitacoes = [], isLoading, refetch } = trpc.requests.list.useQuery(listInput);
   const { data: empresas = [] } = trpc.companies.list.useQuery();
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setDraggingStatus((event.active.data.current?.status as string) ?? null);
+    setActiveId(Number(event.active.id));
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setDraggingStatus(null);
+    setActiveId(null);
+    const from = event.active.data.current?.status as string | undefined;
+    const to = event.over?.id as string | undefined;
+    if (!from || !to || from === to) return;
+    if (!canTransitionRequest(from, to)) {
+      toast.error("Essa mudança de status não é permitida.");
+      return;
+    }
+    const request = solicitacoes.find((item) => item.id === event.active.id);
+    if (!request) return;
+    // Soltar o card abre a avaliação com o novo status já escolhido; a mudança só vale ao confirmar.
+    openDetail(request, to);
+  };
 
   const updateStatusMutation = trpc.requests.updateStatus.useMutation({
     onSuccess: () => {
@@ -109,12 +141,100 @@ export default function AdminSolicitacoes() {
     return empresa ? empresa.nomeFantasia || empresa.razaoSocial : `Empresa #${companyId}`;
   };
 
-  const openDetail = (request: any) => {
+  const activeRequest = activeId !== null ? solicitacoes.find((item) => item.id === activeId) ?? null : null;
+
+  const renderCardContent = (request: any) => (
+    <CardContent className="space-y-2 p-3">
+      <div className="flex items-start justify-between gap-2">
+        <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{request.titulo}</p>
+        <Badge className={`shrink-0 text-xs ${PRIORIDADE_COLORS[request.prioridade]}`}>{request.prioridade}</Badge>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <FileText className="h-3 w-3" />
+        <span>{TIPO_LABELS[request.tipo] ?? request.tipo}</span>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Building2 className="h-3 w-3" />
+        <span className="truncate">{getEmpresaNome(request.companyId)}</span>
+      </div>
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <Calendar className="h-3 w-3" />
+        <span>{format(new Date(request.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
+      </div>
+    </CardContent>
+  );
+
+  const openDetail = (request: any, statusInicial?: string) => {
+    setStatusFromDrop(!!statusInicial);
     setSelectedRequest(request);
-    setNovoStatus(request.status);
-    setObservacoes(request.observacoes ?? "");
+    setNovoStatus(statusInicial ?? request.status);
+    setObservacoes(statusInicial ? "" : request.observacoes ?? "");
     setDetailOpen(true);
   };
+
+  const renderReview = () => (
+    canReview ? (
+      <>
+        {(NEXT_STATUS[selectedRequest.status]?.length ?? 0) > 0 && (
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-foreground">Ações rápidas:</p>
+            <div className="flex flex-wrap gap-2">
+              {NEXT_STATUS[selectedRequest.status].map((status) => {
+                const column = STATUS_COLUMNS.find((item) => item.key === status);
+                return (
+                  <Button
+                    key={status}
+                    size="sm"
+                    variant="outline"
+                    className={`border-current text-xs ${column?.textColor}`}
+                    onClick={() => setNovoStatus(status)}
+                  >
+                    <ArrowRight className="mr-1 h-3 w-3" />
+                    {column?.label ?? status}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1.5">
+          <Label>Status da solicitação</Label>
+          <Select value={novoStatus} onValueChange={setNovoStatus}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {STATUS_COLUMNS.filter((column) => canTransitionRequest(selectedRequest.status, column.key)).map((column) => (
+                <SelectItem key={column.key} value={column.key}>
+                  {column.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label>
+            {novoStatus === "rejeitado" && selectedRequest.status !== "rejeitado" ? "Motivo da rejeição *" : "Observações / parecer"}
+          </Label>
+          <Textarea
+            value={observacoes}
+            onChange={(event) => setObservacoes(event.target.value)}
+            placeholder="Adicione observações, solicitações de documentos ou parecer técnico..."
+            rows={3}
+            className="resize-none"
+          />
+        </div>
+      </>
+    ) : (
+      <Card className="border-border bg-muted/30">
+        <CardContent className="p-4 text-sm text-muted-foreground">
+          Esse perfil possui acesso de leitura. A movimentação de status fica restrita a administradores e analistas da plataforma.
+        </CardContent>
+      </Card>
+    )
+  );
 
   return (
     <AdminLayout title="Solicitações">
@@ -128,7 +248,7 @@ export default function AdminSolicitacoes() {
                 : "Acompanhe as solicitações em modo somente leitura."}
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {canCreate && (
               <Button asChild variant="outline" size="sm">
                 <Link href="/admin/solicitacoes/nova">
@@ -198,57 +318,44 @@ export default function AdminSolicitacoes() {
         </div>
 
         {viewMode === "kanban" && (
+          <DndContext
+            sensors={sensors}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onDragCancel={() => {
+              setDraggingStatus(null);
+              setActiveId(null);
+            }}
+          >
+          {canReview && (
+            <p className="-mt-2 text-xs text-muted-foreground">Arraste um card para outra coluna: abre a avaliação com o novo status para você escrever uma observação e confirmar.</p>
+          )}
           <div className="overflow-x-auto pb-4">
             <div className="flex min-w-max gap-4">
               {STATUS_COLUMNS.map((column) => {
                 const cards = filtered.filter((request) => request.status === column.key);
+                const dimmed = !!draggingStatus && draggingStatus !== column.key && !canTransitionRequest(draggingStatus, column.key);
 
                 return (
-                  <div key={column.key} className={`flex w-72 flex-col rounded-xl border ${column.border} ${column.bg}`}>
-                    <div className="flex items-center justify-between border-b border-inherit px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className={`h-2.5 w-2.5 rounded-full ${column.color}`} />
-                        <span className={`text-sm font-semibold ${column.textColor}`}>{column.label}</span>
-                      </div>
-                      <Badge variant="outline" className={`border-current text-xs ${column.textColor}`}>
-                        {cards.length}
-                      </Badge>
-                    </div>
-
-                    <div className="max-h-[calc(100vh-300px)] flex-1 space-y-2 overflow-y-auto p-3">
+                  <KanbanColumn key={column.key} column={column} count={cards.length} dimmed={dimmed}>
                       {cards.length === 0 && <div className="py-8 text-center text-xs text-muted-foreground/50">Nenhuma solicitação</div>}
                       {cards.map((request) => (
-                        <Card
+                        <KanbanCard
                           key={request.id}
-                          className="cursor-pointer border-border/60 bg-background/80 transition-all hover:border-primary/30 hover:shadow-md"
-                          onClick={() => openDetail(request)}
+                          item={request}
+                          canDrag={canReview && (NEXT_STATUS[request.status]?.length ?? 0) > 0}
+                          onOpen={() => openDetail(request)}
                         >
-                          <CardContent className="space-y-2 p-3">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className="line-clamp-2 text-sm font-medium leading-tight text-foreground">{request.titulo}</p>
-                              <Badge className={`shrink-0 text-xs ${PRIORIDADE_COLORS[request.prioridade]}`}>{request.prioridade}</Badge>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <FileText className="h-3 w-3" />
-                              <span>{TIPO_LABELS[request.tipo] ?? request.tipo}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Building2 className="h-3 w-3" />
-                              <span className="truncate">{getEmpresaNome(request.companyId)}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                              <Calendar className="h-3 w-3" />
-                              <span>{format(new Date(request.createdAt), "dd/MM/yyyy", { locale: ptBR })}</span>
-                            </div>
-                          </CardContent>
-                        </Card>
+                          {renderCardContent(request)}
+                        </KanbanCard>
                       ))}
-                    </div>
-                  </div>
+                  </KanbanColumn>
                 );
               })}
             </div>
           </div>
+          <KanbanDragOverlay>{activeRequest ? renderCardContent(activeRequest) : null}</KanbanDragOverlay>
+          </DndContext>
         )}
 
         {viewMode === "lista" && (
@@ -301,7 +408,7 @@ export default function AdminSolicitacoes() {
       </div>
 
       <Dialog open={detailOpen} onOpenChange={(open) => !open && setDetailOpen(false)}>
-        <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardList className="h-5 w-5 text-primary" />
@@ -336,6 +443,15 @@ export default function AdminSolicitacoes() {
                 )}
               </div>
 
+              {statusFromDrop && (
+                <div className="space-y-4 rounded-lg border border-primary/40 bg-primary/5 p-4">
+                  <p className="text-sm font-medium text-foreground">
+                    Confirme a mudança de status e, se quiser, deixe uma observação.
+                  </p>
+                  {renderReview()}
+                </div>
+              )}
+
               <RequestDocumentos
                 requestId={selectedRequest.id}
                 tipoSolicitacao={selectedRequest.tipo}
@@ -344,65 +460,7 @@ export default function AdminSolicitacoes() {
                 readOnly={!canReview}
               />
 
-              {canReview ? (
-                <>
-                  {(NEXT_STATUS[selectedRequest.status]?.length ?? 0) > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium text-foreground">Ações rápidas:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {NEXT_STATUS[selectedRequest.status].map((status) => {
-                          const column = STATUS_COLUMNS.find((item) => item.key === status);
-                          return (
-                            <Button
-                              key={status}
-                              size="sm"
-                              variant="outline"
-                              className={`border-current text-xs ${column?.textColor}`}
-                              onClick={() => setNovoStatus(status)}
-                            >
-                              <ArrowRight className="mr-1 h-3 w-3" />
-                              {column?.label ?? status}
-                            </Button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-1.5">
-                    <Label>Status da solicitação</Label>
-                    <Select value={novoStatus} onValueChange={setNovoStatus}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUS_COLUMNS.map((column) => (
-                          <SelectItem key={column.key} value={column.key}>
-                            {column.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label>Observações / parecer</Label>
-                    <Textarea
-                      value={observacoes}
-                      onChange={(event) => setObservacoes(event.target.value)}
-                      placeholder="Adicione observações, solicitações de documentos ou parecer técnico..."
-                      rows={3}
-                      className="resize-none"
-                    />
-                  </div>
-                </>
-              ) : (
-                <Card className="border-border bg-muted/30">
-                  <CardContent className="p-4 text-sm text-muted-foreground">
-                    Esse perfil possui acesso de leitura. A movimentação de status fica restrita a administradores e analistas da plataforma.
-                  </CardContent>
-                </Card>
-              )}
+              {!statusFromDrop && renderReview()}
             </div>
           )}
 
@@ -419,7 +477,11 @@ export default function AdminSolicitacoes() {
                     observacoes: observacoes || undefined,
                   })
                 }
-                disabled={!novoStatus || updateStatusMutation.isPending}
+                disabled={
+                  !novoStatus ||
+                  updateStatusMutation.isPending ||
+                  (novoStatus === "rejeitado" && selectedRequest?.status !== "rejeitado" && !observacoes.trim())
+                }
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {updateStatusMutation.isPending ? "Salvando..." : "Salvar avaliação"}

@@ -20,6 +20,7 @@ import {
   ChevronRight,
   ClipboardList,
   FileCheck2,
+  Ribbon,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -28,12 +29,14 @@ import {
   Settings,
   Sun,
   Ticket,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canManagePlatformSettings } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
+import { CampaignBanner, CampaignPreviewBar, CampaignRibbon, CampaignStrip, CampaignTheme, useActiveCampaign } from "@/components/HealthCampaign";
 import NotificationCenter from "@/components/NotificationCenter";
 import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
@@ -52,12 +55,14 @@ const navItems: NavItem[] = [
   { href: "/admin/estrutura", icon: Building2, label: "Estrutura da empresa" },
   { href: "/admin/ferias", icon: ClipboardList, label: "Férias" },
   { href: "/admin/solicitacoes", icon: ClipboardList, label: "Solicitações" },
+  { href: "/admin/validacao-documentos", icon: FileCheck2, label: "Validação de documentos" },
   { href: "/admin/chamados", icon: Ticket, label: "Chamados" },
   { href: "/admin/auditoria", icon: ScrollText, label: "Auditoria" },
   { href: "/admin/bi", icon: BarChart3, label: "BI Global" },
   { href: "/admin/usuarios", icon: Users, label: "Usuários", visible: canManagePlatformSettings },
   { href: "/admin/matriz-legal", icon: BookOpen, label: "Matriz Legal", visible: canManagePlatformSettings },
-  { href: "/admin/documentos", icon: FileCheck2, label: "Checklist Docs", visible: canManagePlatformSettings },
+  { href: "/admin/documentos", icon: FileCheck2, label: "Checklist de documentos", visible: canManagePlatformSettings },
+  { href: "/admin/campanhas", icon: Ribbon, label: "Calendário da saúde", visible: canManagePlatformSettings },
   { href: "/admin/configuracoes", icon: Settings, label: "Configurações", visible: canManagePlatformSettings },
 ];
 
@@ -71,6 +76,8 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
   const { user, logout } = useAuth();
+  // Campanha do calendário da saúde do mês (cor da plataforma, faixa, laço e banner).
+  const campanha = useActiveCampaign();
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -113,7 +120,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
 
   const roleLabel: Record<string, string> = {
     platform_admin: "Administrador",
-    platform_analyst: "Analista RH",
+    platform_analyst: "Analista de RH",
     platform_auditor: "Auditor",
   };
 
@@ -202,6 +209,9 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <CampaignTheme campaign={campanha} />
+        <CampaignPreviewBar />
+        <CampaignStrip campaign={campanha} />
         <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="ghost" size="icon" className="shrink-0 lg:hidden" onClick={() => setMobileOpen(true)}>
@@ -217,6 +227,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               {collapsed ? "Expandir menu" : "Recolher menu"}
             </Button>
             {title && <h1 className="truncate text-base font-semibold lg:text-lg">{title}</h1>}
+            <CampaignRibbon campaign={campanha} />
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
@@ -244,6 +255,12 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link href="/admin/perfil">
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Meu perfil
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleTheme}>
                   {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
                   {theme === "dark" ? "Tema Claro" : "Tema Escuro"}
@@ -258,7 +275,10 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">{children}</main>
+        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <CampaignBanner key={campanha?.id ?? 0} campaign={campanha} />
+          {children}
+        </main>
       </div>
     </div>
   );

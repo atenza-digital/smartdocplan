@@ -18,6 +18,8 @@ import {
   ChevronLeft,
   ChevronRight,
   ClipboardList,
+  FileStack,
+  SlidersHorizontal,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -25,12 +27,15 @@ import {
   Settings,
   Sun,
   Ticket,
+  UserRound,
   Users,
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { canSeeCompanySettings } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
+import { CampaignBanner, CampaignPreviewBar, CampaignRibbon, CampaignStrip, CampaignTheme, useActiveCampaign } from "@/components/HealthCampaign";
+import { trpc } from "@/lib/trpc";
 import NotificationCenter from "@/components/NotificationCenter";
 import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
@@ -47,12 +52,14 @@ const navItems: NavItem[] = [
   { href: "/empresa", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/empresa/solicitacoes", icon: ClipboardList, label: "Solicitações de RH" },
   { href: "/empresa/colaboradores", icon: Users, label: "Colaboradores" },
+  { href: "/empresa/documentos", icon: FileStack, label: "Documentos da Empresa" },
   { href: "/empresa/ferias", icon: ClipboardList, label: "Férias" },
   { href: "/empresa/pendencias", icon: AlertTriangle, label: "Pendências" },
   { href: "/empresa/chamados", icon: Ticket, label: "Chamados" },
   { href: "/empresa/bi", icon: BarChart3, label: "BI / Relatórios" },
-  { href: "/empresa/configuracoes", icon: Settings, label: "Configurações", visible: canSeeCompanySettings },
+  { href: "/empresa/parametros", icon: SlidersHorizontal, label: "Parâmetros da empresa", visible: canSeeCompanySettings },
   { href: "/empresa/estrutura", icon: Settings, label: "Estrutura da empresa", visible: canSeeCompanySettings },
+  { href: "/empresa/configuracoes", icon: Settings, label: "Configurações" },
 ];
 
 interface CompanyLayoutProps {
@@ -65,6 +72,12 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [location] = useLocation();
   const { user, logout, effectiveCompanyId } = useAuth();
+  // Campanha do calendário da saúde do mês (cor da plataforma, faixa, laço e banner).
+  const campanha = useActiveCampaign();
+  const { data: empresaAtual } = trpc.companies.get.useQuery(
+    { id: effectiveCompanyId ?? 0 },
+    { enabled: (effectiveCompanyId ?? 0) > 0 }
+  );
   const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
@@ -197,6 +210,9 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <CampaignTheme campaign={campanha} />
+        <CampaignPreviewBar />
+        <CampaignStrip campaign={campanha} />
         <header className="flex h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-card px-4 lg:px-6">
           <div className="flex min-w-0 items-center gap-3">
             <Button variant="ghost" size="icon" className="shrink-0 lg:hidden" onClick={() => setMobileOpen(true)}>
@@ -212,9 +228,17 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
               {collapsed ? "Expandir menu" : "Recolher menu"}
             </Button>
             {title && <h1 className="truncate text-base font-semibold lg:text-lg">{title}</h1>}
+            <CampaignRibbon campaign={campanha} />
           </div>
 
           <div className="flex shrink-0 items-center gap-1">
+            {empresaAtual?.logoUrl && (
+              <img
+                src={empresaAtual.logoUrl}
+                alt={`Logo de ${empresaAtual.nomeFantasia || empresaAtual.razaoSocial}`}
+                className="mr-2 hidden h-8 max-w-[120px] object-contain sm:block"
+              />
+            )}
             <PlatformCompanyScopeSwitch companyView />
             <NotificationCenter />
             <Button variant="ghost" size="icon" onClick={toggleTheme} className="text-muted-foreground">
@@ -239,6 +263,12 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
               </DropdownMenuTrigger>
 
               <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem asChild>
+                  <Link href="/empresa/perfil">
+                    <UserRound className="mr-2 h-4 w-4" />
+                    Meu perfil
+                  </Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem onClick={toggleTheme}>
                   {theme === "dark" ? <Sun className="mr-2 h-4 w-4" /> : <Moon className="mr-2 h-4 w-4" />}
                   {theme === "dark" ? "Tema Claro" : "Tema Escuro"}
@@ -254,6 +284,7 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
         </header>
 
         <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+          <CampaignBanner key={campanha?.id ?? 0} campaign={campanha} />
           {user?.role === "platform_admin" && !effectiveCompanyId ? (
             <div className="mb-4 rounded-xl border border-dashed border-border bg-card px-4 py-3 text-sm text-muted-foreground">
               Selecione uma empresa no topo para operar nesta visão.

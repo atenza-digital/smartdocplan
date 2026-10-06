@@ -40,6 +40,13 @@ import {
   isValidCpf,
   normalizeCpf,
 } from "@shared/formValidation";
+import { formatDateOnlyBr, getDocumentDateBounds } from "@shared/formValidation";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/files";
+import { AddressFields } from "@/components/AddressFields";
+import { emptyAddress, type AddressValue } from "@shared/address";
+
+// Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
+const DOC_DATES = getDocumentDateBounds();
 
 const PROCESS_OPTIONS = [
   { key: "admissao", label: "Admissão", description: "Novo ingresso na empresa." },
@@ -120,7 +127,7 @@ export default function EmpresaNovaSolicitacao() {
   const [cargoModalOpen, setCargoModalOpen] = useState(false);
   const [localModalOpen, setLocalModalOpen] = useState(false);
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
-  const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+  const [novoLocal, setNovoLocal] = useState<{ nome: string; cnos: string } & AddressValue>({ nome: "", cnos: "", ...emptyAddress });
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -219,7 +226,7 @@ export default function EmpresaNovaSolicitacao() {
         form.tipo === "admissao"
           ? { id: "hiring" as const, label: "Contratação", title: "Formato e prazo do contrato" }
           : null,
-        { id: "requirements" as const, label: "Requisitos", title: "Checklist Docs e Matriz Legal" },
+        { id: "requirements" as const, label: "Requisitos", title: "Checklist de documentos e Matriz Legal" },
         { id: "review" as const, label: "Revisão", title: "Conferência e abertura" },
       ].filter(Boolean) as Array<{ id: StepId; label: string; title: string }>,
     [form.tipo, isPlatformAdmin]
@@ -250,7 +257,7 @@ export default function EmpresaNovaSolicitacao() {
       await utils.worksites.list.invalidate({ companyId });
       toast.success("Frente / local cadastrado com sucesso!");
       setLocalModalOpen(false);
-      setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+      setNovoLocal({ nome: "", cnos: "", ...emptyAddress });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -348,7 +355,7 @@ export default function EmpresaNovaSolicitacao() {
     }
 
     if (form.dataNascimento) {
-      details.push(`Data de nascimento: ${new Date(form.dataNascimento).toLocaleDateString("pt-BR")}`);
+      details.push(`Data de nascimento: ${formatDateOnlyBr(form.dataNascimento)}`);
     }
 
     if (matchedEmployee) {
@@ -356,7 +363,7 @@ export default function EmpresaNovaSolicitacao() {
     }
 
     details.push("");
-    details.push(`Checklist Docs aplicável: ${documentTemplates.length} item(ns).`);
+    details.push(`Checklist de documentos aplicável: ${documentTemplates.length} item(ns).`);
     if (documentTemplates.length) {
       details.push(`Itens previstos: ${documentTemplates.map((item) => item.nome).join(", ")}`);
     }
@@ -542,9 +549,13 @@ export default function EmpresaNovaSolicitacao() {
       companyId,
       nome: novoLocal.nome.trim(),
       cnos: novoLocal.cnos.trim() || undefined,
+      cep: novoLocal.cep || undefined,
       endereco: novoLocal.endereco.trim() || undefined,
+      numero: novoLocal.numero.trim() || undefined,
+      complemento: novoLocal.complemento.trim() || undefined,
+      bairro: novoLocal.bairro.trim() || undefined,
       cidade: novoLocal.cidade.trim() || undefined,
-      estado: novoLocal.estado.trim().toUpperCase() || undefined,
+      estado: novoLocal.estado || undefined,
     });
   };
 
@@ -885,7 +896,7 @@ export default function EmpresaNovaSolicitacao() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileCheck2 className="h-5 w-5 text-primary" />
-                Checklist Docs aplicável ao processo
+                Checklist de documentos aplicável ao processo
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -893,7 +904,7 @@ export default function EmpresaNovaSolicitacao() {
                 <ClipboardCheck className="h-4 w-4" />
                 <AlertTitle>Checklist puxado pelo tipo de solicitação</AlertTitle>
                 <AlertDescription>
-                  Os itens abaixo vêm do módulo Checklist Docs, mas o anexo pode ser feito agora pelo solicitante ou depois por quem vai avaliar.
+                  Os itens abaixo vêm do módulo Checklist de documentos, mas o anexo pode ser feito agora pelo solicitante ou depois por quem vai avaliar.
                 </AlertDescription>
               </Alert>
 
@@ -961,7 +972,7 @@ export default function EmpresaNovaSolicitacao() {
                                 <p className="text-xs text-muted-foreground">
                                   {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
                                   {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
-                                  {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                                  {upload.validade ? ` • validade ${formatDateOnlyBr(upload.validade)}` : ""}
                                 </p>
                               </div>
                               <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
@@ -1008,7 +1019,7 @@ export default function EmpresaNovaSolicitacao() {
                           <p className="text-xs text-muted-foreground">
                             {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
                             {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
-                            {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                            {upload.validade ? ` • validade ${formatDateOnlyBr(upload.validade)}` : ""}
                           </p>
                         </div>
                         <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
@@ -1119,7 +1130,7 @@ export default function EmpresaNovaSolicitacao() {
                                 <p className="text-xs text-muted-foreground">
                                   {(upload.fileTamanho / 1024 / 1024).toFixed(2)} MB
                                   {upload.numeroDocumento ? ` • Nº ${upload.numeroDocumento}` : ""}
-                                  {upload.validade ? ` • validade ${new Date(upload.validade).toLocaleDateString("pt-BR")}` : ""}
+                                  {upload.validade ? ` • validade ${formatDateOnlyBr(upload.validade)}` : ""}
                                 </p>
                               </div>
                               <Button type="button" variant="ghost" size="icon" onClick={() => removePendingUpload(upload.id)}>
@@ -1362,7 +1373,7 @@ export default function EmpresaNovaSolicitacao() {
                 </CardHeader>
                 <CardContent className="space-y-4 text-sm">
                   <div className="rounded-2xl border border-border bg-muted/30 p-4">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Checklist Docs</p>
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Checklist de documentos</p>
                     <p className="mt-1 font-medium text-foreground">
                       {documentTemplates.length} item(ns) para {selectedProcess.label.toLowerCase()}
                     </p>
@@ -1402,7 +1413,7 @@ export default function EmpresaNovaSolicitacao() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-lg overflow-hidden">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Anexar documento</DialogTitle>
           </DialogHeader>
@@ -1415,10 +1426,10 @@ export default function EmpresaNovaSolicitacao() {
               <Label>Arquivo</Label>
               <Input
                 type="file"
-                accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+                accept={DOCUMENT_FILE_ACCEPT}
                 onChange={(event) => setSelectedUploadFile(event.target.files?.[0] ?? null)}
               />
-              <p className="text-xs text-muted-foreground">PDF, JPG, PNG, DOC ou DOCX com até 10MB.</p>
+              <p className="text-xs text-muted-foreground">PDF, PNG ou JPG até 10 MB.</p>
             </div>
             <div className="space-y-1.5">
               <Label>Número do documento</Label>
@@ -1432,7 +1443,7 @@ export default function EmpresaNovaSolicitacao() {
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax}
                   value={uploadForm.dataEmissao}
                   onChange={(event) => setUploadForm((current) => ({ ...current, dataEmissao: event.target.value }))}
                 />
@@ -1440,7 +1451,7 @@ export default function EmpresaNovaSolicitacao() {
               <div className="space-y-1.5">
                 <Label>Validade</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax}
                   value={uploadForm.validade}
                   onChange={(event) => setUploadForm((current) => ({ ...current, validade: event.target.value }))}
                 />
@@ -1457,7 +1468,7 @@ export default function EmpresaNovaSolicitacao() {
       </Dialog>
 
       <Dialog open={cargoModalOpen} onOpenChange={setCargoModalOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Cadastrar função</DialogTitle>
           </DialogHeader>
@@ -1491,7 +1502,7 @@ export default function EmpresaNovaSolicitacao() {
       </Dialog>
 
       <Dialog open={localModalOpen} onOpenChange={setLocalModalOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Cadastrar frente / local</DialogTitle>
           </DialogHeader>
@@ -1500,29 +1511,15 @@ export default function EmpresaNovaSolicitacao() {
               <Label>Nome</Label>
               <Input value={novoLocal.nome} onChange={(event) => setNovoLocal((current) => ({ ...current, nome: event.target.value }))} />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>CNOS</Label>
-                <Input value={novoLocal.cnos} onChange={(event) => setNovoLocal((current) => ({ ...current, cnos: event.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>UF</Label>
-                <Input maxLength={2} value={novoLocal.estado} onChange={(event) => setNovoLocal((current) => ({ ...current, estado: event.target.value }))} />
-              </div>
-            </div>
             <div className="space-y-1.5">
-              <Label>Cidade</Label>
-              <Input value={novoLocal.cidade} onChange={(event) => setNovoLocal((current) => ({ ...current, cidade: event.target.value }))} />
+              <Label>CNOS</Label>
+              <Input value={novoLocal.cnos} onChange={(event) => setNovoLocal((current) => ({ ...current, cnos: event.target.value }))} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Endereço</Label>
-              <Input
-                maxLength={255}
-                placeholder="Rua, número, complemento"
-                value={novoLocal.endereco}
-                onChange={(event) => setNovoLocal((current) => ({ ...current, endereco: event.target.value }))}
-              />
-            </div>
+            <AddressFields
+              idPrefix="nova-solicitacao-local"
+              value={novoLocal}
+              onChange={(address) => setNovoLocal((current) => ({ ...current, ...address }))}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLocalModalOpen(false)}>

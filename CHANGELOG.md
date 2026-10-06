@@ -1,0 +1,54 @@
+# Changelog
+
+## [Não publicado]
+
+- Deploy de homologação: grava `APP_ENV=Homologação` no `.env` do servidor (ou o valor da variável `APP_ENV` do GitHub), sem sobrescrever um `APP_ENV` já definido no secret.
+- Segurança: sair da plataforma encerra a sessão também no servidor (o mesmo token deixa de valer) e trocar a senha encerra as outras sessões do usuário; quem já está logado continua logado. Nova tabela `session_revocations` (migration só de adição), limpa de hora em hora.
+- Segurança: o administrador inicial só é criado com a senha da variável `ADMIN_INITIAL_PASSWORD`; a senha deixou de ficar no código e de aparecer no log.
+- Documentos recorrentes: períodos anteriores à admissão (ou ao cadastro do tipo) aparecem como "Não se aplica" em vez de "Atrasado".
+- `todo.md` revisado, com itens já entregues marcados.
+- Segurança: a consulta do usuário logado deixa de devolver o hash da senha ao navegador; acesso negado responde como "proibido" (403) em vez de erro interno; telas do admin só abrem para a equipe SmartDocPlan (Calendário da saúde só para o Administrador Geral) e "Estrutura da empresa" só para admin e RH da empresa.
+- Solicitações: anexos aceitam só PDF, PNG ou JPG até 10 MB, conferindo o conteúdo real do arquivo no servidor; datas de nascimento e validade deixam de aparecer um dia antes.
+- Tamanho das janelas: a preferência fica guardada por usuário (quem divide o computador não herda a do outro) e passa a valer também nas janelas de confirmação.
+- Ajustes: login com rolagem em zoom alto; avisos de dados da empresa levam a Parâmetros da empresa; textos acentuados ("Banco de dados indisponível.", "E-mail já cadastrado.", "Analista de RH", "Checklist de documentos"); quadro de permissões por perfil atualizado; "Sobre a Plataforma" mostra o ambiente definido em `APP_ENV` (ex.: Homologação).
+- Migrations unificadas: um único executor (`server/_core/postgresMigrations.ts`) aplica a base inicial em banco vazio e as migrations incrementais; removidos o executor antigo de MySQL, o script avulso `migrate-v2.mjs` e o `db:push` do drizzle-kit (que poderia recriar tabelas). Banco existente não muda; banco novo sobe com estrutura idêntica.
+- Deploy: a porta direta da aplicação passa a escutar só no próprio servidor por padrão (`APP_BIND_IP=127.0.0.1`); o acesso público fica só pelo Traefik com HTTPS, e a conferência pós-deploy usa o domínio.
+- Configurações (admin): o cartão "Sobre a Plataforma" mostra PostgreSQL (antes "MySQL 8.0"), a versão real do sistema e o status da conexão com o banco verificado na hora.
+- Desempenho: cada tela é carregada sob demanda e as bibliotecas grandes ficam em arquivos próprios (cache do navegador); o arquivo principal caiu de 2,2 MB para cerca de 150 KB e os gráficos só são baixados no BI.
+- Segurança: login e troca de senha bloqueiam por 15 minutos após 5 erros do mesmo e-mail (ou 20 do mesmo IP) em 15 minutos, com mensagem "Muitas tentativas"; login, falhas e bloqueios passam a ser registrados na auditoria (e-mail mascarado).
+- Auditoria: cada registro grava o IP e o navegador de quem fez a ação (visíveis só ao Administrador Geral, por serem dados pessoais); o servidor passa a considerar o IP real repassado pelo proxy.
+- Calendário da saúde (admin › Calendário da saúde): campanhas mensais com banner que cada pessoa pode fechar, faixa e laço no topo e a cor da campanha aplicada à plataforma inteira (ajustada para manter contraste; desligada no alto contraste). As 12 campanhas do ano vêm como rascunho para revisão, só o Administrador Geral ativa e há "Ver tema na plataforma" para pré-visualizar só no próprio navegador.
+- Documentos recorrentes (antes "mensais"): periodicidade semanal, quinzenal, mensal, bimestral, trimestral, semestral ou anual e prazo em dias após o fim do período; os mensais já cadastrados foram convertidos sem perda (prazo igual ao antigo dia limite). Grade por documento no dossiê e na empresa, pendências do último período encerrado e alertas de atraso.
+- Tamanho das janelas: todos os diálogos passam a seguir a preferência do usuário (Pequeno, Médio ou Grande); antes alguns tinham largura fixa.
+- Área da empresa reorganizada: "Parâmetros da empresa" reúne dados e endereço, funções, locais, matriz legal, documentos recorrentes e prazos de férias; "Configurações" passa a ter só preferências pessoais (tema, acessibilidade, tamanho das janelas e atalho para Meu perfil), disponível para todos os perfis.
+- Parâmetros da empresa (nova tela no menu): meses até adquirir férias e meses para solicitar, contados da admissão (padrão 12 + 1). O formulário de férias e o dossiê sugerem o próximo período aquisitivo e o prazo, e admin, RH e equipe SmartDocPlan recebem aviso quando o colaborador adquire férias e quando o limite para solicitar se aproxima ou vence.
+- Colaboradores em abas (Ativos, Em efetivação e Desligados), cada uma com seus filtros, busca no servidor (nome, e-mail, telefone ou CPF), contagem no rótulo e paginação de 12 por página; a aba fica no link da página.
+- Endereço com CEP: locais de trabalho e empresa ganham CEP, número, complemento e bairro; ao digitar o CEP, rua, bairro, cidade e UF são preenchidos automaticamente (ViaCEP), com preenchimento manual se o CEP não existir ou o serviço falhar. O endereço da empresa segue pela aprovação de alteração cadastral.
+- Equipe SmartDocPlan: dossiê do colaborador no admin (/admin/colaboradores/:id; auditor só consulta), fila "Validação de documentos" no menu e liberação, conformidade e link ao dossiê na ficha da empresa.
+- Alertas: aviso no sino para admin e RH da empresa e para a equipe SmartDocPlan quando um documento (de colaborador ou da empresa) vence em até 30 dias, em até 7 dias ou venceu, e quando um documento mensal passa do prazo; sem repetição e, para dados de saúde, só para quem pode vê-los.
+- Documentos da Empresa: módulo próprio no menu (/empresa/documentos) com documentos legais, histórico de versões e documentos mensais da empresa; também na ficha da empresa no admin (auditor só consulta).
+- Contadores de documentos da empresa (painel, módulo e BI) consideram só a versão atual de cada tipo e reconhecem o tipo pelo código ou pelo nome; limite de arquivo alinhado em 10 MB (PDF, PNG ou JPG).
+- Documentos mensais: cada empresa cadastra os seus (por colaborador ou da empresa) com dia limite no mês seguinte; grade por competência no dossiê, envio direto pela grade e lista de quem não enviou em Pendências.
+- Configurações da empresa: abas quebram linha no celular.
+- Dossiê: checklist dos documentos exigidos pelo cargo (pendente, aguardando validação, aprovado, rejeitado, vencido), com envio direto pelo item e validação (aprovar ou rejeitar com motivo) pela equipe SmartDocPlan; a rejeição avisa o RH da empresa.
+- Conformidade real (documentos obrigatórios aprovados e válidos ÷ exigidos); cargo sem requisitos mostra "Sem requisitos definidos" em vez de 100%.
+- Liberação do colaborador automática (aguardando documentação, em análise, liberado), com indicadores e filtro na lista; recalculada ao mudar documentos, requisitos ou cargo e a cada hora.
+- Datas de admissão e nascimento deixam de aparecer um dia antes por causa do fuso.
+- Documentos: datas de emissão e validade validadas no servidor e nos formulários (a partir de 01/01/1950, emissão não futura, validade não anterior à emissão e até 50 anos); documento com validade passada aparece como vencido e o dossiê avisa quando vence em até 30 dias.
+- Dossiê do colaborador: envio de arquivo (PDF, PNG ou JPG até 10 MB) no lugar do link, com visualizar, editar, substituir arquivo (nova versão) e excluir (exclusão lógica, registrada na auditoria).
+- Solicitações: arrastar cards entre colunas do kanban, com validação do fluxo de status também no servidor e motivo obrigatório ao rejeitar.
+- Auditoria: mostra nome, papel e empresa de quem fez a ação, a obra afetada e os detalhes da alteração, com filtros por empresa, ação e período e paginação.
+- Janelas de diálogo: largura padrão maior, altura limitada à tela com rolagem interna e formulário de colaborador em uma coluna no celular.
+- Perfil: item "Meu perfil" no menu do usuário, com dados da conta, tema e troca da própria senha (cria a rota /api/auth/change-password, que não existia e deixava a troca de senha das Configurações quebrada).
+- Responsividade: abas da ficha da empresa e botões do topo de Solicitações quebram linha no celular em vez de ficarem cortados.
+- Chamados: conversa entre a equipe SmartDocPlan e a empresa, com resposta ao mudar o status (obrigatória ao resolver ou fechar), resposta da empresa e notificações (migration 20261005_ticket_messages).
+- Chamados: visão kanban com arrastar entre status (mantida a visão em lista); soltar em Resolvido ou Fechado abre o atendimento com resposta obrigatória.
+- Janelas de diálogo: cada usuário escolhe o tamanho (Pequeno, Médio ou Grande, cerca de 65% da tela) em Meu perfil e nas Configurações.
+- Kanban (Solicitações e Chamados): soltar um card abre o modal já com o novo status e o campo de observação ou mensagem no topo; a mudança só é gravada ao confirmar.
+- Usuários: vínculo com obras/locais da empresa (menu "Obras / locais" em Usuários) e auditoria mostrando as obras do usuário que fez a ação (migration 20261005_user_worksites).
+- Empresas: upload da logo (PNG/JPG até 2 MB) em Parâmetros da empresa e na ficha da empresa (admin), exibida no topo da área da empresa.
+- BI (global e da empresa): filtros por semana, mês, ano, últimos 12 meses ou período personalizado (de/até), com gráfico de evolução, indicadores do período e ranking de empresas no global.
+- BI: exportação em PDF (global e da empresa) com capa, logos da SmartDocPlan e da empresa, resumo executivo, pontos de atenção, tabelas com barras, evolução no período e notas sobre os dados.
+- BI em PDF: corrigidos espaçamento dos títulos e cards, palavras quebradas com hífen, rodapé com número da página, títulos e itens soltos no fim da página; a evolução omite intervalos sem movimento.
+- Login: em telas baixas (ex.: notebook 1366×768 com barras do navegador) o layout fica compacto e o botão Entrar aparece sem rolar.
+- Configurações da empresa: aba Perfil aponta para Meu perfil (troca de senha, tema e tamanho das janelas) e deixa de dizer que a senha só muda pelo administrador.

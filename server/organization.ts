@@ -11,6 +11,7 @@ import {
 import { canManageCompanyData, isPlatformUser } from "../shared/permissions";
 import { getDb } from "./db";
 import { protectedProcedure, router } from "./_core/trpc";
+import { auditClientFields } from "./_core/clientInfo";
 
 const tables = {
   contrato: contracts,
@@ -51,7 +52,7 @@ export const organizationRouter = router({
     .query(async ({ ctx, input }) => {
       authorize(ctx.user, input.companyId);
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       const table = tables[input.kind];
       return db
         .select()
@@ -74,7 +75,7 @@ export const organizationRouter = router({
     .mutation(async ({ ctx, input }) => {
       authorize(ctx.user, input.companyId, true);
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       return db.transaction(async tx => {
         const [company] = await tx
           .select()
@@ -90,6 +91,7 @@ export const organizationRouter = router({
         await tx
           .insert(auditLogs)
           .values({
+            ...auditClientFields(),
             userId: ctx.user.id,
             companyId: input.companyId,
             action: "criou_cadastro_organizacional",
@@ -106,7 +108,7 @@ export const organizationRouter = router({
     )
     .mutation(async ({ ctx, input }) => {
       const db = await getDb();
-      if (!db) throw new Error("DB unavailable");
+      if (!db) throw new Error("Banco de dados indisponível.");
       return db.transaction(async tx => {
         const table = tables[input.kind];
         const [record] = await tx
@@ -129,6 +131,7 @@ export const organizationRouter = router({
         await tx
           .insert(auditLogs)
           .values({
+            ...auditClientFields(),
             userId: ctx.user.id,
             companyId: record.companyId,
             action: "atualizou_cadastro_organizacional",

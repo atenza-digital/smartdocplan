@@ -21,6 +21,11 @@ import {
   Plus,
 } from "lucide-react";
 import { toast } from "sonner";
+import { formatDateOnlyBr, getDocumentDateBounds } from "@shared/formValidation";
+import { DOCUMENT_FILE_ACCEPT } from "@/lib/files";
+
+// Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
+const DOC_DATES = getDocumentDateBounds();
 
 interface Props {
   requestId: number;
@@ -61,9 +66,7 @@ const STATUS_CONFIG = {
 
 function formatDate(value?: string | null) {
   if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleDateString("pt-BR");
+  return formatDateOnlyBr(value) || value;
 }
 
 export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canReview, readOnly }: Props) {
@@ -304,7 +307,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
             <Upload className="mr-1.5 h-3.5 w-3.5" />
             Enviar arquivo
           </Button>
-          <p className="mt-2 text-xs text-muted-foreground">PDF, JPG, PNG ou DOC — máx. 10MB</p>
+          <p className="mt-2 text-xs text-muted-foreground">PDF, PNG ou JPG até 10 MB</p>
         </div>
       )}
 
@@ -336,7 +339,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
       )}
 
       <Dialog open={!!uploadModal} onOpenChange={() => setUploadModal(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Anexar documento</DialogTitle>
           </DialogHeader>
@@ -351,7 +354,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
               <Input
                 id="request-upload-file"
                 type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept={DOCUMENT_FILE_ACCEPT}
                 onChange={(event) => setSelectedFile(event.target.files?.[0] ?? null)}
               />
             </div>
@@ -368,7 +371,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax}
                   value={uploadMeta.dataEmissao}
                   onChange={(event) => setUploadMeta((current) => ({ ...current, dataEmissao: event.target.value }))}
                 />
@@ -378,7 +381,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
             <div className="space-y-1.5">
               <Label>Validade</Label>
               <Input
-                type="date"
+                type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax}
                 value={uploadMeta.validade}
                 onChange={(event) => setUploadMeta((current) => ({ ...current, validade: event.target.value }))}
               />
@@ -396,7 +399,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
       </Dialog>
 
       <Dialog open={!!avaliarModal} onOpenChange={() => setAvaliarModal(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Avaliar documento</DialogTitle>
           </DialogHeader>
@@ -438,7 +441,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
               <div className="space-y-1.5">
                 <Label>Data de emissão</Label>
                 <Input
-                  type="date"
+                  type="date" min={DOC_DATES.min} max={DOC_DATES.emissaoMax}
                   value={reviewMeta.dataEmissao}
                   onChange={(event) => setReviewMeta((current) => ({ ...current, dataEmissao: event.target.value }))}
                 />
@@ -448,7 +451,7 @@ export function RequestDocumentos({ requestId, tipoSolicitacao, canUpload, canRe
             <div className="space-y-1.5">
               <Label>Validade</Label>
               <Input
-                type="date"
+                type="date" min={DOC_DATES.min} max={DOC_DATES.validadeMax}
                 value={reviewMeta.validade}
                 onChange={(event) => setReviewMeta((current) => ({ ...current, validade: event.target.value }))}
               />

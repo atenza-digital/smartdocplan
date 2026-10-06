@@ -1,6 +1,19 @@
-import { useParams, useLocation } from "wouter";
+import { Link, useParams, useLocation } from "wouter";
 import AdminLayout from "@/components/AdminLayout";
 import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
+import { CompanyMonthlyDocs } from "@/components/CompanyMonthlyDocs";
+import { isPlatformOperator } from "@shared/permissions";
+import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
+import { formatAddress } from "@shared/address";
+
+// Nomes legíveis dos campos nas solicitações de alteração cadastral.
+const CAMPOS_EMPRESA: Record<string, string> = {
+  razaoSocial: "Razão social", nomeFantasia: "Nome fantasia", cnpj: "CNPJ", email: "E-mail", telefone: "Telefone",
+  cep: "CEP", endereco: "Endereço", numero: "Número", complemento: "Complemento", bairro: "Bairro", cidade: "Cidade", estado: "UF",
+};
+import { RELEASE_COLORS } from "@/components/DossieChecklist";
+import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
+import { useLocalAuth } from "@/contexts/LocalAuthContext";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -22,6 +35,10 @@ export default function AdminEmpresaDetalhe() {
   const params = useParams<{ id: string }>();
   const [, navigate] = useLocation();
   const empresaId = parseInt(params.id ?? "0");
+  const { user } = useLocalAuth();
+  const canEditLogo = user?.role === "platform_admin";
+  // Auditor só consulta; administrador e analista gerenciam os documentos da empresa.
+  const canEditDocs = isPlatformOperator(user?.role ?? null);
 
   const { data: empresa, isLoading, refetch: refetchEmpresa } = trpc.companies.get.useQuery(
     { id: empresaId },
@@ -188,6 +205,12 @@ export default function AdminEmpresaDetalhe() {
                   <p>{empresa.telefone}</p>
                 </div>
               )}
+              {formatAddress(empresa) && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Endereço</p>
+                  <p>{formatAddress(empresa)}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground">Cadastrado em</p>
                 <p>{new Date(empresa.createdAt).toLocaleDateString("pt-BR")}</p>
@@ -198,7 +221,7 @@ export default function AdminEmpresaDetalhe() {
           {/* Tabs de detalhes */}
           <div className="lg:col-span-2">
             <Tabs defaultValue="colaboradores">
-              <TabsList className="w-full">
+              <TabsList className="h-auto w-full flex-wrap">
                 <TabsTrigger value="colaboradores" className="flex-1">
                   <Users className="w-3.5 h-3.5 mr-1.5" />
                   Colaboradores ({colaboradores.length})
@@ -232,18 +255,27 @@ export default function AdminEmpresaDetalhe() {
                     ) : (
                       <div className="divide-y">
                         {colaboradores.map(col => (
-                          <div key={col.id} className="flex items-center justify-between px-4 py-3">
+                          <div key={col.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
                             <div>
                               <p className="font-medium text-sm">{col.nome}</p>
                               <p className="text-xs text-muted-foreground font-mono">CPF: {col.cpf}</p>
                             </div>
-                            <Badge variant="outline" className={
-                              col.status === "ativo" ? "text-green-700 border-green-500/30" :
-                              col.status === "afastado" ? "text-yellow-700 border-yellow-500/30" :
-                              "text-red-700 border-red-500/30"
-                            }>
-                              {col.status}
-                            </Badge>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge variant="outline" className={`text-xs ${RELEASE_COLORS[col.liberacao as EmployeeRelease] ?? ""}`}>
+                                {RELEASE_LABELS[col.liberacao as EmployeeRelease] ?? col.liberacao}
+                                {col.scoreConformidade !== null ? ` · ${col.scoreConformidade}%` : ""}
+                              </Badge>
+                              <Badge variant="outline" className={
+                                col.status === "ativo" ? "text-green-700 border-green-500/30" :
+                                col.status === "afastado" ? "text-yellow-700 border-yellow-500/30" :
+                                "text-red-700 border-red-500/30"
+                              }>
+                                {col.status}
+                              </Badge>
+                              <Button asChild size="sm" variant="outline" className="h-7 text-xs">
+                                <Link href={`/admin/colaboradores/${col.id}`}>Dossiê</Link>
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -310,12 +342,14 @@ export default function AdminEmpresaDetalhe() {
                   </CardContent>
                 </Card>
               </TabsContent>
-              <TabsContent value="documentos">
+              <TabsContent value="documentos" className="space-y-4">
+                <CompanyLogoUpload companyId={empresaId} logoUrl={empresa?.logoUrl} canEdit={canEditLogo} />
+                <CompanyMonthlyDocs companyId={empresaId} canEdit={canEditDocs} />
                 <Card>
                   <CardContent className="p-4">
                     <CompanyDocumentsManager
                       companyId={empresaId}
-                      canEdit={true}
+                      canEdit={canEditDocs}
                       title="Documentos da empresa"
                       description="Gerencie Cartão CNPJ, Contrato Social, PCMSO, PGR, LTCAT e CNO com alerta de validade."
                     />
@@ -348,7 +382,7 @@ export default function AdminEmpresaDetalhe() {
                             <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
                               {Object.entries(item.payload).map(([key, value]) => (
                                 <p key={key}>
-                                  <span className="font-medium text-foreground">{key}:</span> {String(value ?? "-")}
+                                  <span className="font-medium text-foreground">{CAMPOS_EMPRESA[key] ?? key}:</span> {String(value ?? "-")}
                                 </p>
                               ))}
                               {item.motivo && <p className="mt-2">{item.motivo}</p>}

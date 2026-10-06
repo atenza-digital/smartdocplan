@@ -93,6 +93,16 @@ export const companies = smartdocSchema.table("companies", {
   email: varchar("email", { length: 320 }),
   telefone: varchar("telefone", { length: 20 }),
   logoUrl: text("logoUrl"),
+  cep: varchar("cep", { length: 9 }),
+  endereco: text("endereco"),
+  numero: varchar("numero", { length: 20 }),
+  complemento: varchar("complemento", { length: 100 }),
+  bairro: varchar("bairro", { length: 100 }),
+  cidade: varchar("cidade", { length: 100 }),
+  estado: varchar("estado", { length: 2 }),
+  // Parâmetros da empresa: meses até adquirir férias e meses depois disso para solicitá-las.
+  feriasMesesAquisicao: integer("feriasMesesAquisicao").default(12).notNull(),
+  feriasMesesParaSolicitar: integer("feriasMesesParaSolicitar").default(1).notNull(),
   status: companyStatusEnum("status").default("ativo").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -139,6 +149,8 @@ export const companyDocuments = smartdocSchema.table("company_documents", {
   dataEmissao: date("dataEmissao"),
   validade: date("validade"),
   observacao: text("observacao"),
+  recurringTypeId: integer("recurringTypeId"), // documento mensal da empresa: tipo e competência (AAAA-MM)
+  competencia: varchar("competencia", { length: 10 }), // início do período (AAAA-MM-DD)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -149,12 +161,23 @@ export const worksites = smartdocSchema.table("worksites", {
   companyId: integer("companyId").notNull(),
   nome: varchar("nome", { length: 255 }).notNull(),
   cnos: varchar("cnos", { length: 30 }),
+  cep: varchar("cep", { length: 9 }),
   endereco: text("endereco"),
+  numero: varchar("numero", { length: 20 }),
+  complemento: varchar("complemento", { length: 100 }),
+  bairro: varchar("bairro", { length: 100 }),
   cidade: varchar("cidade", { length: 100 }),
   estado: varchar("estado", { length: 2 }),
   dataInicio: date("dataInicio"),
   dataFim: date("dataFim"),
   status: text("status").default("ativo").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// --- USER WORKSITES (obras/locais a que o usuário da empresa pertence) ---
+export const userWorksites = smartdocSchema.table("user_worksites", {
+  userId: integer("userId").notNull(),
+  worksiteId: integer("worksiteId").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 
@@ -200,6 +223,37 @@ export const positionRequirements = smartdocSchema.table("position_requirements"
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// --- RECURRING DOCUMENT TYPES (DOCUMENTOS MENSAIS) ---
+export const recurringDocumentTypes = smartdocSchema.table("recurring_document_types", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  nome: varchar("nome", { length: 255 }).notNull(),
+  alvo: text("alvo").default("colaborador").notNull(), // colaborador | empresa
+  categoria: text("categoria").default("outros").notNull(),
+  diaLimite: integer("diaLimite").default(10).notNull(), // legado (mensal); substituído por periodicidade + prazoDias
+  periodicidade: text("periodicidade").default("mensal").notNull(), // semanal | quinzenal | mensal | bimestral | trimestral | semestral | anual
+  prazoDias: integer("prazoDias").default(10).notNull(), // dias após o fim do período para enviar
+  ativo: boolean("ativo").default(true).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
+// --- HEALTH CAMPAIGNS (CALENDÁRIO DA SAÚDE) ---
+export const healthCampaigns = smartdocSchema.table("health_campaigns", {
+  id: serial("id").primaryKey(),
+  titulo: varchar("titulo", { length: 120 }).notNull(),
+  mensagem: text("mensagem").notNull(),
+  link: text("link"),
+  linkTexto: varchar("linkTexto", { length: 60 }),
+  cor: varchar("cor", { length: 7 }).notNull(),
+  mes: integer("mes").notNull(), // 1–12; repete todo ano
+  publico: text("publico").default("todos").notNull(), // todos | empresas | plataforma
+  ativo: boolean("ativo").default(false).notNull(),
+  updatedBy: integer("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 // --- EMPLOYEES (COLABORADORES) ---
 export const employees = smartdocSchema.table("employees", {
   id: serial("id").primaryKey(),
@@ -214,7 +268,9 @@ export const employees = smartdocSchema.table("employees", {
   status: text("status").default("ativo").notNull(),
   email: varchar("email", { length: 320 }),
   telefone: varchar("telefone", { length: 20 }),
-  scoreConformidade: integer("scoreConformidade").default(100),
+  scoreConformidade: integer("scoreConformidade"), // calculado pelo servidor; null = sem requisitos definidos
+  liberacao: text("liberacao").default("aguardando_documentacao").notNull(),
+  liberadoAt: timestamp("liberadoAt"),
   criadoPor: integer("criadoPor"), // userId do analista interno que cadastrou
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
@@ -240,6 +296,12 @@ export const employeeDocuments = smartdocSchema.table("employee_documents", {
   status: text("status").default("valido").notNull(),
   observacao: text("observacao"),
   uploadedBy: integer("uploadedBy"),
+  requirementId: integer("requirementId"), // item do checklist do cargo atendido por este documento
+  analisadoPor: integer("analisadoPor"),
+  analisadoAt: timestamp("analisadoAt"),
+  motivoRejeicao: text("motivoRejeicao"),
+  recurringTypeId: integer("recurringTypeId"), // documento mensal: tipo e competência (AAAA-MM)
+  competencia: varchar("competencia", { length: 10 }), // início do período (AAAA-MM-DD)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -302,6 +364,19 @@ export const tickets = smartdocSchema.table("tickets", {
   resolvidoAt: timestamp("resolvidoAt"),
 });
 
+// --- TICKET MESSAGES (conversa do chamado entre equipe e empresa) ---
+export const ticketMessages = smartdocSchema.table("ticket_messages", {
+  id: serial("id").primaryKey(),
+  ticketId: integer("ticketId").notNull(),
+  companyId: integer("companyId").notNull(),
+  autorId: integer("autorId").notNull(),
+  origem: varchar("origem", { length: 20 }).notNull(), // plataforma | empresa
+  mensagem: text("mensagem").notNull(),
+  statusAnterior: text("statusAnterior"),
+  statusNovo: text("statusNovo"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
 export type Ticket = typeof tickets.$inferSelect;
 export type InsertTicket = typeof tickets.$inferInsert;
 
@@ -314,6 +389,18 @@ export const auditLogs = smartdocSchema.table("audit_logs", {
   entity: varchar("entity", { length: 100 }),
   entityId: integer("entityId"),
   details: text("details"),
+  ip: varchar("ip", { length: 64 }), // dado pessoal: exibido só ao Administrador Geral
+  userAgent: varchar("userAgent", { length: 300 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+// --- SESSÕES ENCERRADAS (logout por token; troca de senha encerra as sessões anteriores do usuário) ---
+export const sessionRevocations = smartdocSchema.table("session_revocations", {
+  id: serial("id").primaryKey(),
+  tokenHash: varchar("tokenHash", { length: 64 }), // SHA-256 do token; o token em si não é guardado
+  userId: integer("userId").notNull(),
+  revokedBefore: timestamp("revokedBefore"), // tokens emitidos antes deste instante deixam de valer
+  expiresAt: timestamp("expiresAt").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

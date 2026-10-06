@@ -17,6 +17,8 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Edit, Mail, Phone, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
+import { AddressFields } from "@/components/AddressFields";
+import { emptyAddress, type AddressValue } from "@shared/address";
 import {
   formatCnpj,
   formatPhone,
@@ -38,7 +40,7 @@ type CompanyForm = {
   email: string;
   telefone: string;
   status: "ativo" | "inativo" | "suspenso";
-};
+} & AddressValue;
 
 const emptyForm: CompanyForm = {
   razaoSocial: "",
@@ -47,6 +49,7 @@ const emptyForm: CompanyForm = {
   email: "",
   telefone: "",
   status: "ativo",
+  ...emptyAddress,
 };
 
 export default function AdminEmpresas() {
@@ -120,6 +123,13 @@ export default function AdminEmpresas() {
       email: empresa.email ?? "",
       telefone: empresa.telefone ?? "",
       status: empresa.status,
+      cep: empresa.cep ?? "",
+      endereco: empresa.endereco ?? "",
+      numero: empresa.numero ?? "",
+      complemento: empresa.complemento ?? "",
+      bairro: empresa.bairro ?? "",
+      cidade: empresa.cidade ?? "",
+      estado: empresa.estado ?? "",
     });
     setShowModal(true);
   };
@@ -154,6 +164,13 @@ export default function AdminEmpresas() {
       email: form.email.trim() || undefined,
       telefone: form.telefone.trim() || undefined,
       status: form.status,
+      cep: form.cep,
+      endereco: form.endereco,
+      numero: form.numero,
+      complemento: form.complemento,
+      bairro: form.bairro,
+      cidade: form.cidade,
+      estado: form.estado,
     };
 
     if (editingId) {
@@ -272,7 +289,7 @@ export default function AdminEmpresas() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{editingId ? "Editar Empresa" : "Cadastrar Nova Empresa"}</DialogTitle>
           </DialogHeader>
@@ -338,6 +355,8 @@ export default function AdminEmpresas() {
                 maxLength={320}
               />
             </div>
+
+            <AddressFields idPrefix="admin-empresa" value={form} onChange={(address) => setForm((current) => ({ ...current, ...address }))} />
 
             <div className="space-y-1.5">
               <Label>Status</Label>

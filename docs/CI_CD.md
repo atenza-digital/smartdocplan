@@ -108,7 +108,7 @@ Ele agora suporta:
 - imagem via `APP_IMAGE`;
 - diretório de deploy via `DEPLOY_PATH`;
 - domínio via `APP_HOST`;
-- bind local via `APP_BIND_IP` e `APP_HOST_PORT`;
+- bind local via `APP_BIND_IP` e `APP_HOST_PORT` (padrão `127.0.0.1`: a porta direta não fica pública e o acesso passa pelo Traefik com HTTPS; a conferência pós-deploy usa `https://APP_HOST`);
 - rede externa do Traefik via `TRAEFIK_DOCKER_NETWORK`;
 - rede externa do banco via `DB_DOCKER_NETWORK`.
 

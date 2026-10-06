@@ -34,9 +34,9 @@ export default function Login() {
   const displayError = localError || error;
 
   return (
-    <div className="min-h-full bg-background flex flex-col">
+    <div className="h-full overflow-y-auto bg-background flex flex-col">
       {/* Header minimalista */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-border/50">
+      <header className="flex items-center justify-between px-6 py-4 [@media(max-height:760px)]:py-2 border-b border-border/50">
         <div className="flex items-center gap-3">
           <BrandLogo variant="icon" imageClassName="h-10 w-10 rounded-xl" />
           <BrandLogo variant="text" imageClassName="h-6 w-auto" />
@@ -50,12 +50,12 @@ export default function Login() {
         </button>
       </header>
 
-      {/* Conteudo central */}
-      <div className="flex-1 flex items-center justify-center px-4 py-12">
+      {/* Conteudo central: em telas baixas (ex.: notebook 1366x768) compacta para o botão Entrar caber sem rolar */}
+      <div className="flex-1 flex items-center justify-center px-4 py-12 [@media(max-height:760px)]:py-4">
         <div className="w-full max-w-sm">
           {/* Logo e titulo */}
-          <div className="text-center mb-8">
-            <BrandLogo variant="complete" className="justify-center mb-5" imageClassName="h-16 w-auto" />
+          <div className="text-center mb-8 [@media(max-height:760px)]:mb-4">
+            <BrandLogo variant="complete" className="justify-center mb-5 [@media(max-height:760px)]:hidden" imageClassName="h-16 w-auto" />
             <h1 className="text-2xl font-bold text-foreground">Bem-vindo</h1>
             <p className="text-muted-foreground text-sm mt-1">
               Acesse sua conta SmartDocPlan
@@ -136,15 +136,15 @@ export default function Login() {
             </CardContent>
           </Card>
 
-          <p className="text-center text-xs text-muted-foreground mt-6">
+          <p className="text-center text-xs text-muted-foreground mt-6 [@media(max-height:760px)]:mt-3">
             Problemas de acesso? Entre em contato com o administrador da plataforma.
           </p>
         </div>
       </div>
 
       {/* Footer */}
-      <footer className="text-center py-4 text-xs text-muted-foreground border-t border-border/50">
-        &copy; {new Date().getFullYear()} SmartDocPlan &mdash; Gestão Documental de RH
+      <footer className="text-center py-4 [@media(max-height:760px)]:py-2 text-xs text-muted-foreground border-t border-border/50">
+        &copy; {new Date().getFullYear()} SmartDocPlan &mdash; Gestão Documental de RH e SST
       </footer>
     </div>
   );
