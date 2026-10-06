@@ -75,3 +75,16 @@ describe("Limite de tentativas de login", () => {
     expect(maskEmail("joao@empresa.com")).toBe("jo***@empresa.com");
   });
 });
+
+// ─── Migrations ──────────────────────────────────────────────────────────────
+
+import { readdirSync } from "node:fs";
+import { MIGRATIONS } from "./_core/postgresMigrations";
+
+describe("Migrations", () => {
+  it("toda migration da pasta está registrada no executor, sem repetição (a ordem da lista é a de aplicação e não muda)", () => {
+    const arquivos = readdirSync("drizzle/migrations").filter((f) => f.endsWith(".sql")).sort();
+    expect([...MIGRATIONS].sort()).toEqual(arquivos);
+    expect(new Set(MIGRATIONS).size).toBe(MIGRATIONS.length);
+  });
+});

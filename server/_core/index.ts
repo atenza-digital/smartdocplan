@@ -5,7 +5,6 @@ import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { registerLocalAuthRoutes, seedAdminUser } from "./localAuth";
-import { runAutoMigrations } from "./migrations";
 import { runPostgresMigrations } from "./postgresMigrations";
 import { appRouter } from "../routers";
 import { registerDocumentAccess } from "../documentAccess";
@@ -49,12 +48,6 @@ async function startServer() {
   registerLocalAuthRoutes(app);
   // OAuth callback under /api/oauth/callback (mantido para compat)
   registerOAuthRoutes(app);
-  // Executar migrações automáticas (sem crashar o servidor se falhar)
-  try {
-    await runAutoMigrations();
-  } catch (migrationErr: any) {
-    console.error("[Migration] Erro inesperado nas migrações:", migrationErr.message);
-  }
   // Seed do admin inicial
   try {
     await seedAdminUser();

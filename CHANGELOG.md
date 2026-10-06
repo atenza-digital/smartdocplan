@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Migrations unificadas: um único executor (`server/_core/postgresMigrations.ts`) aplica a base inicial em banco vazio e as migrations incrementais; removidos o executor antigo de MySQL, o script avulso `migrate-v2.mjs` e o `db:push` do drizzle-kit (que poderia recriar tabelas). Banco existente não muda; banco novo sobe com estrutura idêntica.
 - Deploy: a porta direta da aplicação passa a escutar só no próprio servidor por padrão (`APP_BIND_IP=127.0.0.1`); o acesso público fica só pelo Traefik com HTTPS, e a conferência pós-deploy usa o domínio.
 - Configurações (admin): o cartão "Sobre a Plataforma" mostra PostgreSQL (antes "MySQL 8.0"), a versão real do sistema e o status da conexão com o banco verificado na hora.
 - Desempenho: cada tela é carregada sob demanda e as bibliotecas grandes ficam em arquivos próprios (cache do navegador); o arquivo principal caiu de 2,2 MB para cerca de 150 KB e os gráficos só são baixados no BI.
