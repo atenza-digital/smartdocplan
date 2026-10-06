@@ -389,6 +389,8 @@ export const auditLogs = smartdocSchema.table("audit_logs", {
   entity: varchar("entity", { length: 100 }),
   entityId: integer("entityId"),
   details: text("details"),
+  ip: varchar("ip", { length: 64 }), // dado pessoal: exibido só ao Administrador Geral
+  userAgent: varchar("userAgent", { length: 300 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 

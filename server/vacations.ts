@@ -24,6 +24,7 @@ import { getDb } from "./db";
 import { protectedProcedure, router } from "./_core/trpc";
 import { saveDocumentFile, validateDocumentFile } from "./uploadFiles";
 import { buildVacationSuggestions } from "./vacationSuggestions";
+import { auditClientFields } from "./_core/clientInfo";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -152,6 +153,7 @@ async function event(
   await tx
     .insert(auditLogs)
     .values({
+      ...auditClientFields(),
       companyId: record.companyId,
       userId: user.id,
       action: `ferias_${action}`,

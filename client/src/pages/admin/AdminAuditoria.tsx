@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Building2, Calendar, ChevronDown, ChevronLeft, ChevronRight, MapPin, ScrollText, User } from "lucide-react";
+import { summarizeUserAgent } from "@shared/userAgent";
 
 const PAGE_SIZE = 50;
 
@@ -285,6 +286,14 @@ export default function AdminAuditoria() {
                       <div className="border-t border-border px-4 py-3 text-xs space-y-2">
                         {log.usuarioEmail && (
                           <p className="text-muted-foreground">E-mail do usuário: <span className="text-foreground">{log.usuarioEmail}</span></p>
+                        )}
+                        {(log.ip || log.navegador) && (
+                          <p className="text-muted-foreground">
+                            IP e navegador:{" "}
+                            <span className="text-foreground" title={log.navegador ?? undefined}>
+                              {[log.ip, summarizeUserAgent(log.navegador)].filter(Boolean).join(" · ")}
+                            </span>
+                          </p>
                         )}
                         <p className="text-muted-foreground">
                           Obras / locais do usuário: <span className="text-foreground">{log.obrasUsuario ?? "nenhum vínculo cadastrado"}</span>

@@ -12,6 +12,7 @@ import { auditLogs, users } from "../../drizzle/schema";
 import { ENV } from "./env";
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 import { getSessionCookieOptions } from "./cookies";
+import { auditClientFields } from "./clientInfo";
 
 const SECRET = new TextEncoder().encode(ENV.cookieSecret);
 
@@ -147,6 +148,7 @@ export function registerLocalAuthRoutes(app: Express) {
       const passwordHash = await bcrypt.hash(novaSenha, 12);
       await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
       await db.insert(auditLogs).values({
+        ...auditClientFields(),
         userId: user.id,
         companyId: user.companyId ?? null,
         action: "alterou_propria_senha",

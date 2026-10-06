@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Auditoria: cada registro grava o IP e o navegador de quem fez a ação (visíveis só ao Administrador Geral, por serem dados pessoais); o servidor passa a considerar o IP real repassado pelo proxy.
 - Calendário da saúde (admin › Calendário da saúde): campanhas mensais com banner que cada pessoa pode fechar, faixa e laço no topo e a cor da campanha aplicada à plataforma inteira (ajustada para manter contraste; desligada no alto contraste). As 12 campanhas do ano vêm como rascunho para revisão, só o Administrador Geral ativa e há "Ver tema na plataforma" para pré-visualizar só no próprio navegador.
 - Documentos recorrentes (antes "mensais"): periodicidade semanal, quinzenal, mensal, bimestral, trimestral, semestral ou anual e prazo em dias após o fim do período; os mensais já cadastrados foram convertidos sem perda (prazo igual ao antigo dia limite). Grade por documento no dossiê e na empresa, pendências do último período encerrado e alertas de atraso.
 - Tamanho das janelas: todos os diálogos passam a seguir a preferência do usuário (Pequeno, Médio ou Grande); antes alguns tinham largura fixa.

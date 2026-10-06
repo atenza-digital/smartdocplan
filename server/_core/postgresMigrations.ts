@@ -29,6 +29,7 @@ export async function runPostgresMigrations(
         "20261006_company_parameters.sql",
         "20261006_recurring_periodicity.sql",
         "20261007_health_campaigns.sql",
+        "20261007_audit_client_info.sql",
       ]) {
         const existing = await client.query(
           "SELECT name FROM smartdocplan.app_migrations WHERE name = $1",

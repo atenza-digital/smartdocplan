@@ -19,6 +19,7 @@ import {
   isHealthCategory,
   isPlatformUser,
 } from "../shared/permissions";
+import { auditClientFields } from "./_core/clientInfo";
 
 // Keep legacy URLs working, but never allow them to fall through to static serving.
 export function registerDocumentAccess(app: Express) {
@@ -123,6 +124,7 @@ export function registerDocumentAccess(app: Express) {
         await access(path);
       }
       await db.insert(auditLogs).values({
+        ...auditClientFields(),
         userId: user.id,
         companyId: records[0].companyId,
         action: "acessou_documento",

@@ -11,6 +11,7 @@ import {
 import { canManageCompanyData, isPlatformUser } from "../shared/permissions";
 import { getDb } from "./db";
 import { protectedProcedure, router } from "./_core/trpc";
+import { auditClientFields } from "./_core/clientInfo";
 
 const tables = {
   contrato: contracts,
@@ -90,6 +91,7 @@ export const organizationRouter = router({
         await tx
           .insert(auditLogs)
           .values({
+            ...auditClientFields(),
             userId: ctx.user.id,
             companyId: input.companyId,
             action: "criou_cadastro_organizacional",
@@ -129,6 +131,7 @@ export const organizationRouter = router({
         await tx
           .insert(auditLogs)
           .values({
+            ...auditClientFields(),
             userId: ctx.user.id,
             companyId: record.companyId,
             action: "atualizou_cadastro_organizacional",

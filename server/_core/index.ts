@@ -12,6 +12,7 @@ import { registerDocumentAccess } from "../documentAccess";
 import { notifyVacationDeadlines } from "../vacations";
 import { runDocumentJobs } from "../documentJobs";
 import { createContext } from "./context";
+import { clientInfoMiddleware } from "./clientInfo";
 import { serveStatic, setupVite } from "./vite";
 
 function isPortAvailable(port: number): Promise<boolean> {
@@ -35,6 +36,9 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 
 async function startServer() {
   const app = express();
+  // Um proxy na frente (Traefik): req.ip passa a ser o IP real do usuário. Não usar `true`, para não confiar em X-Forwarded-For forjado.
+  app.set("trust proxy", 1);
+  app.use(clientInfoMiddleware);
   const server = createServer(app);
   // Do not serve a new version against an incompatible PostgreSQL schema.
   if (process.env.DATABASE_URL?.startsWith("postgres")) await runPostgresMigrations();

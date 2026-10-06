@@ -16,6 +16,7 @@ import {
   requestDocumentUploads,
   auditLogs,
 } from "../drizzle/schema";
+import { auditClientFields } from "./_core/clientInfo";
 
 const id = z.number().int().positive();
 export const requestCreationInput = z.object({
@@ -147,6 +148,7 @@ export async function createRequestWithRequirements(
     await tx
       .insert(auditLogs)
       .values({
+        ...auditClientFields(),
         userId,
         companyId: input.companyId,
         action: "criou_solicitacao",

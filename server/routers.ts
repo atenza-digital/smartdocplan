@@ -29,6 +29,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { auditClientFields } from "./_core/clientInfo";
 import { addressForDb, addressInput } from "@shared/address";
 import { COMPANY_DOCUMENT_TYPES, COMPANY_MONTHLY_DOCUMENT_TIPO, latestCompanyDocuments } from "@shared/companyDocuments";
 import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
@@ -70,6 +71,7 @@ async function insertAuditLog(opts: {
       entity: opts.entidade ?? null,
       entityId: opts.entidadeId ?? null,
       details: opts.dadosDepois ? JSON.stringify(opts.dadosDepois) : null,
+      ...auditClientFields(),
     } as any);
   } catch { /* não bloquear a operação principal */ }
 }
@@ -1765,6 +1767,8 @@ const auditRouter = router({
         entidade: auditLogs.entity,
         entidadeId: auditLogs.entityId,
         dadosDepois: auditLogs.details,
+        ip: auditLogs.ip,
+        navegador: auditLogs.userAgent,
         createdAt: auditLogs.createdAt,
       }).from(auditLogs)
         .leftJoin(users, eq(users.id, auditLogs.userId))
@@ -1785,11 +1789,15 @@ const auditRouter = router({
     ]);
     // Raw document/request payloads may contain health information from older events.
     const canSeeHealth = canAccessHealthData(ctx.user.role);
-    const visibleRows = rows.map(row =>
-      !canSeeHealth && row.dadosDepois && ["requests", "request_document_uploads", "employee_documents", "documento"].includes(row.entidade ?? "")
-        ? { ...row, dadosDepois: null, detalhesOcultos: true }
-        : { ...row, detalhesOcultos: false }
-    );
+    // IP e navegador são dados pessoais: só o Administrador Geral vê.
+    const canSeeClient = canManagePlatformSettings(ctx.user.role);
+    const visibleRows = rows
+      .map(row => (canSeeClient ? row : { ...row, ip: null, navegador: null }))
+      .map(row =>
+        !canSeeHealth && row.dadosDepois && ["requests", "request_document_uploads", "employee_documents", "documento"].includes(row.entidade ?? "")
+          ? { ...row, dadosDepois: null, detalhesOcultos: true }
+          : { ...row, detalhesOcultos: false }
+      );
     return { rows: visibleRows, total: Number(total ?? 0) };
   }),
 
