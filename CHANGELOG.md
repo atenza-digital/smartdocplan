@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Deploy: a porta direta da aplicação passa a escutar só no próprio servidor por padrão (`APP_BIND_IP=127.0.0.1`); o acesso público fica só pelo Traefik com HTTPS, e a conferência pós-deploy usa o domínio.
 - Configurações (admin): o cartão "Sobre a Plataforma" mostra PostgreSQL (antes "MySQL 8.0"), a versão real do sistema e o status da conexão com o banco verificado na hora.
 - Desempenho: cada tela é carregada sob demanda e as bibliotecas grandes ficam em arquivos próprios (cache do navegador); o arquivo principal caiu de 2,2 MB para cerca de 150 KB e os gráficos só são baixados no BI.
 - Segurança: login e troca de senha bloqueiam por 15 minutos após 5 erros do mesmo e-mail (ou 20 do mesmo IP) em 15 minutos, com mensagem "Muitas tentativas"; login, falhas e bloqueios passam a ser registrados na auditoria (e-mail mascarado).

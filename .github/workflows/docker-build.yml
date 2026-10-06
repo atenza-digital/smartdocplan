@@ -151,15 +151,21 @@ jobs:
             bash "${DEPLOY_PATH:-/docker/smartdocplan}/incoming/scripts/deploy-homolog.sh"
 
       - name: Verify public application version
-        if: vars.APP_BIND_IP == '0.0.0.0'
+        if: vars.APP_BIND_IP == '0.0.0.0' || vars.APP_HOST != ''
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
+          APP_HOST: ${{ vars.APP_HOST }}
+          APP_BIND_IP: ${{ vars.APP_BIND_IP }}
           APP_HOST_PORT: ${{ vars.APP_HOST_PORT }}
           EXPECTED_SHA: ${{ github.sha }}
         run: |
           node --input-type=module <<'JS'
           const input=encodeURIComponent(JSON.stringify({json:{timestamp:0}}));
-          const response=await fetch(`http://${process.env.VPS_HOST}:${process.env.APP_HOST_PORT || 8080}/api/trpc/system.health?input=${input}`,{signal:AbortSignal.timeout(20000)});
+          // Porta direta só quando exposta (0.0.0.0); senão, confere pelo domínio público via Traefik (HTTPS).
+          const base = process.env.APP_BIND_IP === '0.0.0.0'
+            ? `http://${process.env.VPS_HOST}:${process.env.APP_HOST_PORT || 8080}`
+            : `https://${process.env.APP_HOST}`;
+          const response=await fetch(`${base}/api/trpc/system.health?input=${input}`,{signal:AbortSignal.timeout(20000)});
           const body=await response.json();
           if (!response.ok || body.result?.data?.json?.version !== process.env.EXPECTED_SHA) process.exit(1);
           console.log('Public endpoint serves the expected release.');
