@@ -330,6 +330,47 @@ const companiesRouter = router({
     return { success: true, logoUrl };
   }),
 
+  /** Parâmetros da empresa (prazos de férias). Leitura para quem acessa a empresa. */
+  parameters: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [row] = await db.select({
+      feriasMesesAquisicao: companies.feriasMesesAquisicao,
+      feriasMesesParaSolicitar: companies.feriasMesesParaSolicitar,
+    }).from(companies).where(eq(companies.id, input.companyId)).limit(1);
+    if (!row) throw new Error("Empresa não encontrada");
+    return row;
+  }),
+
+  /** Altera os parâmetros direto (não passa pela aprovação de alteração cadastral) e registra na auditoria. */
+  updateParameters: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    feriasMesesAquisicao: z.number().int().min(1, "Use de 1 a 24 meses para adquirir férias.").max(24, "Use de 1 a 24 meses para adquirir férias."),
+    feriasMesesParaSolicitar: z.number().int().min(1, "Use de 1 a 12 meses para solicitar.").max(12, "Use de 1 a 12 meses para solicitar."),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar os parâmetros da empresa.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const [antes] = await db.select({
+      feriasMesesAquisicao: companies.feriasMesesAquisicao,
+      feriasMesesParaSolicitar: companies.feriasMesesParaSolicitar,
+    }).from(companies).where(eq(companies.id, input.companyId)).limit(1);
+    if (!antes) throw new Error("Empresa não encontrada");
+    const depois = { feriasMesesAquisicao: input.feriasMesesAquisicao, feriasMesesParaSolicitar: input.feriasMesesParaSolicitar };
+    await db.update(companies).set({ ...depois, updatedAt: new Date() }).where(eq(companies.id, input.companyId));
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "alterou_parametros_empresa",
+      entidade: "companies",
+      entidadeId: input.companyId,
+      dadosDepois: { antes, depois },
+    });
+    return { success: true };
+  }),
+
   create: superAdminProcedure.input(z.object({
     razaoSocial: z.string().min(1),
     nomeFantasia: z.string().optional(),

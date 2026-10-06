@@ -27,6 +27,7 @@ import { canManageCompanyData, canManageRequestWorkflow } from "@shared/permissi
 import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
 import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
 import { formatCompetencia } from "@shared/recurring";
+import { VACATION_SUGGESTION_LABELS } from "@shared/vacationSuggestion";
 import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
 import { Textarea } from "@/components/ui/textarea";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
@@ -116,6 +117,11 @@ export default function EmpresaDossie() {
     { employeeId },
     { enabled: employeeId > 0 }
   );
+  const { data: sugestoesFerias = [] } = trpc.vacations.suggestions.useQuery(
+    { companyId: employee?.companyId ?? 0, employeeId },
+    { enabled: (employee?.companyId ?? 0) > 0 && employeeId > 0 }
+  );
+  const proximasFerias = sugestoesFerias[0];
   const { data: mensais } = trpc.recurringDocs.employeeGrid.useQuery(
     { employeeId, meses: 6 },
     { enabled: employeeId > 0 }
@@ -413,6 +419,52 @@ export default function EmpresaDossie() {
                 canSend={canManage}
                 onSend={openChecklistUpload}
               />
+            )}
+
+            {employee.status !== "desligado" && (
+              <Card className="border-border">
+                <CardContent className="flex flex-wrap items-start justify-between gap-3 p-5">
+                  <div>
+                    <h3 className="font-semibold text-foreground flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-primary" />
+                      Próximas férias
+                    </h3>
+                    {proximasFerias ? (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {proximasFerias.numero}º período aquisitivo de {formatDateOnlyBr(proximasFerias.inicio)} a {formatDateOnlyBr(proximasFerias.fim)}.
+                        Adquire em {formatDateOnlyBr(proximasFerias.aquisicao)} e deve solicitar até <strong className="text-foreground">{formatDateOnlyBr(proximasFerias.limite)}</strong>.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {employee.dataAdmissao ? "Nenhum período pendente de programação." : "Informe a data de admissão para calcular as férias."}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {proximasFerias && (
+                      <Badge
+                        variant="outline"
+                        className={
+                          proximasFerias.situacao === "prazo_vencido"
+                            ? "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"
+                            : proximasFerias.situacao === "a_solicitar"
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                              : "bg-muted text-muted-foreground"
+                        }
+                      >
+                        {VACATION_SUGGESTION_LABELS[proximasFerias.situacao]}
+                      </Badge>
+                    )}
+                    {proximasFerias && canManage && (
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={`${isAdminRoute ? "/admin" : "/empresa"}/ferias?empresa=${employee.companyId}&colaborador=${employee.id}&programar=1`}>
+                          Programar férias
+                        </Link>
+                      </Button>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
             {mensais && (

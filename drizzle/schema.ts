@@ -100,6 +100,9 @@ export const companies = smartdocSchema.table("companies", {
   bairro: varchar("bairro", { length: 100 }),
   cidade: varchar("cidade", { length: 100 }),
   estado: varchar("estado", { length: 2 }),
+  // Parâmetros da empresa: meses até adquirir férias e meses depois disso para solicitá-las.
+  feriasMesesAquisicao: integer("feriasMesesAquisicao").default(12).notNull(),
+  feriasMesesParaSolicitar: integer("feriasMesesParaSolicitar").default(1).notNull(),
   status: companyStatusEnum("status").default("ativo").notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

@@ -303,3 +303,53 @@ describe("Colaboradores — seções", () => {
     await expect(caller.employees.listPaged({ companyId: 1, secao: "ativos", pageSize: 500 })).rejects.toThrow();
   });
 });
+
+// ─── J. Parâmetros e sugestão de férias ──────────────────────────────────────
+
+import { addMonthsDateOnly } from "@shared/dates";
+import { suggestNextVacation, vacationPeriod } from "@shared/vacationSuggestion";
+
+describe("Sugestão de férias", () => {
+  const padrao = { feriasMesesAquisicao: 12, feriasMesesParaSolicitar: 1 };
+
+  it("soma meses sem pular mês no fim do mês", () => {
+    expect(addMonthsDateOnly("2026-01-31", 1)).toBe("2026-02-28");
+    expect(addMonthsDateOnly("2027-12-15", 1)).toBe("2028-01-15");
+    expect(addMonthsDateOnly("2028-01-31", 1)).toBe("2028-02-29");
+  });
+
+  it("período padrão: adquire em 12 meses e solicita até 1 mês depois (1 ano e 1 mês)", () => {
+    expect(vacationPeriod("2026-10-05", padrao, 0)).toEqual({ inicio: "2026-10-05", fim: "2027-10-04", aquisicao: "2027-10-05", limite: "2027-11-05" });
+    expect(vacationPeriod("2026-10-05", padrao, 1).inicio).toBe("2027-10-05");
+  });
+
+  it("respeita os parâmetros da empresa", () => {
+    expect(vacationPeriod("2026-01-10", { feriasMesesAquisicao: 6, feriasMesesParaSolicitar: 2 }, 0)).toMatchObject({ aquisicao: "2026-07-10", limite: "2026-09-10" });
+  });
+
+  it("situação: em aquisição, pode solicitar e prazo vencido", () => {
+    const base = { dataAdmissao: "2025-09-01", params: padrao, programados: [] as string[] };
+    expect(suggestNextVacation(base, "2026-08-31")?.situacao).toBe("em_aquisicao");
+    expect(suggestNextVacation(base, "2026-09-15")?.situacao).toBe("a_solicitar");
+    expect(suggestNextVacation(base, "2026-10-05")?.situacao).toBe("prazo_vencido");
+  });
+
+  it("período já programado passa para o próximo", () => {
+    const r = suggestNextVacation({ dataAdmissao: "2025-09-01", params: padrao, programados: ["2025-09-01"] }, "2026-10-05");
+    expect(r).toMatchObject({ numero: 2, inicio: "2026-09-01", situacao: "em_aquisicao" });
+  });
+
+  it("não sugere período vencido há mais de 30 dias nem calcula sem admissão", () => {
+    expect(suggestNextVacation({ dataAdmissao: "2020-01-01", params: padrao, programados: [] }, "2026-10-05")?.inicio).toBe("2026-01-01");
+    expect(suggestNextVacation({ dataAdmissao: null, params: padrao, programados: [] }, "2026-10-05")).toBeNull();
+  });
+
+  it("parâmetros fora da faixa e perfil sem permissão são recusados", async () => {
+    const admin = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(admin.companies.updateParameters({ companyId: 1, feriasMesesAquisicao: 30, feriasMesesParaSolicitar: 1 })).rejects.toThrow(/1 a 24/);
+    const viewer = appRouter.createCaller(makeCtx({ role: "company_viewer" as any, companyId: 1 }));
+    await expect(viewer.companies.updateParameters({ companyId: 1, feriasMesesAquisicao: 12, feriasMesesParaSolicitar: 1 })).rejects.toThrow(/não pode alterar/);
+    const outra = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 2 }));
+    await expect(outra.companies.updateParameters({ companyId: 1, feriasMesesAquisicao: 12, feriasMesesParaSolicitar: 1 })).rejects.toThrow(/Acesso negado/);
+  });
+});

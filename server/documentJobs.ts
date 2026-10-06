@@ -9,6 +9,7 @@ import { COMPANY_DOCUMENT_TYPES, latestCompanyDocuments } from "@shared/companyD
 import { formatDateOnlyBr, normalizeTextSearch } from "@shared/formValidation";
 import { addCompetencia, competenciaOf, formatCompetencia } from "@shared/recurring";
 import { brazilToday } from "@shared/vacations";
+import { buildVacationSuggestions } from "./vacationSuggestions";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Recipient = { id: number; role: string; companyId: number | null };
@@ -138,6 +139,38 @@ async function monthlyAlerts(db: Db, today: string): Promise<Alert[]> {
   return alerts;
 }
 
+/** Férias pelos parâmetros da empresa: aviso ao adquirir e quando o limite para solicitar se aproxima ou vence. */
+async function vacationAlerts(db: Db, today: string): Promise<Alert[]> {
+  const sugestoes = await buildVacationSuggestions(db, {}, today);
+  return sugestoes.flatMap((s) => {
+    if (s.situacao === "em_aquisicao") return [];
+    const links = {
+      linkEmpresa: `/empresa/ferias?colaborador=${s.employeeId}`,
+      linkPlataforma: `/admin/ferias?empresa=${s.companyId}&colaborador=${s.employeeId}`,
+    };
+    const alerts: Alert[] = [{
+      companyId: s.companyId,
+      key: `ferias_adq_${s.employeeId}_${s.inicio}`,
+      titulo: `${s.nome} adquiriu direito a férias`,
+      mensagem: `Período aquisitivo de ${formatDateOnlyBr(s.inicio)} a ${formatDateOnlyBr(s.fim)}. Programe as férias até ${formatDateOnlyBr(s.limite)}.`,
+      saude: false,
+      ...links,
+    }];
+    const threshold = documentAlertThreshold(s.limite, today);
+    if (threshold) {
+      alerts.push({
+        companyId: s.companyId,
+        key: `ferias_lim_${s.employeeId}_${s.inicio}_${threshold}`,
+        titulo: threshold === "vencido" ? "Prazo para solicitar férias vencido" : `Prazo para solicitar férias em até ${threshold} dias`,
+        mensagem: `${s.nome}: solicitar as férias do período ${formatDateOnlyBr(s.inicio)} a ${formatDateOnlyBr(s.fim)} até ${formatDateOnlyBr(s.limite)}.`,
+        saude: false,
+        ...links,
+      });
+    }
+    return alerts;
+  });
+}
+
 /** Grava os avisos ainda não enviados (um por usuário e chave). Retorna quantos foram criados. */
 async function deliver(db: Db, alerts: Alert[], recipients: Recipient[]) {
   if (!alerts.length) return 0;
@@ -173,6 +206,7 @@ export async function notifyDocumentAlerts(db: Db, today = brazilToday()) {
     ...(await employeeDocumentAlerts(db, today)),
     ...(await companyDocumentAlerts(db, today)),
     ...(await monthlyAlerts(db, today)),
+    ...(await vacationAlerts(db, today)),
   ];
   return deliver(db, alerts, await loadRecipients(db));
 }

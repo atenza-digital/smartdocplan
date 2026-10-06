@@ -1,4 +1,5 @@
 import { getValidityState, normalizeTextSearch } from "./formValidation";
+import { addMonthsDateOnly } from "./dates";
 
 /** Situação de cada item do checklist de documentos exigidos do cargo. */
 export type ChecklistItemState = "pendente" | "aguardando_validacao" | "rejeitado" | "vencido" | "aprovado";
@@ -40,17 +41,10 @@ export type ChecklistDocument = {
   createdAt: Date | string;
 };
 
-function addMonths(dateOnly: string, months: number) {
-  const [year, month, day] = dateOnly.slice(0, 10).split("-").map(Number);
-  const date = new Date(year, month - 1 + months, day);
-  const pad = (value: number) => String(value).padStart(2, "0");
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-}
-
 /** Validade efetiva: a informada no documento ou, sem ela, a emissão somada à validade em meses do requisito. */
 export function effectiveValidity(doc: ChecklistDocument, requirement?: ChecklistRequirement) {
   if (doc.validade) return String(doc.validade).slice(0, 10);
-  if (doc.dataEmissao && requirement?.validadeMeses) return addMonths(String(doc.dataEmissao), requirement.validadeMeses);
+  if (doc.dataEmissao && requirement?.validadeMeses) return addMonthsDateOnly(String(doc.dataEmissao), requirement.validadeMeses);
   return null;
 }
 

@@ -40,6 +40,8 @@ import {
   Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
+import { VACATION_SUGGESTION_LABELS } from "@shared/vacationSuggestion";
+import { formatDateOnlyBr } from "@shared/formValidation";
 
 const selectClass =
   "w-full h-10 rounded-md border border-input bg-background px-3 text-sm min-w-0";
@@ -121,6 +123,35 @@ export default function Vacations() {
     { companyId },
     { enabled: companyId > 0 }
   );
+  // Sugestão pelos parâmetros da empresa (a partir da admissão), uma por colaborador.
+  const suggestions = trpc.vacations.suggestions.useQuery(
+    { companyId },
+    { enabled: companyId > 0 }
+  );
+  const suggestionFor = (employeeId: string) =>
+    suggestions.data?.find(s => String(s.employeeId) === employeeId);
+  // Novo formulário já com o colaborador e a sugestão, quando houver.
+  const openCreate = (employeeId = "") => {
+    const sugestao = employeeId ? suggestionFor(employeeId) : undefined;
+    setEditing(null);
+    setForm({
+      ...blankForm(),
+      employeeId,
+      ...(sugestao
+        ? { acquisitionStart: sugestao.inicio, acquisitionEnd: sugestao.fim, concessionDeadline: sugestao.limite }
+        : {}),
+    });
+    setFormOpen(true);
+  };
+  // Vindo do dossiê com ?programar=1: abre o formulário do colaborador uma vez, após carregar a sugestão.
+  const [autoOpened, setAutoOpened] = useState(false);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (autoOpened || !canEdit || params.get("programar") !== "1" || !employeeFilter || !suggestions.isFetched) return;
+    setAutoOpened(true);
+    openCreate(employeeFilter);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [suggestions.isFetched, employeeFilter, canEdit, autoOpened]);
   const selected = periods.data?.find(p => p.id === selectedId);
   const history = trpc.vacations.history.useQuery(
     { id: selected?.id ?? 0 },
@@ -254,11 +285,7 @@ export default function Vacations() {
           {canEdit && (
             <Button
               disabled={!companyId}
-              onClick={() => {
-                setEditing(null);
-                setForm(blankForm());
-                setFormOpen(true);
-              }}
+              onClick={() => openCreate(employeeFilter)}
             >
               <Plus className="mr-2 h-4 w-4" />
               Programar férias
@@ -266,9 +293,10 @@ export default function Vacations() {
           )}
         </div>
         <p className="text-sm rounded-lg border p-4 text-muted-foreground">
-          Nesta fase, os períodos aquisitivos e os prazos são informados pelo
-          RH. Os dias exibidos são dias corridos programados, não saldo legal
-          calculado. A aprovação é documental.
+          O período aquisitivo e o prazo são sugeridos pelos parâmetros da
+          empresa (a partir da admissão) e o RH confere ao programar. Os dias
+          exibidos são dias corridos programados, não saldo legal calculado. A
+          aprovação é documental.
         </p>
         {isPlatformUser(user?.role) && (
           <div className="max-w-md space-y-2">
@@ -836,7 +864,17 @@ export default function Vacations() {
                 disabled={!!editing}
                 className={selectClass}
                 value={form.employeeId}
-                onChange={e => setForm({ ...form, employeeId: e.target.value })}
+                onChange={e => {
+                  const sugestao = editing ? undefined : suggestionFor(e.target.value);
+                  // Preenche o período aquisitivo e o prazo sugeridos; o RH pode alterar tudo.
+                  setForm({
+                    ...form,
+                    employeeId: e.target.value,
+                    ...(sugestao
+                      ? { acquisitionStart: sugestao.inicio, acquisitionEnd: sugestao.fim, concessionDeadline: sugestao.limite }
+                      : {}),
+                  });
+                }}
               >
                 <option value="">Selecione</option>
                 {employees.data
@@ -850,6 +888,17 @@ export default function Vacations() {
                     </option>
                   ))}
               </select>
+              {!editing && form.employeeId && (() => {
+                const sugestao = suggestionFor(form.employeeId);
+                if (!sugestao) return (
+                  <p className="text-xs text-muted-foreground">Sem sugestão: informe a data de admissão do colaborador para calcular o período.</p>
+                );
+                return (
+                  <p className="rounded-md bg-primary/5 border border-primary/20 px-3 py-2 text-xs text-foreground">
+                    Sugestão pelos parâmetros da empresa: {sugestao.numero}º período aquisitivo de {formatDateOnlyBr(sugestao.inicio)} a {formatDateOnlyBr(sugestao.fim)}, adquire em {formatDateOnlyBr(sugestao.aquisicao)} e deve ser solicitado até {formatDateOnlyBr(sugestao.limite)} ({VACATION_SUGGESTION_LABELS[sugestao.situacao].toLowerCase()}). Confira antes de salvar.
+                  </p>
+                );
+              })()}
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               {(

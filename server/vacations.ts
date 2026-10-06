@@ -23,6 +23,7 @@ import {
 import { getDb } from "./db";
 import { protectedProcedure, router } from "./_core/trpc";
 import { saveDocumentFile, validateDocumentFile } from "./uploadFiles";
+import { buildVacationSuggestions } from "./vacationSuggestions";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
 type Tx = Parameters<Parameters<Db["transaction"]>[0]>[0];
@@ -194,6 +195,14 @@ async function notify(
       );
 }
 export const vacationsRouter = router({
+  /** Próximas férias sugeridas pelos parâmetros da empresa (a partir da admissão). Uma por colaborador. */
+  suggestions: protectedProcedure
+    .input(z.object({ companyId: id, employeeId: id.optional() }))
+    .query(async ({ ctx, input }) => {
+      access(ctx.user, input.companyId);
+      const db = await database();
+      return buildVacationSuggestions(db, { companyId: input.companyId, employeeIds: input.employeeId ? [input.employeeId] : undefined });
+    }),
   list: protectedProcedure
     .input(z.object({ companyId: id, employeeId: id.optional() }))
     .query(async ({ ctx, input }) => {
