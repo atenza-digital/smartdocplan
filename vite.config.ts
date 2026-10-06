@@ -18,6 +18,20 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        // Bibliotecas grandes em arquivos próprios: mudam pouco entre versões e ficam no cache do navegador.
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (/[\/]node_modules[\/](react|react-dom|scheduler)[\/]/.test(id)) return "react";
+          if (id.includes("recharts") || id.includes("d3-") || id.includes("victory-vendor")) return "graficos";
+          if (id.includes("@dnd-kit")) return "arrastar";
+          if (id.includes("@radix-ui")) return "componentes";
+          if (id.includes("@tanstack") || id.includes("@trpc") || id.includes("superjson")) return "dados";
+          return undefined;
+        },
+      },
+    },
   },
   server: {
     host: true,

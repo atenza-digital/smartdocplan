@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Desempenho: cada tela é carregada sob demanda e as bibliotecas grandes ficam em arquivos próprios (cache do navegador); o arquivo principal caiu de 2,2 MB para cerca de 150 KB e os gráficos só são baixados no BI.
 - Segurança: login e troca de senha bloqueiam por 15 minutos após 5 erros do mesmo e-mail (ou 20 do mesmo IP) em 15 minutos, com mensagem "Muitas tentativas"; login, falhas e bloqueios passam a ser registrados na auditoria (e-mail mascarado).
 - Auditoria: cada registro grava o IP e o navegador de quem fez a ação (visíveis só ao Administrador Geral, por serem dados pessoais); o servidor passa a considerar o IP real repassado pelo proxy.
 - Calendário da saúde (admin › Calendário da saúde): campanhas mensais com banner que cada pessoa pode fechar, faixa e laço no topo e a cor da campanha aplicada à plataforma inteira (ajustada para manter contraste; desligada no alto contraste). As 12 campanhas do ano vêm como rascunho para revisão, só o Administrador Geral ativa e há "Ver tema na plataforma" para pré-visualizar só no próprio navegador.
