@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
 import { RELEASE_COLORS } from "@/components/DossieChecklist";
-import { Link } from "wouter";
+import { Link, useSearch } from "wouter";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { EMPLOYEE_SECTION_LABELS, type EmployeeSection } from "@shared/employeeSections";
 import CompanyLayout from "@/components/CompanyLayout";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -12,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FolderOpen, Plus, Search, UserCheck, UserMinus, Users, UserX } from "lucide-react";
+import { ChevronLeft, ChevronRight, FolderOpen, Plus, Search, UserCheck, UserMinus, Users, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { canManageCompanyData } from "@shared/permissions";
 import {
@@ -24,7 +26,6 @@ import {
   isAtLeastYearsOld,
   isValidCpf,
   isValidPhone,
-  normalizeTextSearch,
 } from "@shared/formValidation";
 
 const statusColors: Record<string, string> = {
@@ -38,6 +39,12 @@ const statusIcons: Record<string, React.ElementType> = {
   afastado: UserMinus,
   desligado: UserX,
 };
+
+const PAGE_SIZE = 12;
+const SECOES: EmployeeSection[] = ["ativos", "efetivacao", "desligados"];
+
+type SectionFilters = { search: string; status: string; liberacao: string; position: string; worksite: string; page: number };
+const emptyFilters: SectionFilters = { search: "", status: "todos", liberacao: "todos", position: "todos", worksite: "todos", page: 1 };
 
 const emptyForm = {
   nome: "",
@@ -56,18 +63,53 @@ export default function EmpresaColaboradores() {
   const canCreate = canManageCompanyData(user?.role ?? null);
   const maxBirthDate = getBirthDateMax(12);
 
-  const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState("todos");
-  const [filterLiberacao, setFilterLiberacao] = useState("todos");
-  const [filterPosition, setFilterPosition] = useState("todos");
-  const [filterWorksite, setFilterWorksite] = useState("todos");
+  // Cada aba guarda os próprios filtros e página ("duas telas em uma").
+  const searchParams = new URLSearchParams(useSearch());
+  const abaInicial = searchParams.get("aba");
+  const [aba, setAba] = useState<EmployeeSection>(SECOES.includes(abaInicial as EmployeeSection) ? (abaInicial as EmployeeSection) : "ativos");
+  const [filtros, setFiltros] = useState<Record<EmployeeSection, SectionFilters>>({
+    ativos: emptyFilters,
+    efetivacao: emptyFilters,
+    desligados: emptyFilters,
+  });
+  const atual = filtros[aba];
+  const setFiltro = (patch: Partial<SectionFilters>) =>
+    setFiltros((current) => ({ ...current, [aba]: { ...current[aba], page: 1, ...patch } }));
+  const [buscaDebounced, setBuscaDebounced] = useState(atual.search);
+  useEffect(() => {
+    const timer = setTimeout(() => setBuscaDebounced(atual.search), 300);
+    return () => clearTimeout(timer);
+  }, [atual.search]);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(emptyForm);
 
-  const { data: colaboradores = [], isLoading, refetch } = trpc.employees.list.useQuery(
-    { companyId },
-    { enabled: companyId > 0 }
+  const mudarAba = (secao: EmployeeSection, patch?: Partial<SectionFilters>) => {
+    setAba(secao);
+    if (patch) setFiltros((current) => ({ ...current, [secao]: { ...current[secao], page: 1, ...patch } }));
+    // Mantém a aba na URL para voltar a ela ao recarregar ou compartilhar o link.
+    const params = new URLSearchParams(window.location.search);
+    params.set("aba", secao);
+    window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+  };
+
+  const utils = trpc.useUtils();
+  const { data: pagina, isLoading } = trpc.employees.listPaged.useQuery(
+    {
+      companyId,
+      secao: aba,
+      page: atual.page,
+      pageSize: PAGE_SIZE,
+      search: buscaDebounced.trim() || undefined,
+      status: aba === "ativos" && atual.status !== "todos" ? (atual.status as "ativo" | "afastado") : undefined,
+      liberacao: aba === "efetivacao" && atual.liberacao !== "todos" ? (atual.liberacao as "aguardando_documentacao" | "em_analise") : undefined,
+      positionId: atual.position !== "todos" ? Number(atual.position) : undefined,
+      worksiteId: atual.worksite !== "todos" ? Number(atual.worksite) : undefined,
+    },
+    { enabled: companyId > 0, placeholderData: (previous) => previous }
   );
+  const colaboradores = pagina?.rows ?? [];
+  const total = pagina?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const { data: stats } = trpc.employees.stats.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: cargos = [] } = trpc.positions.list.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: obras = [] } = trpc.worksites.list.useQuery({ companyId }, { enabled: companyId > 0 });
@@ -80,37 +122,10 @@ export default function EmpresaColaboradores() {
       toast.success("Colaborador cadastrado com sucesso!");
       setShowModal(false);
       setForm(emptyForm);
-      refetch();
+      utils.employees.invalidate();
     },
     onError: (error) => toast.error(error.message),
   });
-
-  const filtered = useMemo(() => {
-    const normalizedSearch = normalizeTextSearch(search);
-    const digitSearch = search.replace(/\D/g, "");
-
-    return colaboradores.filter((colaborador) => {
-      const matchesStatus = filterStatus === "todos" || colaborador.status === filterStatus;
-      if (!matchesStatus) return false;
-
-      if (filterLiberacao !== "todos" && colaborador.liberacao !== filterLiberacao) return false;
-
-      const matchesPosition = filterPosition === "todos" || String(colaborador.positionId ?? "") === filterPosition;
-      if (!matchesPosition) return false;
-
-      const matchesWorksite = filterWorksite === "todos" || String(colaborador.worksiteId ?? "") === filterWorksite;
-      if (!matchesWorksite) return false;
-
-      if (!normalizedSearch) return true;
-
-      const searchableText = normalizeTextSearch(
-        [colaborador.nome, colaborador.email ?? "", colaborador.telefone ?? "", colaborador.cpf].join(" ")
-      );
-      const cpfDigits = colaborador.cpf.replace(/\D/g, "");
-
-      return searchableText.includes(normalizedSearch) || (!!digitSearch && cpfDigits.includes(digitSearch));
-    });
-  }, [colaboradores, filterLiberacao, filterPosition, filterStatus, filterWorksite, search]);
 
   const fullNameValid = !form.nome.trim() || hasFullName(form.nome);
   const birthDateValid = !form.dataNascimento || isAtLeastYearsOld(form.dataNascimento, 12);
@@ -189,9 +204,12 @@ export default function EmpresaColaboradores() {
               <button
                 key={key}
                 type="button"
-                onClick={() => setFilterLiberacao(filterLiberacao === key ? "todos" : key)}
-                className={`rounded-lg border p-3 text-left transition-colors hover:bg-muted/50 ${filterLiberacao === key ? "border-primary ring-1 ring-primary" : "border-border"}`}
-                aria-pressed={filterLiberacao === key}
+                onClick={() =>
+                  key === "em_analise" || key === "aguardando_documentacao"
+                    ? mudarAba("efetivacao", { liberacao: key })
+                    : mudarAba("ativos")
+                }
+                className="rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/50"
               >
                 <p className="text-2xl font-bold text-foreground">{value}</p>
                 <p className="text-xs text-muted-foreground">{label}</p>
@@ -200,43 +218,62 @@ export default function EmpresaColaboradores() {
           </div>
         )}
 
+        <Tabs value={aba} onValueChange={(value) => mudarAba(value as EmployeeSection)}>
+          <TabsList className="flex h-auto w-full flex-wrap justify-start sm:w-auto">
+            {SECOES.map((secao) => (
+              <TabsTrigger key={secao} value={secao}>
+                {EMPLOYEE_SECTION_LABELS[secao]}
+                {pagina ? ` (${pagina.contagens[secao]})` : ""}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+        <p className="-mt-3 text-sm text-muted-foreground">
+          {aba === "ativos" && "Colaboradores liberados (e de cargos sem documentos exigidos), inclusive afastados."}
+          {aba === "efetivacao" && "Colaboradores com documentação pendente ou em análise pela equipe SmartDocPlan para efetivação."}
+          {aba === "desligados" && "Colaboradores desligados, mantidos para consulta e histórico."}
+        </p>
+
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative min-w-48 flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               placeholder="Buscar por nome, e-mail, telefone ou CPF..."
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              value={atual.search}
+              onChange={(event) => setFiltro({ search: event.target.value })}
               className="pl-9"
+              aria-label="Buscar colaborador"
             />
           </div>
 
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
-            <SelectTrigger className="w-40">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Todos</SelectItem>
-              <SelectItem value="ativo">Ativos</SelectItem>
-              <SelectItem value="afastado">Afastados</SelectItem>
-              <SelectItem value="desligado">Desligados</SelectItem>
-            </SelectContent>
-          </Select>
+          {aba === "ativos" && (
+            <Select value={atual.status} onValueChange={(status) => setFiltro({ status })}>
+              <SelectTrigger className="w-40" aria-label="Filtrar por situação">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todas as situações</SelectItem>
+                <SelectItem value="ativo">Em atividade</SelectItem>
+                <SelectItem value="afastado">Afastados</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
 
-          <Select value={filterLiberacao} onValueChange={setFilterLiberacao}>
-            <SelectTrigger className="w-56" aria-label="Filtrar por liberação">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="todos">Toda liberação</SelectItem>
-              {Object.entries(RELEASE_LABELS).map(([value, label]) => (
-                <SelectItem key={value} value={value}>{label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {aba === "efetivacao" && (
+            <Select value={atual.liberacao} onValueChange={(liberacao) => setFiltro({ liberacao })}>
+              <SelectTrigger className="w-56" aria-label="Filtrar por etapa">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="todos">Todas as etapas</SelectItem>
+                <SelectItem value="aguardando_documentacao">{RELEASE_LABELS.aguardando_documentacao}</SelectItem>
+                <SelectItem value="em_analise">{RELEASE_LABELS.em_analise}</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
 
-          <Select value={filterPosition} onValueChange={setFilterPosition}>
-            <SelectTrigger className="w-52">
+          <Select value={atual.position} onValueChange={(position) => setFiltro({ position })}>
+            <SelectTrigger className="w-52" aria-label="Filtrar por função">
               <SelectValue placeholder="Todas as funções" />
             </SelectTrigger>
             <SelectContent>
@@ -249,8 +286,8 @@ export default function EmpresaColaboradores() {
             </SelectContent>
           </Select>
 
-          <Select value={filterWorksite} onValueChange={setFilterWorksite}>
-            <SelectTrigger className="w-52">
+          <Select value={atual.worksite} onValueChange={(worksite) => setFiltro({ worksite })}>
+            <SelectTrigger className="w-52" aria-label="Filtrar por local">
               <SelectValue placeholder="Todos os locais" />
             </SelectTrigger>
             <SelectContent>
@@ -270,19 +307,21 @@ export default function EmpresaColaboradores() {
               <div key={index} className="h-32 animate-pulse rounded-lg bg-muted" />
             ))}
 
-          {!isLoading && filtered.length === 0 && (
+          {!isLoading && colaboradores.length === 0 && (
             <div className="col-span-full py-12 text-center text-muted-foreground">
               <Users className="mx-auto mb-3 h-10 w-10 opacity-30" />
               <p className="font-medium">Nenhum colaborador encontrado</p>
               <p className="text-sm">
-                {canCreate
-                  ? 'Cadastre o primeiro colaborador clicando em "Novo Colaborador".'
-                  : "Nenhum colaborador disponível para consulta."}
+                {atual.search || atual.status !== "todos" || atual.liberacao !== "todos" || atual.position !== "todos" || atual.worksite !== "todos"
+                  ? "Ajuste os filtros desta aba."
+                  : aba === "ativos" && canCreate
+                    ? 'Cadastre o primeiro colaborador clicando em "Novo Colaborador".'
+                    : "Nenhum colaborador nesta aba."}
               </p>
             </div>
           )}
 
-          {filtered.map((colaborador) => {
+          {colaboradores.map((colaborador) => {
             const StatusIcon = statusIcons[colaborador.status] ?? UserCheck;
 
             return (
@@ -376,6 +415,26 @@ export default function EmpresaColaboradores() {
             );
           })}
         </div>
+
+        {total > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 text-sm text-muted-foreground">
+            <span>
+              {total} colaborador(es) · página {atual.page} de {totalPages}
+            </span>
+            {totalPages > 1 && (
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" disabled={atual.page <= 1} onClick={() => setFiltro({ page: atual.page - 1, search: atual.search })}>
+                  <ChevronLeft className="mr-1 h-4 w-4" />
+                  Anterior
+                </Button>
+                <Button variant="outline" size="sm" disabled={atual.page >= totalPages} onClick={() => setFiltro({ page: atual.page + 1, search: atual.search })}>
+                  Próxima
+                  <ChevronRight className="ml-1 h-4 w-4" />
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <Dialog

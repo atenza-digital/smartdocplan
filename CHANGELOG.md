@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Colaboradores em abas (Ativos, Em efetivação e Desligados), cada uma com seus filtros, busca no servidor (nome, e-mail, telefone ou CPF), contagem no rótulo e paginação de 12 por página; a aba fica no link da página.
 - Endereço com CEP: locais de trabalho e empresa ganham CEP, número, complemento e bairro; ao digitar o CEP, rua, bairro, cidade e UF são preenchidos automaticamente (ViaCEP), com preenchimento manual se o CEP não existir ou o serviço falhar. O endereço da empresa segue pela aprovação de alteração cadastral.
 - Equipe SmartDocPlan: dossiê do colaborador no admin (/admin/colaboradores/:id; auditor só consulta), fila "Validação de documentos" no menu e liberação, conformidade e link ao dossiê na ficha da empresa.
 - Alertas: aviso no sino para admin e RH da empresa e para a equipe SmartDocPlan quando um documento (de colaborador ou da empresa) vence em até 30 dias, em até 7 dias ou venceu, e quando um documento mensal passa do prazo; sem repetição e, para dados de saúde, só para quem pode vê-los.

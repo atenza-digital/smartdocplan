@@ -281,3 +281,25 @@ describe("Endereço com CEP", () => {
     await expect(caller.worksites.create({ companyId: 1, nome: "Obra X", cep: "123" })).rejects.toThrow(/CEP inválido/);
   });
 });
+
+// ─── I. Colaboradores em abas ────────────────────────────────────────────────
+
+import { employeeSection } from "@shared/employeeSections";
+
+describe("Colaboradores — seções", () => {
+  it("desligado vai para Desligados mesmo com documentação pendente", () => {
+    expect(employeeSection({ status: "desligado", liberacao: "aguardando_documentacao" })).toBe("desligados");
+  });
+  it("documentação pendente ou em análise fica Em efetivação, inclusive afastado", () => {
+    expect(employeeSection({ status: "ativo", liberacao: "aguardando_documentacao" })).toBe("efetivacao");
+    expect(employeeSection({ status: "afastado", liberacao: "em_analise" })).toBe("efetivacao");
+  });
+  it("liberado e sem requisitos ficam em Ativos, inclusive afastado", () => {
+    expect(employeeSection({ status: "ativo", liberacao: "liberado" })).toBe("ativos");
+    expect(employeeSection({ status: "afastado", liberacao: "sem_requisitos" })).toBe("ativos");
+  });
+  it("tamanho de página acima de 100 é recusado", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(caller.employees.listPaged({ companyId: 1, secao: "ativos", pageSize: 500 })).rejects.toThrow();
+  });
+});

@@ -879,6 +879,61 @@ const employeesRouter = router({
     return { success: true };
   }),
 
+  /** Lista paginada por seção (Ativos, Em efetivação, Desligados) com filtros e contagem de cada seção. */
+  listPaged: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    secao: z.enum(["ativos", "efetivacao", "desligados"]),
+    page: z.number().int().min(1).default(1),
+    pageSize: z.number().int().min(1).max(100).default(12),
+    search: z.string().trim().max(120).optional(),
+    status: z.enum(["ativo", "afastado"]).optional(),
+    liberacao: z.enum(["aguardando_documentacao", "em_analise"]).optional(),
+    positionId: z.number().optional(),
+    worksiteId: z.number().optional(),
+  })).query(async ({ ctx, input }) => {
+    const empty = { rows: [] as (typeof employees.$inferSelect)[], total: 0, contagens: { ativos: 0, efetivacao: 0, desligados: 0 } };
+    const db = await getDb();
+    if (!db) return empty;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return empty;
+
+    // Mesma regra de shared/employeeSections.ts, em SQL.
+    const emEfetivacao = inArray(employees.liberacao, ["aguardando_documentacao", "em_analise"]);
+    const secaoWhere = {
+      ativos: and(ne(employees.status, "desligado"), sql`NOT (${emEfetivacao})`),
+      efetivacao: and(ne(employees.status, "desligado"), emEfetivacao),
+      desligados: eq(employees.status, "desligado"),
+    };
+    const filtros = [eq(employees.companyId, input.companyId)];
+    if (input.positionId) filtros.push(eq(employees.positionId, input.positionId));
+    if (input.worksiteId) filtros.push(eq(employees.worksiteId, input.worksiteId));
+    if (input.search) {
+      const termo = `%${input.search.replace(/[%_\\]/g, "\\$&")}%`;
+      const digitos = input.search.replace(/\D/g, "");
+      filtros.push(or(
+        sql`${employees.nome} ILIKE ${termo}`,
+        sql`${employees.email} ILIKE ${termo}`,
+        sql`${employees.telefone} ILIKE ${termo}`,
+        ...(digitos.length >= 3 ? [sql`regexp_replace(${employees.cpf}, '[^0-9]', '', 'g') LIKE ${`%${digitos}%`}`] : []),
+      )!);
+    }
+    const where = [...filtros, secaoWhere[input.secao]];
+    if (input.secao === "ativos" && input.status) where.push(eq(employees.status, input.status));
+    if (input.secao === "efetivacao" && input.liberacao) where.push(eq(employees.liberacao, input.liberacao));
+
+    const [rows, [{ total }], [contagens]] = await Promise.all([
+      db.select().from(employees).where(and(...where)).orderBy(employees.nome)
+        .limit(input.pageSize).offset((input.page - 1) * input.pageSize),
+      db.select({ total: sql<number>`count(*)::int` }).from(employees).where(and(...where)),
+      // Contagens das abas consideram busca, função e local, mas não os filtros próprios de cada aba.
+      db.select({
+        ativos: sql<number>`count(*) FILTER (WHERE ${secaoWhere.ativos})::int`,
+        efetivacao: sql<number>`count(*) FILTER (WHERE ${secaoWhere.efetivacao})::int`,
+        desligados: sql<number>`count(*) FILTER (WHERE ${secaoWhere.desligados})::int`,
+      }).from(employees).where(and(...filtros)),
+    ]);
+    return { rows, total: Number(total ?? 0), contagens };
+  }),
+
   stats: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     const empty = { total: 0, ativos: 0, afastados: 0, desligados: 0, liberados: 0, emAnalise: 0, aguardandoDocumentacao: 0, semRequisitos: 0 };
