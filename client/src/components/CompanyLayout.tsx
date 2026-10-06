@@ -57,8 +57,8 @@ const navItems: NavItem[] = [
   { href: "/empresa/chamados", icon: Ticket, label: "Chamados" },
   { href: "/empresa/bi", icon: BarChart3, label: "BI / Relatórios" },
   { href: "/empresa/parametros", icon: SlidersHorizontal, label: "Parâmetros da empresa", visible: canSeeCompanySettings },
-  { href: "/empresa/configuracoes", icon: Settings, label: "Configurações", visible: canSeeCompanySettings },
   { href: "/empresa/estrutura", icon: Settings, label: "Estrutura da empresa", visible: canSeeCompanySettings },
+  { href: "/empresa/configuracoes", icon: Settings, label: "Configurações" },
 ];
 
 interface CompanyLayoutProps {

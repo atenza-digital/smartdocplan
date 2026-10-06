@@ -226,7 +226,9 @@ function Router() {
       </Route>
       <Route path="/empresa/parametros">
         <AuthGuard>
-          <EmpresaParametros />
+          <RoleGuard allow={canSeeCompanySettings} redirectTo="/empresa">
+            <EmpresaParametros />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/documentos">
@@ -256,9 +258,7 @@ function Router() {
       </Route>
       <Route path="/empresa/configuracoes">
         <AuthGuard>
-          <RoleGuard allow={canSeeCompanySettings} redirectTo="/empresa">
-            <EmpresaConfiguracoes />
-          </RoleGuard>
+          <EmpresaConfiguracoes />
         </AuthGuard>
       </Route>
 

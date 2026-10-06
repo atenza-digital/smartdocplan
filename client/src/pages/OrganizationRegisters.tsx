@@ -220,7 +220,7 @@ export default function OrganizationRegisters() {
             href={
               adminView && companyId
                 ? `/admin/empresas/${companyId}`
-                : "/empresa/configuracoes"
+                : "/empresa/parametros"
             }
           >
             cadastros da empresa
