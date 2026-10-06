@@ -238,6 +238,22 @@ export const recurringDocumentTypes = smartdocSchema.table("recurring_document_t
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// --- HEALTH CAMPAIGNS (CALENDÁRIO DA SAÚDE) ---
+export const healthCampaigns = smartdocSchema.table("health_campaigns", {
+  id: serial("id").primaryKey(),
+  titulo: varchar("titulo", { length: 120 }).notNull(),
+  mensagem: text("mensagem").notNull(),
+  link: text("link"),
+  linkTexto: varchar("linkTexto", { length: 60 }),
+  cor: varchar("cor", { length: 7 }).notNull(),
+  mes: integer("mes").notNull(), // 1–12; repete todo ano
+  publico: text("publico").default("todos").notNull(), // todos | empresas | plataforma
+  ativo: boolean("ativo").default(false).notNull(),
+  updatedBy: integer("updatedBy"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 // --- EMPLOYEES (COLABORADORES) ---
 export const employees = smartdocSchema.table("employees", {
   id: serial("id").primaryKey(),

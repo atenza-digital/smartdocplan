@@ -8,6 +8,7 @@ import {
   canManageRequestWorkflow,
   isPlatformOperator,
   isPlatformUser,
+  canManagePlatformSettings,
 } from "@shared/permissions";
 import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -23,7 +24,7 @@ import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
   positions, worksites, companyDocuments, employeeDocuments,
-  legalRequirements, positionRequirements, recurringDocumentTypes, users, documentTypeTemplates, requestDocumentUploads,
+  legalRequirements, positionRequirements, recurringDocumentTypes, healthCampaigns, users, documentTypeTemplates, requestDocumentUploads,
   companyUpdateRequests, userNotifications, ticketMessages, userWorksites
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
@@ -34,6 +35,7 @@ import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } 
 import { buildCompanyMonthlyGrid, buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
 import { PERIODICIDADES, asPeriodicidade, formatPeriod, isPeriodAllowed } from "@shared/recurring";
 import { brazilToday } from "@shared/vacations";
+import { campaignVisibleTo, isSafeCampaignLink } from "@shared/campaigns";
 import {
   formatCnpj,
   formatCpf,
@@ -2023,6 +2025,72 @@ const recurringDocsRouter = router({
   }),
 });
 
+const campaignInput = {
+  titulo: z.string().trim().min(3, "Informe o título.").max(120),
+  mensagem: z.string().trim().min(10, "Escreva a mensagem do banner.").max(400, "A mensagem deve ter até 400 caracteres."),
+  link: z.string().trim().max(500).optional().refine((v) => !v || isSafeCampaignLink(v), "Use um link https:// válido."),
+  linkTexto: z.string().trim().max(60).optional(),
+  cor: z.string().regex(/^#[0-9a-fA-F]{6}$/, "Cor inválida."),
+  mes: z.number().int().min(1).max(12),
+  publico: z.enum(["todos", "empresas", "plataforma"]),
+  ativo: z.boolean(),
+};
+
+/** Campanhas do calendário da saúde: banner e cor do mês. Só o Administrador Geral cadastra e ativa. */
+const healthCampaignsRouter = router({
+  /** Campanha ativa do mês atual (horário de Brasília) para o perfil de quem está logado. */
+  active: protectedProcedure.query(async ({ ctx }) => {
+    const db = await getDb();
+    if (!db) return null;
+    const mes = Number(brazilToday().slice(5, 7));
+    const rows = await db.select().from(healthCampaigns)
+      .where(and(eq(healthCampaigns.mes, mes), eq(healthCampaigns.ativo, true)))
+      .orderBy(desc(healthCampaigns.updatedAt));
+    const campanha = rows.find((row) => campaignVisibleTo(row.publico, isPlatformUser(ctx.user.role)));
+    if (!campanha) return null;
+    const { updatedBy: _updatedBy, ...publica } = campanha;
+    return publica;
+  }),
+
+  list: protectedProcedure.query(async ({ ctx }) => {
+    assertAccess(isPlatformUser(ctx.user.role), "Acesso negado");
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(healthCampaigns).orderBy(healthCampaigns.mes, healthCampaigns.titulo);
+  }),
+
+  save: protectedProcedure.input(z.object({ id: z.number().optional(), ...campaignInput })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManagePlatformSettings(ctx.user.role), "Só o Administrador Geral gerencia campanhas.");
+    const db = await getDb();
+    if (!db) throw new Error("DB unavailable");
+    const { id, ...dados } = input;
+    const values = {
+      ...dados,
+      link: dados.link || null,
+      linkTexto: dados.link ? dados.linkTexto || "Saiba mais" : null,
+      updatedBy: ctx.user.id,
+      updatedAt: new Date(),
+    };
+    let campanhaId = id ?? null;
+    if (id) {
+      const [atual] = await db.select({ id: healthCampaigns.id }).from(healthCampaigns).where(eq(healthCampaigns.id, id)).limit(1);
+      if (!atual) throw new Error("Campanha não encontrada.");
+      await db.update(healthCampaigns).set(values).where(eq(healthCampaigns.id, id));
+    } else {
+      const [criada] = await db.insert(healthCampaigns).values(values).returning({ id: healthCampaigns.id });
+      campanhaId = criada?.id ?? null;
+    }
+    await insertAuditLog({
+      userId: ctx.user.id,
+      acao: id ? "editou_campanha_saude" : "criou_campanha_saude",
+      entidade: "health_campaigns",
+      entidadeId: campanhaId,
+      dadosDepois: { titulo: dados.titulo, mes: dados.mes, ativo: dados.ativo, publico: dados.publico },
+    });
+    return { success: true };
+  }),
+});
+
 // Documento enviado pela empresa aguarda validação; enviado pela equipe SmartDocPlan já entra aprovado.
 function initialReviewFields(user: { id: number; role: string }) {
   return isPlatformOperator(user.role)
@@ -2571,6 +2639,7 @@ const requestDocUploadsRouter = router({
 export const appRouter = router({
   bi: biRouter,
   recurringDocs: recurringDocsRouter,
+  healthCampaigns: healthCampaignsRouter,
   vacations: vacationsRouter,
   organization: organizationRouter,
   system: systemRouter,
