@@ -2,6 +2,7 @@ import AdminLayout from "@/components/AdminLayout";
 import { ChangePasswordForm } from "@/components/ChangePasswordForm";
 import { DialogSizePreference } from "@/components/DialogSizePreference";
 import { useLocalAuth } from "@/contexts/LocalAuthContext";
+import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Shield, Users, Info, Lock } from "lucide-react";
@@ -9,6 +10,8 @@ import { Shield, Users, Info, Lock } from "lucide-react";
 export default function AdminConfiguracoes() {
   const { user } = useLocalAuth();
   const isAdmin = user?.role === "platform_admin";
+  // Versão e conexão reais com o banco (o cartão mostrava valores fixos).
+  const health = trpc.system.health.useQuery({ timestamp: 0 }, { retry: false, refetchOnWindowFocus: false });
 
   const roleLabel: Record<string, string> = {
     platform_admin: "Administrador da Plataforma",
@@ -92,13 +95,22 @@ export default function AdminConfiguracoes() {
               </div>
               <div className="p-3 bg-muted/40 rounded-lg">
                 <p className="text-xs text-muted-foreground mb-1">Versão</p>
-                <p className="font-semibold">1.0.0</p>
-                <p className="text-xs text-muted-foreground">Produção</p>
+                <p className="font-semibold">{health.data?.appVersion ?? "—"}</p>
+                <p className="text-xs text-muted-foreground">
+                  {health.data?.ambiente ?? "—"}
+                  {health.data?.version && health.data.version !== "development" ? ` · build ${health.data.version.slice(0, 7)}` : ""}
+                </p>
               </div>
               <div className="p-3 bg-muted/40 rounded-lg">
                 <p className="text-xs text-muted-foreground mb-1">Banco de Dados</p>
-                <p className="font-semibold">MySQL 8.0</p>
-                <p className="text-xs text-green-600">● Conectado</p>
+                <p className="font-semibold">PostgreSQL</p>
+                {health.isLoading ? (
+                  <p className="text-xs text-muted-foreground">Verificando conexão...</p>
+                ) : health.data?.ok ? (
+                  <p className="text-xs text-green-600">● Conectado</p>
+                ) : (
+                  <p className="text-xs text-red-600">● Sem conexão</p>
+                )}
               </div>
               <div className="p-3 bg-muted/40 rounded-lg">
                 <p className="text-xs text-muted-foreground mb-1">Conformidade</p>
