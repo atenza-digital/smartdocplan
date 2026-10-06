@@ -248,3 +248,36 @@ describe("Alertas de vencimento", () => {
     expect(documentAlertThreshold(null, "2026-10-05")).toBeNull();
   });
 });
+
+// ─── H. Endereço com CEP ─────────────────────────────────────────────────────
+
+import { addressForDb, addressInput, formatAddress, formatCep, isValidCep } from "@shared/address";
+import { z } from "zod";
+
+describe("Endereço com CEP", () => {
+  it("máscara e validação do CEP", () => {
+    expect(formatCep("01310100")).toBe("01310-100");
+    expect(formatCep("01310-1009999")).toBe("01310-100");
+    expect(isValidCep("01310-100")).toBe(true);
+    expect(isValidCep("0131")).toBe(false);
+  });
+
+  it("servidor recusa CEP incompleto e UF fora da lista", () => {
+    const schema = z.object(addressInput);
+    expect(schema.safeParse({ cep: "0131" }).success).toBe(false);
+    expect(schema.safeParse({ estado: "XX" }).success).toBe(false);
+    expect(schema.safeParse({ cep: "", estado: "" }).success).toBe(true);
+    expect(schema.safeParse({ cep: "01310100", estado: "sp" }).success).toBe(true);
+  });
+
+  it("normaliza para gravar e monta a linha de exibição", () => {
+    const db = addressForDb({ cep: "01310100", endereco: " Av. Paulista ", numero: "1000", estado: "sp", bairro: "" });
+    expect(db).toMatchObject({ cep: "01310-100", endereco: "Av. Paulista", numero: "1000", estado: "SP", bairro: null });
+    expect(formatAddress({ ...db, cidade: "São Paulo", bairro: "Bela Vista" })).toBe("Av. Paulista, 1000 · Bela Vista · São Paulo/SP · CEP 01310-100");
+  });
+
+  it("local com CEP inválido é recusado antes de gravar", async () => {
+    const caller = appRouter.createCaller(makeCtx({ role: "company_admin" as any, companyId: 1 }));
+    await expect(caller.worksites.create({ companyId: 1, nome: "Obra X", cep: "123" })).rejects.toThrow(/CEP inválido/);
+  });
+});

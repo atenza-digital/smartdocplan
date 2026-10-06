@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import CompanyLayout from "@/components/CompanyLayout";
 import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
 import { RecurringTypesManager } from "@/components/RecurringTypesManager";
+import { AddressFields } from "@/components/AddressFields";
+import { emptyAddress, formatAddress, type AddressValue } from "@shared/address";
 import { CalendarClock } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 import { useLocalAuth as useAuth } from "@/contexts/LocalAuthContext";
@@ -112,11 +114,12 @@ export default function EmpresaConfiguracoes() {
     { enabled: (selectedCargoId ?? 0) > 0 }
   );
 
-  const [form, setForm] = useState({ razaoSocial: "", nomeFantasia: "", cnpj: "", email: "", telefone: "" });
+  const [form, setForm] = useState({ razaoSocial: "", nomeFantasia: "", cnpj: "", email: "", telefone: "", ...emptyAddress });
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
   const [cargoModal, setCargoModal] = useState(false);
   const [editingCargoId, setEditingCargoId] = useState<number | null>(null);
-  const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+  const emptyLocal = { nome: "", cnos: "", ...emptyAddress };
+  const [novoLocal, setNovoLocal] = useState<{ nome: string; cnos: string } & AddressValue>(emptyLocal);
   const [localModal, setLocalModal] = useState(false);
   const [editingLocalId, setEditingLocalId] = useState<number | null>(null);
   const [legalModal, setLegalModal] = useState(false);
@@ -135,6 +138,13 @@ export default function EmpresaConfiguracoes() {
       cnpj: empresa.cnpj ?? "",
       email: empresa.email ?? "",
       telefone: empresa.telefone ?? "",
+      cep: empresa.cep ?? "",
+      endereco: empresa.endereco ?? "",
+      numero: empresa.numero ?? "",
+      complemento: empresa.complemento ?? "",
+      bairro: empresa.bairro ?? "",
+      cidade: empresa.cidade ?? "",
+      estado: empresa.estado ?? "",
     });
   }, [empresa]);
 
@@ -187,7 +197,7 @@ export default function EmpresaConfiguracoes() {
       toast.success("Frente / local cadastrado com sucesso!");
       setLocalModal(false);
       setEditingLocalId(null);
-      setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+      setNovoLocal(emptyLocal);
       refetchLocais();
     },
     onError: (error) => toast.error(error.message),
@@ -198,7 +208,7 @@ export default function EmpresaConfiguracoes() {
       toast.success("Frente / local atualizada com sucesso!");
       setLocalModal(false);
       setEditingLocalId(null);
-      setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+      setNovoLocal(emptyLocal);
       refetchLocais();
     },
     onError: (error) => toast.error(error.message),
@@ -287,6 +297,14 @@ export default function EmpresaConfiguracoes() {
       cnpj: form.cnpj.trim() || undefined,
       email: form.email.trim() || undefined,
       telefone: form.telefone.trim() || undefined,
+      // Endereço vai inteiro: campo vazio limpa o valor salvo.
+      cep: form.cep,
+      endereco: form.endereco,
+      numero: form.numero,
+      complemento: form.complemento,
+      bairro: form.bairro,
+      cidade: form.cidade,
+      estado: form.estado,
     });
   };
 
@@ -308,7 +326,7 @@ export default function EmpresaConfiguracoes() {
 
   const openNewLocalModal = () => {
     setEditingLocalId(null);
-    setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+    setNovoLocal(emptyLocal);
     setLocalModal(true);
   };
 
@@ -317,7 +335,11 @@ export default function EmpresaConfiguracoes() {
     setNovoLocal({
       nome: local.nome ?? "",
       cnos: local.cnos ?? "",
+      cep: local.cep ?? "",
       endereco: local.endereco ?? "",
+      numero: local.numero ?? "",
+      complemento: local.complemento ?? "",
+      bairro: local.bairro ?? "",
       cidade: local.cidade ?? "",
       estado: local.estado ?? "",
     });
@@ -559,6 +581,15 @@ export default function EmpresaConfiguracoes() {
                     />
                   </div>
                 </div>
+                <div className="space-y-2 pt-2">
+                  <p className="text-sm font-medium text-foreground">Endereço da empresa</p>
+                  <AddressFields
+                    idPrefix="empresa"
+                    value={form}
+                    disabled={!canEdit}
+                    onChange={(address) => setForm((current) => ({ ...current, ...address }))}
+                  />
+                </div>
 
                 {canEdit && (
                   <div className="flex justify-end pt-2">
@@ -773,8 +804,7 @@ export default function EmpresaConfiguracoes() {
                           <p className="text-sm font-medium text-foreground">{local.nome}</p>
                           <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                             {local.cnos && <span>CNOS: {local.cnos}</span>}
-                            {local.cidade && <span>{local.cidade}{local.estado ? `/${local.estado}` : ""}</span>}
-                            {local.endereco && <span>{local.endereco}</span>}
+                            {formatAddress(local) && <span>{formatAddress(local)}</span>}
                           </div>
                         </div>
                         {canEdit && (
@@ -1013,33 +1043,11 @@ export default function EmpresaConfiguracoes() {
                 placeholder="Código CNOS"
               />
             </div>
-            <div className="space-y-1.5">
-              <Label>Endereço</Label>
-              <Input
-                value={novoLocal.endereco}
-                onChange={(event) => setNovoLocal((current) => ({ ...current, endereco: event.target.value }))}
-                placeholder="Rua, número e complemento"
-                maxLength={255}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Cidade</Label>
-                <Input
-                  value={novoLocal.cidade}
-                  onChange={(event) => setNovoLocal((current) => ({ ...current, cidade: event.target.value }))}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>UF</Label>
-                <Input
-                  maxLength={2}
-                  value={novoLocal.estado}
-                  onChange={(event) => setNovoLocal((current) => ({ ...current, estado: event.target.value.toUpperCase() }))}
-                  placeholder="SP"
-                />
-              </div>
-            </div>
+            <AddressFields
+              idPrefix="local"
+              value={novoLocal}
+              onChange={(address) => setNovoLocal((current) => ({ ...current, ...address }))}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLocalModal(false)}>Cancelar</Button>
@@ -1048,9 +1056,13 @@ export default function EmpresaConfiguracoes() {
                 const payload = {
                   nome: novoLocal.nome.trim(),
                   cnos: novoLocal.cnos.trim() || undefined,
+                  cep: novoLocal.cep || undefined,
                   endereco: novoLocal.endereco.trim() || undefined,
+                  numero: novoLocal.numero.trim() || undefined,
+                  complemento: novoLocal.complemento.trim() || undefined,
+                  bairro: novoLocal.bairro.trim() || undefined,
                   cidade: novoLocal.cidade.trim() || undefined,
-                  estado: novoLocal.estado.trim().toUpperCase() || undefined,
+                  estado: novoLocal.estado || undefined,
                 };
 
                 if (editingLocalId) {

@@ -4,6 +4,13 @@ import CompanyDocumentsManager from "@/components/CompanyDocumentsManager";
 import { CompanyMonthlyDocs } from "@/components/CompanyMonthlyDocs";
 import { isPlatformOperator } from "@shared/permissions";
 import { RELEASE_LABELS, type EmployeeRelease } from "@shared/compliance";
+import { formatAddress } from "@shared/address";
+
+// Nomes legíveis dos campos nas solicitações de alteração cadastral.
+const CAMPOS_EMPRESA: Record<string, string> = {
+  razaoSocial: "Razão social", nomeFantasia: "Nome fantasia", cnpj: "CNPJ", email: "E-mail", telefone: "Telefone",
+  cep: "CEP", endereco: "Endereço", numero: "Número", complemento: "Complemento", bairro: "Bairro", cidade: "Cidade", estado: "UF",
+};
 import { RELEASE_COLORS } from "@/components/DossieChecklist";
 import { CompanyLogoUpload } from "@/components/CompanyLogoUpload";
 import { useLocalAuth } from "@/contexts/LocalAuthContext";
@@ -198,6 +205,12 @@ export default function AdminEmpresaDetalhe() {
                   <p>{empresa.telefone}</p>
                 </div>
               )}
+              {formatAddress(empresa) && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Endereço</p>
+                  <p>{formatAddress(empresa)}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-muted-foreground">Cadastrado em</p>
                 <p>{new Date(empresa.createdAt).toLocaleDateString("pt-BR")}</p>
@@ -369,7 +382,7 @@ export default function AdminEmpresaDetalhe() {
                             <div className="rounded-lg bg-muted/40 p-3 text-xs text-muted-foreground">
                               {Object.entries(item.payload).map(([key, value]) => (
                                 <p key={key}>
-                                  <span className="font-medium text-foreground">{key}:</span> {String(value ?? "-")}
+                                  <span className="font-medium text-foreground">{CAMPOS_EMPRESA[key] ?? key}:</span> {String(value ?? "-")}
                                 </p>
                               ))}
                               {item.motivo && <p className="mt-2">{item.motivo}</p>}

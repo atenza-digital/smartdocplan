@@ -41,6 +41,8 @@ import {
   normalizeCpf,
 } from "@shared/formValidation";
 import { getDocumentDateBounds } from "@shared/formValidation";
+import { AddressFields } from "@/components/AddressFields";
+import { emptyAddress, type AddressValue } from "@shared/address";
 
 // Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
 const DOC_DATES = getDocumentDateBounds();
@@ -124,7 +126,7 @@ export default function EmpresaNovaSolicitacao() {
   const [cargoModalOpen, setCargoModalOpen] = useState(false);
   const [localModalOpen, setLocalModalOpen] = useState(false);
   const [novoCargo, setNovoCargo] = useState({ nome: "", cbo: "", descricao: "" });
-  const [novoLocal, setNovoLocal] = useState({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+  const [novoLocal, setNovoLocal] = useState<{ nome: string; cnos: string } & AddressValue>({ nome: "", cnos: "", ...emptyAddress });
   const [pendingUploads, setPendingUploads] = useState<PendingUpload[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
@@ -254,7 +256,7 @@ export default function EmpresaNovaSolicitacao() {
       await utils.worksites.list.invalidate({ companyId });
       toast.success("Frente / local cadastrado com sucesso!");
       setLocalModalOpen(false);
-      setNovoLocal({ nome: "", cnos: "", endereco: "", cidade: "", estado: "" });
+      setNovoLocal({ nome: "", cnos: "", ...emptyAddress });
     },
     onError: (error) => toast.error(error.message),
   });
@@ -546,9 +548,13 @@ export default function EmpresaNovaSolicitacao() {
       companyId,
       nome: novoLocal.nome.trim(),
       cnos: novoLocal.cnos.trim() || undefined,
+      cep: novoLocal.cep || undefined,
       endereco: novoLocal.endereco.trim() || undefined,
+      numero: novoLocal.numero.trim() || undefined,
+      complemento: novoLocal.complemento.trim() || undefined,
+      bairro: novoLocal.bairro.trim() || undefined,
       cidade: novoLocal.cidade.trim() || undefined,
-      estado: novoLocal.estado.trim().toUpperCase() || undefined,
+      estado: novoLocal.estado || undefined,
     });
   };
 
@@ -1504,29 +1510,15 @@ export default function EmpresaNovaSolicitacao() {
               <Label>Nome</Label>
               <Input value={novoLocal.nome} onChange={(event) => setNovoLocal((current) => ({ ...current, nome: event.target.value }))} />
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label>CNOS</Label>
-                <Input value={novoLocal.cnos} onChange={(event) => setNovoLocal((current) => ({ ...current, cnos: event.target.value }))} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>UF</Label>
-                <Input maxLength={2} value={novoLocal.estado} onChange={(event) => setNovoLocal((current) => ({ ...current, estado: event.target.value }))} />
-              </div>
-            </div>
             <div className="space-y-1.5">
-              <Label>Cidade</Label>
-              <Input value={novoLocal.cidade} onChange={(event) => setNovoLocal((current) => ({ ...current, cidade: event.target.value }))} />
+              <Label>CNOS</Label>
+              <Input value={novoLocal.cnos} onChange={(event) => setNovoLocal((current) => ({ ...current, cnos: event.target.value }))} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Endereço</Label>
-              <Input
-                maxLength={255}
-                placeholder="Rua, número, complemento"
-                value={novoLocal.endereco}
-                onChange={(event) => setNovoLocal((current) => ({ ...current, endereco: event.target.value }))}
-              />
-            </div>
+            <AddressFields
+              idPrefix="nova-solicitacao-local"
+              value={novoLocal}
+              onChange={(address) => setNovoLocal((current) => ({ ...current, ...address }))}
+            />
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLocalModalOpen(false)}>

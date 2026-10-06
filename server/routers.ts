@@ -28,6 +28,7 @@ import {
 } from "../drizzle/schema";
 import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
+import { addressForDb, addressInput } from "@shared/address";
 import { COMPANY_DOCUMENT_TYPES, COMPANY_MONTHLY_DOCUMENT_TIPO, latestCompanyDocuments } from "@shared/companyDocuments";
 import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
 import { buildCompanyMonthlyGrid, buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
@@ -92,8 +93,18 @@ function normalizeCompanyPayload(input: {
   email?: string;
   telefone?: string;
   status?: "ativo" | "inativo" | "suspenso";
+  cep?: string;
+  endereco?: string;
+  numero?: string;
+  complemento?: string;
+  bairro?: string;
+  cidade?: string;
+  estado?: string;
 }) {
   const payload: Record<string, unknown> = {};
+  // Endereço vai inteiro quando qualquer campo dele vier no input (formulário envia o bloco todo).
+  const enderecoInformado = ["cep", "endereco", "numero", "complemento", "bairro", "cidade", "estado"].some((key) => (input as Record<string, unknown>)[key] !== undefined);
+  if (enderecoInformado) Object.assign(payload, addressForDb(input));
 
   if (input.razaoSocial !== undefined) payload.razaoSocial = input.razaoSocial.trim();
   if (input.nomeFantasia !== undefined) payload.nomeFantasia = normalizeOptionalText(input.nomeFantasia) ?? null;
@@ -325,6 +336,7 @@ const companiesRouter = router({
     cnpj: z.string().optional(),
     email: z.string().email().optional(),
     telefone: z.string().optional(),
+    ...addressInput,
     status: z.enum(["ativo", "inativo", "suspenso"]).default("ativo"),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -347,6 +359,7 @@ const companiesRouter = router({
     cnpj: z.string().optional(),
     email: z.string().email().optional(),
     telefone: z.string().optional(),
+    ...addressInput,
     status: z.enum(["ativo", "inativo", "suspenso"]).optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -412,6 +425,7 @@ const companyUpdateRequestsRouter = router({
     cnpj: z.string().optional(),
     email: z.string().email().optional(),
     telefone: z.string().optional(),
+    ...addressInput,
     motivo: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
@@ -429,6 +443,13 @@ const companyUpdateRequestsRouter = router({
       cnpj: input.cnpj,
       email: input.email,
       telefone: input.telefone,
+      cep: input.cep,
+      endereco: input.endereco,
+      numero: input.numero,
+      complemento: input.complemento,
+      bairro: input.bairro,
+      cidade: input.cidade,
+      estado: input.estado,
     });
 
     const [created] = await db.insert(companyUpdateRequests).values({
@@ -1228,9 +1249,7 @@ const worksitesRouter = router({
     companyId: z.number(),
     nome: z.string().min(1),
     cnos: z.string().optional(),
-    endereco: z.string().optional(),
-    cidade: z.string().optional(),
-    estado: z.string().max(2).optional(),
+    ...addressInput,
     dataInicio: z.string().optional(),
     dataFim: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
@@ -1241,6 +1260,7 @@ const worksitesRouter = router({
     if (input.dataInicio && input.dataFim && input.dataFim < input.dataInicio) throw new Error("A data final deve ser posterior à inicial.");
     await db.insert(worksites).values({
       ...input,
+      ...addressForDb(input),
       dataInicio: input.dataInicio || undefined,
       dataFim: input.dataFim || undefined,
     });
@@ -1258,9 +1278,7 @@ const worksitesRouter = router({
     id: z.number(),
     nome: z.string().min(1),
     cnos: z.string().optional(),
-    endereco: z.string().optional(),
-    cidade: z.string().optional(),
-    estado: z.string().max(2).optional(),
+    ...addressInput,
     dataInicio: z.string().optional(),
     dataFim: z.string().optional(),
     status: z.enum(["ativo", "concluido", "cancelado"]).optional(),
@@ -1276,9 +1294,7 @@ const worksitesRouter = router({
     const payload = {
       nome: input.nome.trim(),
       cnos: normalizeOptionalText(input.cnos) ?? null,
-      endereco: normalizeOptionalText(input.endereco) ?? null,
-      cidade: normalizeOptionalText(input.cidade) ?? null,
-      estado: normalizeOptionalText(input.estado)?.toUpperCase() ?? null,
+      ...addressForDb(input),
       dataInicio: input.dataInicio || null,
       dataFim: input.dataFim || null,
       status: input.status ?? worksite.status,
