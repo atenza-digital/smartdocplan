@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Deploy de homologação: grava `APP_ENV=Homologação` no `.env` do servidor (ou o valor da variável `APP_ENV` do GitHub), sem sobrescrever um `APP_ENV` já definido no secret.
 - Segurança: sair da plataforma encerra a sessão também no servidor (o mesmo token deixa de valer) e trocar a senha encerra as outras sessões do usuário; quem já está logado continua logado. Nova tabela `session_revocations` (migration só de adição), limpa de hora em hora.
 - Segurança: o administrador inicial só é criado com a senha da variável `ADMIN_INITIAL_PASSWORD`; a senha deixou de ficar no código e de aparecer no log.
 - Documentos recorrentes: períodos anteriores à admissão (ou ao cadastro do tipo) aparecem como "Não se aplica" em vez de "Atrasado".
