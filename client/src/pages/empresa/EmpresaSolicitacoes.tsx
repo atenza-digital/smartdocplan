@@ -327,7 +327,7 @@ export default function EmpresaSolicitacoes() {
 
       {docModal && (
         <Dialog open={!!docModal} onOpenChange={() => setDocModal(null)}>
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent className="max-h-[85vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 Documentos - #{docModal.id} {docModal.titulo}

@@ -644,7 +644,7 @@ export default function EmpresaDossie() {
       </AlertDialog>
 
       <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectReason(""); } }}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Rejeitar documento</DialogTitle>
           </DialogHeader>

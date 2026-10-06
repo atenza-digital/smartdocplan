@@ -268,7 +268,7 @@ export default function AdminUsuarios() {
 
       {/* Modal: Obras / locais do usuario */}
       <Dialog open={modal === "worksites"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Obras / locais — {selectedUser?.name}</DialogTitle>
           </DialogHeader>
@@ -372,7 +372,7 @@ export default function AdminUsuarios() {
 
       {/* Modal: Editar papel */}
       <Dialog open={modal === "editRole"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Alterar Papel — {selectedUser?.name}</DialogTitle>
           </DialogHeader>
@@ -421,7 +421,7 @@ export default function AdminUsuarios() {
 
       {/* Modal: Reset de senha */}
       <Dialog open={modal === "resetPassword"} onOpenChange={(o) => !o && setModal(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>Redefinir Senha — {selectedUser?.name}</DialogTitle>
           </DialogHeader>

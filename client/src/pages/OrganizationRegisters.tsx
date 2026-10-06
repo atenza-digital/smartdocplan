@@ -229,7 +229,7 @@ export default function OrganizationRegisters() {
         </p>
       </div>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-xl max-h-[85dvh] overflow-y-auto">
+        <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editingId ? "Editar" : "Adicionar"} {kind}

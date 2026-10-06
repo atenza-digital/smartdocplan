@@ -99,7 +99,7 @@ export function RecurringTypesManager({ companyId, canEdit }: { companyId: numbe
       </CardContent>
 
       <Dialog open={!!form} onOpenChange={(open) => !open && setForm(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>{form?.id ? "Editar documento mensal" : "Novo documento mensal"}</DialogTitle>
           </DialogHeader>

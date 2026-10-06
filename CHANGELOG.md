@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Tamanho das janelas: todos os diálogos passam a seguir a preferência do usuário (Pequeno, Médio ou Grande); antes alguns tinham largura fixa.
 - Área da empresa reorganizada: "Parâmetros da empresa" reúne dados e endereço, funções, locais, matriz legal, documentos recorrentes e prazos de férias; "Configurações" passa a ter só preferências pessoais (tema, acessibilidade, tamanho das janelas e atalho para Meu perfil), disponível para todos os perfis.
 - Parâmetros da empresa (nova tela no menu): meses até adquirir férias e meses para solicitar, contados da admissão (padrão 12 + 1). O formulário de férias e o dossiê sugerem o próximo período aquisitivo e o prazo, e admin, RH e equipe SmartDocPlan recebem aviso quando o colaborador adquire férias e quando o limite para solicitar se aproxima ou vence.
 - Colaboradores em abas (Ativos, Em efetivação e Desligados), cada uma com seus filtros, busca no servidor (nome, e-mail, telefone ou CPF), contagem no rótulo e paginação de 12 por página; a aba fica no link da página.

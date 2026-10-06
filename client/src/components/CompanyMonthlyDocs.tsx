@@ -59,7 +59,7 @@ export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; 
         onSend={(row, cell) => { setTarget({ row, cell }); setFile(null); }}
       />
       <Dialog open={!!target} onOpenChange={(open) => !open && setTarget(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent>
           <DialogHeader>
             <DialogTitle>
               Enviar {target?.row.tipo.nome} {target ? formatCompetencia(target.cell.competencia) : ""}

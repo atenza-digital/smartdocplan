@@ -825,7 +825,7 @@ export default function Vacations() {
         )}
       </div>
       <Dialog open={formOpen} onOpenChange={setFormOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[85dvh] overflow-y-auto">
+        <DialogContent className="max-h-[85dvh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {editing ? "Editar programação" : "Programar férias"}
