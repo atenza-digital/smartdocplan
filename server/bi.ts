@@ -3,12 +3,13 @@ import { sql, type SQL } from "drizzle-orm";
 import { adminProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
 import { isPlatformUser } from "@shared/permissions";
+import { brazilToday } from "@shared/vacations";
 
 // Datas gravadas em UTC (timestamp sem fuso) são convertidas para o dia no fuso de Brasília.
 const TZ = "America/Sao_Paulo";
 const localDay = (column: string) => sql.raw(`(("${column}" AT TIME ZONE 'UTC') AT TIME ZONE '${TZ}')::date`);
 
-const periodInput = z
+export const periodInput = z
   .object({
     inicio: z.iso.date(),
     fim: z.iso.date(),
@@ -17,7 +18,10 @@ const periodInput = z
   .refine((v) => v.inicio <= v.fim, { message: "A data inicial deve ser anterior ou igual à final." })
   .refine((v) => Date.parse(v.fim) - Date.parse(v.inicio) <= 5 * 366 * 86_400_000, {
     message: "Escolha um período de até 5 anos.",
-  });
+  })
+  // O relatório não passa de hoje (fuso de Brasília): início futuro é recusado e o fim é cortado em hoje.
+  .refine((v) => v.inicio <= brazilToday(), { message: "A data inicial não pode ser futura." })
+  .transform((v) => ({ ...v, fim: v.fim > brazilToday() ? brazilToday() : v.fim }));
 
 type Periodo = z.infer<typeof periodInput>;
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
