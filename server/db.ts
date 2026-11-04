@@ -93,6 +93,7 @@ export async function createLocalUser(data: {
   passwordHash: string;
   role: InsertUser["role"];
   companyId?: number | null;
+  mustChangePassword?: boolean;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Banco de dados indisponível.");
@@ -102,6 +103,7 @@ export async function createLocalUser(data: {
     passwordHash: data.passwordHash,
     role: data.role ?? "company_viewer",
     companyId: data.companyId ?? null,
+    mustChangePassword: data.mustChangePassword ?? false,
     loginMethod: "local",
     lastSignedIn: new Date(),
   });

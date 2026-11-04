@@ -12,6 +12,7 @@ import {
   canManagePlatformSettings,
   platformTeamRecipients,
 } from "@shared/permissions";
+import { describeCompanyChanges } from "@shared/companyChanges";
 import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { revokeSessionFromCookie } from "./_core/localAuth";
@@ -214,6 +215,44 @@ async function notifyCompanyStaff(opts: {
       .where(and(eq(users.companyId, opts.companyId), inArray(users.role, ["company_admin", "company_hr"]), eq(users.ativo, true)));
     await createNotifications({ ...opts, userIds: rows.filter((row) => !opts.saude || canAccessHealthData(row.role)).map((row) => row.id) });
   } catch { /* não bloquear a ação principal */ }
+}
+
+/** Título do chamado aberto junto com um pedido de alteração cadastral (o número liga o chamado ao pedido). */
+const tituloChamadoCadastral = (requestId: number) => `Alteração cadastral #${requestId}`;
+
+/**
+ * Resolve o chamado que acompanha um pedido de alteração cadastral, registrando o resultado na conversa.
+ * Nunca bloqueia a aprovação ou a devolução do pedido.
+ */
+async function encerrarChamadoCadastral(
+  db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
+  request: { id: number; companyId: number },
+  userId: number,
+  mensagem: string,
+) {
+  try {
+    const [ticket] = await db.select().from(tickets).where(and(
+      eq(tickets.companyId, request.companyId),
+      eq(tickets.tipo, "alteracao_cadastral"),
+      eq(tickets.titulo, tituloChamadoCadastral(request.id)),
+    )).limit(1);
+    if (!ticket || ticket.status === "resolvido" || ticket.status === "fechado") return;
+    await db.update(tickets).set({
+      status: "resolvido",
+      resolvidoAt: new Date(),
+      updatedAt: new Date(),
+      ...(ticket.responsavelId ? {} : { responsavelId: userId }),
+    }).where(eq(tickets.id, ticket.id));
+    await db.insert(ticketMessages).values({
+      ticketId: ticket.id,
+      companyId: ticket.companyId,
+      autorId: userId,
+      origem: "plataforma",
+      mensagem,
+      statusAnterior: ticket.status,
+      statusNovo: "resolvido",
+    });
+  } catch { /* o chamado é um registro auxiliar */ }
 }
 
 /** Nome da empresa para as mensagens de aviso. */
@@ -437,14 +476,15 @@ const companiesRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const payload = normalizeCompanyPayload(input);
-    await db.insert(companies).values(payload as any);
+    const [created] = await db.insert(companies).values(payload as any).returning({ id: companies.id });
     await insertAuditLog({
       userId: ctx.user.id,
       acao: "criou_empresa",
       entidade: "companies",
+      entidadeId: created?.id ?? null,
       dadosDepois: { razaoSocial: payload.razaoSocial, nomeFantasia: payload.nomeFantasia ?? null, status: payload.status ?? "ativo" },
     });
-    return { success: true };
+    return { success: true, id: created?.id ?? null };
   }),
 
   update: superAdminProcedure.input(z.object({
@@ -555,6 +595,27 @@ const companyUpdateRequestsRouter = router({
       motivo: normalizeOptionalText(input.motivo) ?? null,
     } as any).returning({ id: companyUpdateRequests.id });
 
+    // O pedido também vira um chamado, com o antes e o depois, para ficar registrado e detalhado.
+    if (created) {
+      try {
+        const motivo = normalizeOptionalText(input.motivo);
+        const mudancas = describeCompanyChanges(currentCompany as Record<string, unknown>, payload as Record<string, unknown>);
+        await db.insert(tickets).values({
+          companyId: input.companyId,
+          tipo: "alteracao_cadastral",
+          titulo: tituloChamadoCadastral(created.id),
+          descricao: [
+            `${ctx.user.name ?? "Usuário da empresa"} pediu a alteração dos dados da empresa.`,
+            motivo ? `Motivo: ${motivo}` : null,
+            "",
+            ...(mudancas.length ? ["O que muda:", ...mudancas] : ["Nenhum dado foi alterado em relação ao cadastro atual."]),
+          ].filter((linha) => linha !== null).join("\n"),
+          prioridade: "media",
+          criadoPor: ctx.user.id,
+        } as any);
+      } catch { /* o pedido segue mesmo que o chamado não seja criado */ }
+    }
+
     const adminUsers = await db
       .select({ id: users.id })
       .from(users)
@@ -623,6 +684,7 @@ const companyUpdateRequestsRouter = router({
       mensagem: "A SmartDocPlan aprovou a atualização cadastral da empresa.",
       link: "/empresa/parametros?aba=empresa",
     });
+    await encerrarChamadoCadastral(db, request, ctx.user.id, "Atualização cadastral aprovada: os dados da empresa foram atualizados.");
 
     await insertAuditLog({
       userId: ctx.user.id,
@@ -663,6 +725,7 @@ const companyUpdateRequestsRouter = router({
       mensagem: input.motivo.trim(),
       link: "/empresa/parametros?aba=empresa",
     });
+    await encerrarChamadoCadastral(db, request, ctx.user.id, `Atualização cadastral devolvida: ${input.motivo.trim()}`);
 
     await insertAuditLog({
       userId: ctx.user.id,
@@ -1546,7 +1609,7 @@ const positionRequirementsRouter = router({
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
 
     const allowedTypes =
-      input.tipoSolicitacao === "admissao" || input.tipoSolicitacao === "demissao" || input.tipoSolicitacao === "mudanca_funcao"
+      input.tipoSolicitacao === "admissao" || input.tipoSolicitacao === "demissao" || input.tipoSolicitacao === "mudanca_funcao" || input.tipoSolicitacao === "outros"
         ? [input.tipoSolicitacao, "todos"]
         : ["todos"];
 
@@ -1575,7 +1638,7 @@ const positionRequirementsRouter = router({
           eq(positionRequirements.positionId, input.positionId),
           eq(positionRequirements.ativo, true),
           or(
-            eq(positionRequirements.tipoSolicitacao, allowedTypes[0] as "admissao" | "demissao" | "mudanca_funcao" | "todos"),
+            eq(positionRequirements.tipoSolicitacao, allowedTypes[0] as "admissao" | "demissao" | "mudanca_funcao" | "outros" | "todos"),
             allowedTypes[1]
               ? eq(positionRequirements.tipoSolicitacao, allowedTypes[1] as "todos")
               : eq(positionRequirements.tipoSolicitacao, "todos")
@@ -1589,7 +1652,7 @@ const positionRequirementsRouter = router({
     positionId: z.number(),
     legalRequirementId: z.number().optional(),
     categoria: z.enum(["treinamento", "exame_medico", "psicossocial", "outros"]).default("treinamento"),
-    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "todos"]).default("todos"),
+    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "outros", "todos"]).default("todos"),
     documentoNome: z.string().min(1),
     descricao: z.string().optional(),
     obrigatorio: z.boolean().default(true),
@@ -1642,7 +1705,7 @@ const positionRequirementsRouter = router({
     id: z.number(),
     legalRequirementId: z.number().optional(),
     categoria: z.enum(["treinamento", "exame_medico", "psicossocial", "outros"]),
-    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "todos"]),
+    tipoSolicitacao: z.enum(["admissao", "demissao", "mudanca_funcao", "outros", "todos"]),
     documentoNome: z.string().min(1),
     descricao: z.string().optional(),
     obrigatorio: z.boolean(),
@@ -1729,7 +1792,7 @@ const legalReqRouter = router({
   create: protectedProcedure.input(z.object({
     companyId: z.number(),
     norma: z.string().min(1),
-    requisito: z.string().min(1),
+    requisito: z.string().optional(),
     documentoExigido: z.string().min(1),
     validadeMeses: z.number().optional(),
     descricao: z.string().optional(),
@@ -1741,7 +1804,7 @@ const legalReqRouter = router({
     await db.insert(legalRequirements).values({
       ...input,
       norma: input.norma.trim(),
-      requisito: input.requisito.trim(),
+      requisito: normalizeOptionalText(input.requisito) ?? null,
       documentoExigido: input.documentoExigido.trim(),
       descricao: normalizeOptionalText(input.descricao) ?? undefined,
     });
@@ -1758,7 +1821,7 @@ const legalReqRouter = router({
   update: protectedProcedure.input(z.object({
     id: z.number(),
     norma: z.string().min(1),
-    requisito: z.string().min(1),
+    requisito: z.string().optional(),
     documentoExigido: z.string().min(1),
     validadeMeses: z.number().optional(),
     descricao: z.string().optional(),
@@ -1773,7 +1836,7 @@ const legalReqRouter = router({
 
     const payload = {
       norma: input.norma.trim(),
-      requisito: input.requisito.trim(),
+      requisito: normalizeOptionalText(input.requisito) ?? null,
       documentoExigido: input.documentoExigido.trim(),
       validadeMeses: input.validadeMeses ?? null,
       descricao: normalizeOptionalText(input.descricao) ?? null,
@@ -1919,6 +1982,7 @@ const usersRouter = router({
       passwordHash,
       role: input.role,
       companyId: input.companyId ?? null,
+      mustChangePassword: true, // a senha inicial é provisória: o usuário cria a própria no primeiro acesso
     });
     await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId ?? null, acao: 'criou_usuario', entidade: 'users', dadosDepois: { email: input.email, role: input.role } });
     return { success: true };
@@ -1943,7 +2007,7 @@ const usersRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const bcrypt = await import("bcryptjs");
     const passwordHash = await bcrypt.default.hash(input.newPassword, 12);
-    await db.update(users).set({ passwordHash }).where(eq(users.id, input.userId));
+    await db.update(users).set({ passwordHash, mustChangePassword: true }).where(eq(users.id, input.userId));
     return { success: true };
   }),
 

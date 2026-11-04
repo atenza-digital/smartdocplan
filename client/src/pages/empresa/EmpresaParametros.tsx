@@ -56,7 +56,7 @@ const emptyLegalForm: LegalForm = {
 
 type PositionRequirementForm = {
   categoria: "treinamento" | "exame_medico" | "psicossocial" | "outros";
-  tipoSolicitacao: "todos" | "admissao" | "demissao" | "mudanca_funcao";
+  tipoSolicitacao: "todos" | "admissao" | "demissao" | "mudanca_funcao" | "outros";
   documentoNome: string;
   descricao: string;
   obrigatorio: boolean;
@@ -88,6 +88,7 @@ const requirementProcessLabel: Record<string, string> = {
   admissao: "Admissão",
   demissao: "Demissão",
   mudanca_funcao: "Mudança de função",
+  outros: "Outros",
 };
 
 /**
@@ -359,7 +360,7 @@ export default function EmpresaParametros() {
     setEditingLegalId(item.id);
     setLegalForm({
       norma: item.norma,
-      requisito: item.requisito,
+      requisito: item.requisito ?? "",
       documentoExigido: item.documentoExigido,
       validadeMeses: item.validadeMeses ? String(item.validadeMeses) : "",
       descricao: item.descricao ?? "",
@@ -368,8 +369,8 @@ export default function EmpresaParametros() {
   };
 
   const handleSaveLegal = () => {
-    if (!legalForm.norma.trim() || !legalForm.requisito.trim() || !legalForm.documentoExigido.trim()) {
-      toast.error("Preencha norma, requisito e documento exigido.");
+    if (!legalForm.norma.trim() || !legalForm.documentoExigido.trim()) {
+      toast.error("Preencha a norma e o documento exigido.");
       return;
     }
 
@@ -861,7 +862,7 @@ export default function EmpresaParametros() {
                             <Badge variant="outline" className="border-primary/20 bg-primary/10 text-xs text-primary">
                               {item.norma}
                             </Badge>
-                            <p className="text-sm font-medium text-foreground">{item.requisito}</p>
+                            <p className="text-sm font-medium text-foreground">{item.requisito || item.documentoExigido}</p>
                           </div>
                           <p className="mt-1 text-xs text-muted-foreground">Documento: {item.documentoExigido}</p>
                           {item.validadeMeses && (
@@ -1236,7 +1237,7 @@ export default function EmpresaParametros() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Requisito *</Label>
+              <Label>Requisito (opcional)</Label>
               <Input
                 value={legalForm.requisito}
                 onChange={(event) => setLegalForm((current) => ({ ...current, requisito: event.target.value }))}
@@ -1277,7 +1278,6 @@ export default function EmpresaParametros() {
               onClick={handleSaveLegal}
               disabled={
                 !legalForm.norma.trim() ||
-                !legalForm.requisito.trim() ||
                 !legalForm.documentoExigido.trim() ||
                 createLegalMutation.isPending ||
                 updateLegalMutation.isPending

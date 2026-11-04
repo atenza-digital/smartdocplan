@@ -105,6 +105,7 @@ export async function seedAdminUser() {
       passwordHash: hash,
       role: "platform_admin",
       companyId: null,
+      mustChangePassword: true,
     });
     console.log("[Auth] Admin inicial criado: admin@smartdocplan.com");
   } catch (err) {
@@ -164,6 +165,7 @@ export function registerLocalAuthRoutes(app: Express) {
         email: user.email,
         role: user.role,
         companyId: user.companyId,
+        mustChangePassword: user.mustChangePassword ?? false,
       });
     } catch (err) {
       console.error("[Auth] Login error:", err);
@@ -210,7 +212,7 @@ export function registerLocalAuthRoutes(app: Express) {
       const db = await getDb();
       if (!db) return res.status(503).json({ error: "Banco de dados indisponível." });
       const passwordHash = await bcrypt.hash(novaSenha, 12);
-      await db.update(users).set({ passwordHash, updatedAt: new Date() }).where(eq(users.id, user.id));
+      await db.update(users).set({ passwordHash, mustChangePassword: false, updatedAt: new Date() }).where(eq(users.id, user.id));
       // Senha nova encerra as outras sessões; esta continua com um token novo.
       await revokeUserSessionsBefore(user.id);
       res.cookie(COOKIE_NAME, await signLocalSession(user.id), getSessionCookieOptions(req));
@@ -240,6 +242,7 @@ export function registerLocalAuthRoutes(app: Express) {
         email: user.email,
         role: user.role,
         companyId: user.companyId,
+        mustChangePassword: user.mustChangePassword ?? false,
       });
     } catch (err) {
       return res.status(500).json({ error: "Erro interno." });

@@ -2,6 +2,12 @@
 
 ## [Não publicado]
 
+- Matriz Legal: o campo “Requisito” deixa de ser obrigatório (só a norma e o documento exigido); sem ele, as telas mostram o documento exigido. A migration só afrouxa a regra.
+- Requisitos por função: novo processo “Outros”, para demandas fora dos fluxos padrão (nova opção no tipo do processo; não pode ser removida do banco depois).
+- Senha provisória: usuário novo ou com senha redefinida pelo administrador (e o administrador inicial) vê uma janela obrigatória para criar a própria senha no primeiro acesso. Nova coluna `mustChangePassword`; os usuários existentes não são afetados. A troca é exigida na tela.
+- Alteração cadastral: o pedido da empresa também abre um chamado (tipo “Alteração cadastral”) com o antes e o depois dos dados; ao aprovar ou devolver o pedido, o chamado é resolvido com o resultado.
+- Cadastro de empresa (admin): campo opcional de logo, enviada logo depois que a empresa é criada.
+- Script `scripts/normalizar-emails-usuarios.mjs`: normaliza os e-mails já gravados (sem espaços e em minúsculas). Por padrão só lê e mostra o que mudaria; `--aplicar` altera, e e-mails que colidem por maiúscula ficam para decisão manual.
 - Ajuda nas telas: botão “Ajuda” (?) no cabeçalho de todas as telas, com para que serve, passo a passo, dicas e quem pode fazer o quê; em Parâmetros da empresa a ajuda muda conforme a aba (a aba ativa passou a ficar no endereço).
 - Avisos: o sino atualiza sozinho a cada 30 segundos; vencido, rejeitado e atrasado aparecem em vermelho e o que vence em breve em amarelo; a equipe SmartDocPlan é avisada quando a empresa cadastra colaborador, envia ou altera documento, abre solicitação ou abre chamado (a resposta da empresa num chamado avisa o responsável e toda a equipe); a empresa é avisada quando um documento é aprovado ou alterado pela equipe.
 - Usuários (admin): olho para mostrar a senha, filtro por empresa e “Editar dados” (nome e e-mail). O e-mail é gravado sem espaços e em minúsculas e o login deixa de diferenciar maiúsculas, o que corrige quem foi cadastrado com maiúscula e não conseguia entrar.

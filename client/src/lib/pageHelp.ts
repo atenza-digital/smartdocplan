@@ -159,7 +159,7 @@ const PARAMETROS: Record<string, PageHelpContent> = {
       "Para trocar a logo, clique em “Trocar logo” e escolha um PNG ou JPG de até 2 MB (de preferência com fundo transparente). “Remover” tira a logo.",
       "Para mudar dados, telefone ou endereço, edite os campos. Ao digitar o CEP, rua, bairro, cidade e UF são preenchidos sozinhos.",
       "Clique em “Enviar para aprovação”. A alteração não muda o cadastro na hora: a SmartDocPlan confere e aprova.",
-      "Acompanhe o pedido em “Atualizações cadastrais”: pendente, aprovada ou devolvida. O sino avisa o resultado.",
+      "Acompanhe o pedido em “Atualizações cadastrais”: pendente, aprovada ou devolvida. O sino avisa o resultado, e o pedido também aparece em Chamados (tipo “Alteração cadastral”) com o que muda.",
     ],
     dicas: ["As outras abas (Funções, Locais, Matriz Legal, Documentos recorrentes e Férias) têm as regras da sua empresa."],
     quemPode: "Admin e RH da empresa editam. Os demais perfis não veem esta tela.",
@@ -170,7 +170,7 @@ const PARAMETROS: Record<string, PageHelpContent> = {
     passos: [
       "Clique em “Nova Função”, escreva o nome (e o CBO, se quiser) e clique em “Salvar função”.",
       "Clique no cartão da função para selecioná-la: aparece a etiqueta “Selecionada” e, embaixo, os requisitos dela.",
-      "Clique em “Novo requisito” e preencha: Categoria (treinamento, exame médico...), Processo, Nome do requisito (o documento exigido, por exemplo “ASO” ou “Certificado NR-35”), Validade em meses e se é obrigatório.",
+      "Clique em “Novo requisito” e preencha: Categoria (treinamento, exame médico...), Processo (todos, admissão, demissão, mudança de função ou outros), Nome do requisito (o documento exigido, por exemplo “ASO” ou “Certificado NR-35”), Validade em meses e se é obrigatório.",
       "A “Norma da Matriz Legal” é opcional: só liga o item à norma que o fundamenta, para referência.",
       "Clique em “Adicionar requisito”. Os colaboradores dessa função passam a ter esse documento no dossiê.",
     ],
@@ -194,7 +194,7 @@ const PARAMETROS: Record<string, PageHelpContent> = {
     paraQueServe: "Lista as NRs e os requisitos legais que se aplicam à empresa, com o documento exigido e a validade.",
     passos: [
       "Clique em “Adicionar Requisito”.",
-      "Preencha a Norma (por exemplo, NR-35), o Requisito, o Documento Exigido e a Validade em meses.",
+      "Preencha a Norma (por exemplo, NR-35), o Documento Exigido e a Validade em meses. O Requisito é opcional.",
       "Clique em “Adicionar”. O item aparece na lista e é mostrado ao abrir solicitações.",
       "Para corrigir ou remover, use os botões do item.",
     ],
@@ -258,7 +258,7 @@ const ENTRADAS: Entry[] = [
       paraQueServe: "Cadastro das empresas clientes. Daqui você cria uma empresa nova e abre a ficha completa dela.",
       passos: [
         "Use a busca e o filtro de situação para achar a empresa.",
-        "Para cadastrar, clique em “Nova Empresa”, preencha Razão Social, CNPJ, e-mail e o CEP (o endereço é preenchido sozinho) e clique em “Cadastrar”.",
+        "Para cadastrar, clique em “Nova Empresa”, preencha Razão Social, CNPJ, e-mail e o CEP (o endereço é preenchido sozinho), envie a logo se já tiver e clique em “Cadastrar”.",
         "Para acompanhar uma empresa, clique em “Ver detalhes” no cartão dela.",
       ],
       dicas: ["O CNPJ é conferido: use um CNPJ válido.", "Empresa inativa não pode abrir novas solicitações."],
@@ -357,7 +357,7 @@ const ENTRADAS: Entry[] = [
         "Busque por nome ou e-mail e, se quiser, filtre por empresa.",
         "Clique em “Novo Usuário”: nome, e-mail, senha inicial (o olho mostra o que você digitou), papel e empresa. Clique em “Criar Usuário”.",
         "No menu de três pontos de cada usuário: Editar dados, Alterar Papel, Redefinir Senha, Obras / locais e Ativar ou Desativar.",
-        "Entregue a senha inicial por um canal seguro e peça para a pessoa trocá-la em Meu perfil.",
+        "Entregue a senha inicial por um canal seguro. No primeiro acesso o sistema pede que a pessoa crie a própria senha; o mesmo acontece depois de “Redefinir Senha”.",
       ],
       dicas: ["O e-mail é o login e é gravado em minúsculas; dois usuários não podem ter o mesmo e-mail.", "Desativar impede o acesso sem apagar o histórico."],
       quemPode: "Administrador Geral.",
@@ -401,7 +401,7 @@ const ENTRADAS: Entry[] = [
       paraQueServe: "NRs e requisitos legais de cada empresa, com o documento exigido e a validade.",
       passos: [
         "Selecione a empresa no alto da tela.",
-        "Clique para adicionar e preencha Norma Regulamentadora, Requisito, Documento Exigido e Validade (meses).",
+        "Clique para adicionar e preencha Norma Regulamentadora, Documento Exigido e Validade (meses). O Requisito é opcional.",
         "Salve. O item aparece na lista e é mostrado ao abrir solicitações dessa empresa.",
         "Para corrigir ou remover, use os botões do item.",
       ],

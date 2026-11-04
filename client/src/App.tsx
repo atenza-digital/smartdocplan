@@ -10,6 +10,7 @@ import { DisplayPreferencesProvider } from "./contexts/DisplayPreferencesContext
 import { LocalAuthProvider, useLocalAuth } from "./contexts/LocalAuthContext";
 import { AccessibilityBar } from "./components/AccessibilityBar";
 import { CookieBanner } from "./components/CookieBanner";
+import { ForcedPasswordChange } from "./components/ForcedPasswordChange";
 import Login from "./pages/Login";
 import Home from "./pages/Home";
 
@@ -328,6 +329,7 @@ function App() {
                   <Toaster />
                   <Router />
                 </main>
+                <ForcedPasswordChange />
                 <CookieBanner />
               </div>
             </TooltipProvider>

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 
-export function ChangePasswordForm() {
+export function ChangePasswordForm({ onChanged, className = "max-w-sm" }: { onChanged?: () => void; className?: string }) {
   const [senhaAtual, setSenhaAtual] = useState("");
   const [novaSenha, setNovaSenha] = useState("");
   const [confirmarSenha, setConfirmarSenha] = useState("");
@@ -31,6 +31,7 @@ export function ChangePasswordForm() {
       if (res.ok) {
         toast.success("Senha alterada com sucesso!");
         setSenhaAtual(""); setNovaSenha(""); setConfirmarSenha("");
+        onChanged?.();
       } else {
         const d = await res.json().catch(() => ({}));
         toast.error(d.error ?? "Erro ao alterar senha.");
@@ -43,7 +44,7 @@ export function ChangePasswordForm() {
   };
 
   return (
-    <form onSubmit={handleSenha} className="space-y-4 max-w-sm">
+    <form onSubmit={handleSenha} className={`space-y-4 ${className}`}>
       <div className="space-y-1.5">
         <Label htmlFor="senhaAtual" className="text-xs">Senha atual</Label>
         <Input id="senhaAtual" type="password" autoComplete="current-password" value={senhaAtual}

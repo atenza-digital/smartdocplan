@@ -1211,7 +1211,7 @@ export default function EmpresaNovaSolicitacao() {
                         <Badge variant="outline">{requirement.norma}</Badge>
                         <p className="font-medium text-foreground">{requirement.documentoExigido}</p>
                       </div>
-                      <p className="mt-2 text-sm text-muted-foreground">{requirement.requisito}</p>
+                      {requirement.requisito ? <p className="mt-2 text-sm text-muted-foreground">{requirement.requisito}</p> : null}
                       {requirement.validadeMeses ? (
                         <p className="mt-2 text-xs text-muted-foreground">
                           Validade de {requirement.validadeMeses} mês(es).

@@ -18,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Building2, Edit, Mail, Phone, Plus, Search } from "lucide-react";
 import { toast } from "sonner";
 import { AddressFields } from "@/components/AddressFields";
+import { fileToBase64 } from "@/lib/files";
 import { emptyAddress, type AddressValue } from "@shared/address";
 import {
   formatCnpj,
@@ -58,23 +59,50 @@ export default function AdminEmpresas() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form, setForm] = useState<CompanyForm>(emptyForm);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
 
   const { data: empresas = [], refetch } = trpc.companies.list.useQuery();
 
   const resetForm = () => {
     setForm(emptyForm);
     setEditingId(null);
+    setLogoFile(null);
   };
 
+  const logoMutation = trpc.companies.updateLogo.useMutation();
+
   const createMutation = trpc.companies.create.useMutation({
-    onSuccess: () => {
-      toast.success("Empresa cadastrada com sucesso!");
+    onSuccess: async (result) => {
+      // A logo só pode ser enviada depois que a empresa existe.
+      let logoOk = true;
+      if (logoFile && result.id) {
+        try {
+          await logoMutation.mutateAsync({ companyId: result.id, fileBase64: await fileToBase64(logoFile) });
+        } catch (error) {
+          logoOk = false;
+          toast.error(`Empresa cadastrada, mas a logo não foi enviada: ${error instanceof Error ? error.message : "tente de novo na ficha da empresa."}`);
+        }
+      }
+      if (logoOk) toast.success("Empresa cadastrada com sucesso!");
       setShowModal(false);
       resetForm();
       refetch();
     },
     onError: (error) => toast.error(error.message),
   });
+
+  const escolherLogo = (file: File | null) => {
+    if (!file) return setLogoFile(null);
+    if (!["image/png", "image/jpeg"].includes(file.type)) {
+      toast.error("Envie a logo em PNG ou JPG.");
+      return setLogoFile(null);
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("A logo deve ter no máximo 2 MB.");
+      return setLogoFile(null);
+    }
+    setLogoFile(file);
+  };
 
   const updateMutation = trpc.companies.update.useMutation({
     onSuccess: () => {
@@ -357,6 +385,14 @@ export default function AdminEmpresas() {
             </div>
 
             <AddressFields idPrefix="admin-empresa" value={form} onChange={(address) => setForm((current) => ({ ...current, ...address }))} />
+
+            {!editingId && (
+              <div className="space-y-1.5">
+                <Label htmlFor="empresa-logo">Logo (opcional)</Label>
+                <Input id="empresa-logo" type="file" accept="image/png,image/jpeg" onChange={(event) => escolherLogo(event.target.files?.[0] ?? null)} />
+                <p className="text-xs text-muted-foreground">PNG ou JPG de até 2 MB, de preferência com fundo transparente. Aparece no topo da área da empresa e nos relatórios.</p>
+              </div>
+            )}
 
             <div className="space-y-1.5">
               <Label>Status</Label>

@@ -89,7 +89,7 @@ export default function AdminMatrizLegal() {
 
     return requisitos.filter((requisito) =>
       normalizeTextSearch(
-        [requisito.norma, requisito.requisito, requisito.documentoExigido, requisito.descricao ?? ""].join(" ")
+        [requisito.norma, requisito.requisito ?? "", requisito.documentoExigido, requisito.descricao ?? ""].join(" ")
       ).includes(normalizedSearch)
     );
   }, [requisitos, search]);
@@ -105,7 +105,7 @@ export default function AdminMatrizLegal() {
     setEditingId(requisito.id);
     setForm({
       norma: requisito.norma,
-      requisito: requisito.requisito,
+      requisito: requisito.requisito ?? "",
       documentoExigido: requisito.documentoExigido,
       validadeMeses: requisito.validadeMeses ? String(requisito.validadeMeses) : "",
       descricao: requisito.descricao ?? "",
@@ -119,7 +119,7 @@ export default function AdminMatrizLegal() {
       return;
     }
 
-    if (!form.norma.trim() || !form.requisito.trim() || !form.documentoExigido.trim()) {
+    if (!form.norma.trim() || !form.documentoExigido.trim()) {
       toast.error("Preencha norma, requisito e documento exigido.");
       return;
     }
@@ -240,7 +240,7 @@ export default function AdminMatrizLegal() {
                             >
                               {requisito.norma}
                             </Badge>
-                            <p className="text-sm font-medium text-foreground">{requisito.requisito}</p>
+                            <p className="text-sm font-medium text-foreground">{requisito.requisito || requisito.documentoExigido}</p>
                           </div>
 
                           <p className="mt-1 text-xs text-muted-foreground">
@@ -306,7 +306,7 @@ export default function AdminMatrizLegal() {
             </div>
 
             <div className="space-y-1.5">
-              <Label>Requisito *</Label>
+              <Label>Requisito (opcional)</Label>
               <Input
                 value={form.requisito}
                 onChange={(event) => setForm((current) => ({ ...current, requisito: event.target.value }))}
@@ -354,7 +354,7 @@ export default function AdminMatrizLegal() {
             </Button>
             <Button
               onClick={handleSave}
-              disabled={!form.norma.trim() || !form.requisito.trim() || !form.documentoExigido.trim() || isSaving}
+              disabled={!form.norma.trim() || !form.documentoExigido.trim() || isSaving}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {isSaving ? "Salvando..." : editingId ? "Salvar alterações" : "Cadastrar"}
