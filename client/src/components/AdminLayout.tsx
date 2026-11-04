@@ -38,6 +38,7 @@ import { canManagePlatformSettings } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
 import { CampaignBanner, CampaignPreviewBar, CampaignRibbon, CampaignStrip, CampaignTheme, useActiveCampaign } from "@/components/HealthCampaign";
 import NotificationCenter from "@/components/NotificationCenter";
+import PageHelp from "@/components/PageHelp";
 import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
 const SIDEBAR_STORAGE_KEY = "smartdocplan-admin-sidebar-collapsed";
@@ -227,6 +228,7 @@ export default function AdminLayout({ children, title }: AdminLayoutProps) {
               {collapsed ? "Expandir menu" : "Recolher menu"}
             </Button>
             {title && <h1 className="truncate text-base font-semibold lg:text-lg">{title}</h1>}
+            <PageHelp />
             <CampaignRibbon campaign={campanha} />
           </div>
 

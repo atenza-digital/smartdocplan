@@ -37,6 +37,7 @@ import BrandLogo from "@/components/BrandLogo";
 import { CampaignBanner, CampaignPreviewBar, CampaignRibbon, CampaignStrip, CampaignTheme, useActiveCampaign } from "@/components/HealthCampaign";
 import { trpc } from "@/lib/trpc";
 import NotificationCenter from "@/components/NotificationCenter";
+import PageHelp from "@/components/PageHelp";
 import PlatformCompanyScopeSwitch from "@/components/PlatformCompanyScopeSwitch";
 
 const SIDEBAR_STORAGE_KEY = "smartdocplan-company-sidebar-collapsed";
@@ -228,6 +229,7 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
               {collapsed ? "Expandir menu" : "Recolher menu"}
             </Button>
             {title && <h1 className="truncate text-base font-semibold lg:text-lg">{title}</h1>}
+            <PageHelp suporte />
             <CampaignRibbon campaign={campanha} />
           </div>
 
