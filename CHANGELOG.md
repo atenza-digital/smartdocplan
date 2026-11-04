@@ -2,6 +2,7 @@
 
 ## [Não publicado]
 
+- Deploy: a conferência final da versão publicada usa o endereço público da homologação (variável `PUBLIC_URL` do ambiente) em vez da porta 8080, que não responde de fora; o CI/CD deixa de ficar vermelho em deploys que publicaram certo.
 - Matriz Legal: o campo “Requisito” deixa de ser obrigatório (só a norma e o documento exigido); sem ele, as telas mostram o documento exigido. A migration só afrouxa a regra.
 - Requisitos por função: novo processo “Outros”, para demandas fora dos fluxos padrão (nova opção no tipo do processo; não pode ser removida do banco depois).
 - Senha provisória: usuário novo ou com senha redefinida pelo administrador (e o administrador inicial) vê uma janela obrigatória para criar a própria senha no primeiro acesso. Nova coluna `mustChangePassword`; os usuários existentes não são afetados. A troca é exigida na tela.
