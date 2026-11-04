@@ -64,7 +64,14 @@ export default function AdminValidacaoDocumentos() {
               <Card key={doc.id} className="border-border">
                 <CardContent className="flex flex-wrap items-center gap-3 p-4">
                   <div className="min-w-[14rem] flex-1">
-                    <p className="text-sm font-semibold text-foreground">{doc.nome}</p>
+                    <p className="text-sm font-semibold text-foreground">
+                      {doc.nome}
+                      {doc.substituiDocId != null && (
+                        <span className="ml-2 rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-400">
+                          Nova versão ({doc.versao}): a anterior vale até a aprovação
+                        </span>
+                      )}
+                    </p>
                     <p className="text-xs text-muted-foreground">
                       {doc.empresaNome} · {doc.colaboradorNome} · {CATEGORIA_LABELS[doc.categoria] ?? doc.categoria}
                     </p>

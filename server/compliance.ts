@@ -44,6 +44,7 @@ async function loadDocuments(db: Db, employeeIds: number[]) {
       dataEmissao: employeeDocuments.dataEmissao,
       validade: employeeDocuments.validade,
       createdAt: employeeDocuments.createdAt,
+      substituiDocId: employeeDocuments.substituiDocId,
     })
     .from(employeeDocuments)
     .where(and(inArray(employeeDocuments.employeeId, employeeIds), ne(employeeDocuments.status, "excluido")));

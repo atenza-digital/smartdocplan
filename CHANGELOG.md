@@ -2,6 +2,9 @@
 
 ## [Não publicado]
 
+- Versões dos documentos do colaborador: trocar o arquivo ou as datas cria uma nova versão, que aguarda validação; a versão aprovada continua valendo (e liberando o colaborador) até a nova ser aprovada, e a rejeição não a derruba. As anteriores ficam em “Versões anteriores”, com o arquivo ainda acessível. Nova coluna `substituiDocId` (migration só adiciona); documentos existentes não mudam.
+- Documentos de saúde: o Administrador da empresa passa a enviar exame e atestado e a ver a situação e a validade, sem abrir o arquivo nem ver observação ou motivo; abrir continua restrito ao Administrador Geral e ao RH.
+- Fila de validação: selo “Nova versão” quando a versão anterior continua valendo até a aprovação.
 - Deploy: a conferência final da versão publicada usa o endereço público da homologação (variável `PUBLIC_URL` do ambiente) em vez da porta 8080, que não responde de fora; o CI/CD deixa de ficar vermelho em deploys que publicaram certo.
 - Matriz Legal: o campo “Requisito” deixa de ser obrigatório (só a norma e o documento exigido); sem ele, as telas mostram o documento exigido. A migration só afrouxa a regra.
 - Requisitos por função: novo processo “Outros”, para demandas fora dos fluxos padrão (nova opção no tipo do processo; não pode ser removida do banco depois).

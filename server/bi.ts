@@ -104,7 +104,7 @@ async function buildReport(db: Db, companyId: number | null, p: Periodo) {
       count(*) FILTER (WHERE validade < ${hoje}) AS vencidos,
       count(*) FILTER (WHERE validade BETWEEN ${hoje} AND ${hoje} + 30) AS a_vencer,
       count(*) FILTER (WHERE ${noPeriodo("createdAt")}) AS enviados
-    FROM smartdocplan.employee_documents WHERE status <> 'excluido' ${empresa}`);
+    FROM smartdocplan.employee_documents WHERE status NOT IN ('excluido', 'substituido') ${empresa}`);
 
   const [ferias] = await rows<any>(db, sql`
     SELECT

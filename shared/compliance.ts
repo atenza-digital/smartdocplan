@@ -1,5 +1,6 @@
 import { getValidityState, normalizeTextSearch } from "./formValidation";
 import { addMonthsDateOnly } from "./dates";
+import { splitDocumentVersions } from "./documentVersions";
 
 /** Situação de cada item do checklist de documentos exigidos do cargo. */
 export type ChecklistItemState = "pendente" | "aguardando_validacao" | "rejeitado" | "vencido" | "aprovado";
@@ -39,6 +40,7 @@ export type ChecklistDocument = {
   dataEmissao: string | null;
   validade: string | null;
   createdAt: Date | string;
+  substituiDocId?: number | null;
 };
 
 /** Validade efetiva: a informada no documento ou, sem ela, a emissão somada à validade em meses do requisito. */
@@ -82,9 +84,18 @@ export function checklistItemState(doc: ChecklistDocument | null, requirement: C
 /** Calcula checklist, conformidade (0–100, ou null sem requisitos) e liberação do colaborador. */
 export function evaluateChecklist(requirements: ChecklistRequirement[], docs: ChecklistDocument[], referenceDate = new Date()) {
   const ordered = [...requirements].sort((a, b) => a.ordem - b.ordem || a.id - b.id);
+  // Versão nova ainda não aprovada não tira a validade da anterior; substituídas não contam.
+  const { emVigor, novasVersoes } = splitDocumentVersions(docs);
   const items = ordered.map((requirement) => {
-    const doc = findRequirementDocument(requirement, docs);
-    return { requirement, doc, estado: checklistItemState(doc, requirement, referenceDate) };
+    let doc = findRequirementDocument(requirement, emVigor);
+    let estado = checklistItemState(doc, requirement, referenceDate);
+    // Se a versão em vigor venceu e já há uma nova em validação, o item aparece como em validação.
+    const nova = doc ? novasVersoes.get(doc.id) : undefined;
+    if (doc && nova && estado === "vencido" && nova.status !== "rejeitado") {
+      doc = nova;
+      estado = checklistItemState(nova, requirement, referenceDate);
+    }
+    return { requirement, doc, estado };
   });
   const total = items.length;
   const aprovados = items.filter((item) => item.estado === "aprovado").length;

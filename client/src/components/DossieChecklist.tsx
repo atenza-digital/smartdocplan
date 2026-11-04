@@ -37,6 +37,7 @@ export function DossieChecklist({
   aprovados,
   liberacao,
   canSend,
+  canSendRestrito = false,
   onSend,
 }: {
   items: ChecklistItem[];
@@ -44,6 +45,8 @@ export function DossieChecklist({
   aprovados: number;
   liberacao: EmployeeRelease;
   canSend: boolean;
+  /** Pode enviar item de saúde sem abrir o arquivo (Admin da empresa). */
+  canSendRestrito?: boolean;
   onSend: (item: ChecklistItem) => void;
 }) {
   return (
@@ -75,7 +78,11 @@ export function DossieChecklist({
                   </p>
                   <p className="text-xs text-muted-foreground">
                     {item.restrito ? (
-                      <span className="inline-flex items-center gap-1"><Lock className="h-3 w-3" />Dado de saúde: documento visível só para Administrador Geral e RH</span>
+                      <span className="inline-flex flex-wrap items-center gap-1">
+                        <Lock className="h-3 w-3" />
+                        Dado de saúde: o arquivo abre só para o Administrador Geral e o RH
+                        {item.documento?.validade ? ` · validade ${formatDateOnlyBr(item.documento.validade)}` : ""}
+                      </span>
                     ) : item.documento ? (
                       <>
                         Enviado: {item.documento.nome}
@@ -87,7 +94,7 @@ export function DossieChecklist({
                   </p>
                 </div>
                 <Badge variant="outline" className={`text-xs ${STATE_COLORS[item.estado]}`}>{CHECKLIST_STATE_LABELS[item.estado]}</Badge>
-                {canSend && !item.restrito && item.estado !== "aprovado" && item.estado !== "aguardando_validacao" && (
+                {canSend && (!item.restrito || canSendRestrito) && item.estado !== "aprovado" && item.estado !== "aguardando_validacao" && (
                   <Button size="sm" variant="outline" onClick={() => onSend(item)}>
                     <Upload className="h-3.5 w-3.5 mr-1.5" />
                     {item.documento ? "Enviar novo" : "Enviar"}

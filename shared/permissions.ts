@@ -47,6 +47,11 @@ export function canAccessHealthData(role?: string | null) {
   return role === "platform_admin" || role === "company_hr";
 }
 
+/** Enviar documento de saúde e ver a situação dele: quem vê dado de saúde e o Administrador da empresa (sem abrir o arquivo). */
+export function canSendHealthDocuments(role?: string | null) {
+  return canAccessHealthData(role) || role === "company_admin";
+}
+
 export function isHealthCategory(value?: string | null) {
   return ["exame_medico", "psicossocial", "atestado", "atestado_medico", "afastamento"].includes(value ?? "");
 }

@@ -3,6 +3,7 @@ import { TRPCError } from "@trpc/server";
 import {
   canCreateRequests,
   canAccessHealthData,
+  canSendHealthDocuments,
   isHealthCategory,
   canCreateTickets,
   canManageCompanyData,
@@ -13,6 +14,7 @@ import {
   platformTeamRecipients,
 } from "@shared/permissions";
 import { describeCompanyChanges } from "@shared/companyChanges";
+import { APPROVED_STATUSES, NOT_IN_FORCE_STATUSES, splitDocumentVersions } from "@shared/documentVersions";
 import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { revokeSessionFromCookie } from "./_core/localAuth";
@@ -31,7 +33,7 @@ import {
   legalRequirements, positionRequirements, recurringDocumentTypes, healthCampaigns, users, documentTypeTemplates, requestDocumentUploads,
   companyUpdateRequests, userNotifications, ticketMessages, userWorksites
 } from "../drizzle/schema";
-import { eq, and, desc, or, sql, ne, inArray } from "drizzle-orm";
+import { eq, and, desc, or, sql, ne, inArray, notInArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { auditClientFields } from "./_core/clientInfo";
 import { addressForDb, addressInput } from "@shared/address";
@@ -2275,6 +2277,41 @@ function initialReviewFields(user: { id: number; role: string }) {
     : { status: "aguardando_validacao", analisadoPor: null, analisadoAt: null, motivoRejeicao: null };
 }
 
+const MOTIVO_SAUDE_RESTRITO = "O motivo de documento de saúde fica visível só para o Administrador Geral e o RH.";
+
+/**
+ * O que cada perfil vê dos documentos do colaborador. Documento de saúde aparece para quem pode enviá-lo;
+ * sem acesso a dado de saúde (Admin da empresa), aparece só com situação e datas, sem arquivo, observação e motivo.
+ */
+function docVisibility(role: string) {
+  const veSaude = canAccessHealthData(role);
+  const enviaSaude = canSendHealthDocuments(role);
+  return {
+    visivel: (doc: { categoria: string }) => !isHealthCategory(doc.categoria) || enviaSaude,
+    ocultar: <T extends { categoria: string; fileUrl: string | null; fileKey: string | null; observacao: string | null; motivoRejeicao: string | null }>(doc: T) => {
+      const restrito = isHealthCategory(doc.categoria) && !veSaude;
+      return restrito
+        ? { ...doc, fileUrl: null, fileKey: null, observacao: null, motivoRejeicao: doc.motivoRejeicao ? MOTIVO_SAUDE_RESTRITO : null, restrito }
+        : { ...doc, restrito };
+    },
+  };
+}
+
+type DbTx = Parameters<Parameters<NonNullable<Awaited<ReturnType<typeof getDb>>>["transaction"]>[0]>[0];
+
+/**
+ * Passa para o histórico ("substituido") as versões novas ainda não aprovadas de `baseId` (menos `keepId`)
+ * e, com `incluirBase`, a própria versão base.
+ */
+async function retireVersions(tx: DbTx, baseId: number, keepId: number, incluirBase: boolean) {
+  const versoesNovas = and(eq(employeeDocuments.substituiDocId, baseId), inArray(employeeDocuments.status, NOT_IN_FORCE_STATUSES));
+  await tx.update(employeeDocuments).set({ status: "substituido", updatedAt: new Date() }).where(and(
+    ne(employeeDocuments.id, keepId),
+    ne(employeeDocuments.status, "excluido"),
+    incluirBase ? or(eq(employeeDocuments.id, baseId), versoesNovas) : versoesNovas,
+  ));
+}
+
 async function assertRequirementOfEmployee(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, requirementId: number, positionId: number | null) {
   const [requirement] = await db.select({ positionId: positionRequirements.positionId, ativo: positionRequirements.ativo })
     .from(positionRequirements).where(eq(positionRequirements.id, requirementId)).limit(1);
@@ -2293,15 +2330,51 @@ const employeeDocsRouter = router({
     const conditions = [eq(employeeDocuments.employeeId, input.employeeId), ne(employeeDocuments.status, "excluido")];
     if (input.categoria) conditions.push(eq(employeeDocuments.categoria, input.categoria));
     const docs = await db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
-    return docs
-      .filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role))
-      .map(doc => {
-        // A situação de validade é derivada da data: aprovado com validade passada aparece como vencido.
-        // Status de validade gravados em dados antigos ("vencido", "a_vencer") também seguem a data.
-        const situacaoValidade = getValidityState(doc.validade);
-        const porValidade = ["valido", "vencido", "a_vencer"].includes(doc.status);
-        return { ...doc, situacaoValidade, status: porValidade ? (situacaoValidade === "vencido" ? "vencido" : "valido") : doc.status };
-      });
+    const exibir = docVisibility(ctx.user.role);
+    // Versão nova ainda não aprovada aparece junto do documento em vigor (novaVersao), não como outro documento.
+    const { emVigor, novasVersoes } = splitDocumentVersions(docs.filter(exibir.visivel));
+    return emVigor.map(doc => {
+      // A situação de validade é derivada da data: aprovado com validade passada aparece como vencido.
+      // Status de validade gravados em dados antigos ("vencido", "a_vencer") também seguem a data.
+      const situacaoValidade = getValidityState(doc.validade);
+      const porValidade = APPROVED_STATUSES.includes(doc.status);
+      const nova = novasVersoes.get(doc.id);
+      return {
+        ...exibir.ocultar(doc),
+        situacaoValidade,
+        status: porValidade ? (situacaoValidade === "vencido" ? "vencido" : "valido") : doc.status,
+        novaVersao: nova ? exibir.ocultar(nova) : null,
+      };
+    });
+  }),
+
+  /** Versões anteriores de um documento (substituídas e versões novas rejeitadas), da mais nova para a mais antiga. */
+  versions: protectedProcedure.input(z.object({ id: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    const doc = await getEmployeeDocByIdOrThrow(db, input.id);
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
+    const exibir = docVisibility(ctx.user.role);
+    if (!exibir.visivel(doc)) return [];
+    const ids = [doc.id];
+    let anterior = doc.substituiDocId;
+    while (anterior != null && !ids.includes(anterior) && ids.length < 100) {
+      ids.push(anterior);
+      const [row] = await db.select({ substituiDocId: employeeDocuments.substituiDocId }).from(employeeDocuments).where(eq(employeeDocuments.id, anterior)).limit(1);
+      anterior = row?.substituiDocId ?? null;
+    }
+    const rows = await db.select().from(employeeDocuments)
+      .where(and(
+        or(inArray(employeeDocuments.id, ids), inArray(employeeDocuments.substituiDocId, ids)),
+        ne(employeeDocuments.id, doc.id),
+        ne(employeeDocuments.status, "excluido"),
+      ))
+      .orderBy(desc(employeeDocuments.createdAt), desc(employeeDocuments.id));
+    // A versão nova ainda não aprovada deste documento aparece junto dele, não no histórico.
+    return rows
+      .filter((row) => !(row.substituiDocId === doc.id && row.status !== "substituido"))
+      .filter(exibir.visivel)
+      .map(exibir.ocultar);
   }),
 
   /** Checklist do cargo: cada documento exigido, sua situação, a conformidade e a liberação do colaborador. */
@@ -2315,8 +2388,9 @@ const employeeDocsRouter = router({
     return {
       ...result,
       items: result.items.map(({ requirement, doc, estado }) => {
-        // Sem acesso a dados de saúde, mostra só a situação do item, sem o documento.
+        // Sem acesso a dados de saúde, o arquivo não abre; o Admin da empresa ainda vê situação, nome e datas.
         const restrito = isHealthCategory(requirement.categoria) && !healthAccess;
+        const mostraDocumento = !restrito || canSendHealthDocuments(ctx.user.role);
         return {
           requirementId: requirement.id,
           documentoNome: requirement.documentoNome,
@@ -2324,7 +2398,7 @@ const employeeDocsRouter = router({
           validadeMeses: requirement.validadeMeses,
           estado,
           restrito,
-          documento: doc && !restrito ? { id: doc.id, nome: doc.nome, validade: doc.validade, dataEmissao: doc.dataEmissao } : null,
+          documento: doc && mostraDocumento ? { id: doc.id, nome: doc.nome, validade: doc.validade, dataEmissao: doc.dataEmissao } : null,
         };
       }),
     };
@@ -2344,13 +2418,18 @@ const employeeDocsRouter = router({
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     const status = input.decisao === "aprovar" ? "valido" : "rejeitado";
-    await db.update(employeeDocuments).set({
-      status,
-      analisadoPor: ctx.user.id,
-      analisadoAt: new Date(),
-      motivoRejeicao: input.decisao === "rejeitar" ? motivo : null,
-      updatedAt: new Date(),
-    }).where(eq(employeeDocuments.id, doc.id));
+    await db.transaction(async (tx) => {
+      await tx.update(employeeDocuments).set({
+        status,
+        analisadoPor: ctx.user.id,
+        analisadoAt: new Date(),
+        motivoRejeicao: input.decisao === "rejeitar" ? motivo : null,
+        updatedAt: new Date(),
+      }).where(eq(employeeDocuments.id, doc.id));
+      // Versão nova aprovada: a anterior (e outras versões novas dela ainda não aprovadas) vira histórico.
+      // Rejeitada: a anterior continua valendo.
+      if (input.decisao === "aprovar" && doc.substituiDocId != null) await retireVersions(tx, doc.substituiDocId, doc.id, true);
+    });
     await recalcCompliance(db, [doc.employeeId]);
     await insertAuditLog({
       userId: ctx.user.id,
@@ -2400,6 +2479,8 @@ const employeeDocsRouter = router({
       validade: employeeDocuments.validade,
       createdAt: employeeDocuments.createdAt,
       updatedAt: employeeDocuments.updatedAt,
+      versao: employeeDocuments.versao,
+      substituiDocId: employeeDocuments.substituiDocId,
       employeeId: employeeDocuments.employeeId,
       companyId: employeeDocuments.companyId,
       colaboradorNome: employees.nome,
@@ -2433,7 +2514,7 @@ const employeeDocsRouter = router({
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
-    assertAccess(!isHealthCategory(input.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!isHealthCategory(input.categoria) || canSendHealthDocuments(ctx.user.role), "Documento de saúde só pode ser enviado pelo Administrador Geral, pelo RH ou pelo Administrador da empresa.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
@@ -2499,7 +2580,13 @@ const employeeDocsRouter = router({
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     const categoria = input.categoria ?? doc.categoria;
-    assertAccess((!isHealthCategory(doc.categoria) && !isHealthCategory(categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    // O Admin da empresa envia nova versão de documento de saúde (sem abrir o arquivo), mas não muda a categoria.
+    assertAccess(
+      (!isHealthCategory(doc.categoria) && !isHealthCategory(categoria)) ||
+        canAccessHealthData(ctx.user.role) ||
+        (canSendHealthDocuments(ctx.user.role) && categoria === doc.categoria),
+      "Acesso a dados de saúde restrito ao Administrador Geral e RH.",
+    );
     assertAccess(!isHealthCategory(categoria) || input.fileBase64 || !doc.fileUrl || doc.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
     const datas = mergedDocumentDates(input, doc);
     assertDocumentDates(datas.dataEmissao, datas.validade);
@@ -2518,38 +2605,80 @@ const employeeDocsRouter = router({
     if (input.validade !== undefined) payload.validade = input.validade || null;
     if (input.observacao !== undefined) payload.observacao = normalizeOptionalText(input.observacao) ?? null;
     if (input.requirementId !== undefined) payload.requirementId = input.requirementId;
-    // Arquivo novo ou datas novas voltam para validação, salvo quando a própria equipe SmartDocPlan altera.
-    if (!doc.recurringTypeId && (saved || input.dataEmissao !== undefined || input.validade !== undefined)) Object.assign(payload, initialReviewFields(ctx.user));
-    if (saved) {
-      // O arquivo anterior permanece no disco para histórico; o registro aponta para a nova versão.
-      payload.fileUrl = saved.url;
-      payload.fileKey = saved.url.replace("/uploads/", "");
-      payload.versao = doc.versao + 1;
-      payload.uploadedBy = ctx.user.id;
-    }
+    // Arquivo novo ou data diferente geram uma versão nova, que passa pela validação; a anterior aprovada
+    // continua valendo até a aprovação. Documento recorrente é alterado no próprio registro.
+    const dataMudou = (nova: string | undefined, atual: unknown) =>
+      nova !== undefined && (nova || null) !== (atual ? String(atual).slice(0, 10) : null);
+    const novaVersao = !doc.recurringTypeId && (!!saved || dataMudou(input.dataEmissao, doc.dataEmissao) || dataMudou(input.validade, doc.validade));
+    let documentoId = doc.id;
+    let versao = doc.versao;
     try {
-      await db.update(employeeDocuments).set(payload as any).where(eq(employeeDocuments.id, doc.id));
+      if (!novaVersao) {
+        if (saved) {
+          versao = doc.versao + 1;
+          Object.assign(payload, { fileUrl: saved.url, fileKey: saved.url.replace("/uploads/", ""), versao, uploadedBy: ctx.user.id });
+        }
+        await db.update(employeeDocuments).set(payload as any).where(eq(employeeDocuments.id, doc.id));
+      } else {
+        // Alterar uma versão nova ainda não aprovada: a base continua sendo a versão em vigor.
+        const [anteriorEmVigor] = doc.substituiDocId != null && NOT_IN_FORCE_STATUSES.includes(doc.status)
+          ? await db.select().from(employeeDocuments)
+            .where(and(eq(employeeDocuments.id, doc.substituiDocId), notInArray(employeeDocuments.status, ["excluido", "substituido"])))
+            .limit(1)
+          : [];
+        const base = anteriorEmVigor ?? doc;
+        const revisao = initialReviewFields(ctx.user);
+        // A anterior aprovada continua valendo até a validação; enviada pela equipe SmartDocPlan, a nova já vale.
+        const baseContinua = APPROVED_STATUSES.includes(base.status) && revisao.status !== "valido";
+        // O número segue a maior versão já enviada deste documento (inclusive as rejeitadas).
+        const [{ maior }] = await db.select({ maior: sql<number>`coalesce(max(${employeeDocuments.versao}), 0)` }).from(employeeDocuments)
+          .where(or(eq(employeeDocuments.id, base.id), eq(employeeDocuments.substituiDocId, base.id)));
+        versao = Math.max(Number(maior), base.versao, doc.versao) + 1;
+        await db.transaction(async (tx) => {
+          const [criado] = await tx.insert(employeeDocuments).values({
+            employeeId: doc.employeeId,
+            companyId: doc.companyId,
+            categoria: doc.categoria,
+            nome: doc.nome,
+            tipo: doc.tipo,
+            fileUrl: doc.fileUrl,
+            fileKey: doc.fileKey,
+            dataEmissao: doc.dataEmissao,
+            validade: doc.validade,
+            obrigatorio: doc.obrigatorio,
+            observacao: doc.observacao,
+            requirementId: doc.requirementId,
+            ...payload,
+            ...(saved ? { fileUrl: saved.url, fileKey: saved.url.replace("/uploads/", "") } : {}),
+            versao,
+            uploadedBy: ctx.user.id,
+            substituiDocId: base.id,
+            ...revisao,
+          } as any).returning({ id: employeeDocuments.id });
+          documentoId = criado.id;
+          await retireVersions(tx, base.id, criado.id, !baseContinua);
+        });
+      }
     } catch (error) { await saved?.cleanup(); throw error; }
     await recalcCompliance(db, [doc.employeeId]);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: doc.companyId,
-      acao: saved ? "substituiu_documento_colaborador" : "editou_documento_colaborador",
+      acao: novaVersao ? "nova_versao_documento_colaborador" : saved ? "substituiu_documento_colaborador" : "editou_documento_colaborador",
       entidade: "employee_documents",
-      entidadeId: doc.id,
-      dadosDepois: { documentoId: doc.id, categoria, nome: payload.nome, versao: payload.versao ?? doc.versao, arquivo: input.fileNome ?? null },
+      entidadeId: documentoId,
+      dadosDepois: { documentoId, documentoAnteriorId: novaVersao ? doc.id : null, categoria, nome: payload.nome, versao, arquivo: input.fileNome ?? null },
     });
-    const voltouParaValidacao = !doc.recurringTypeId && (saved || input.dataEmissao !== undefined || input.validade !== undefined);
-    if (voltouParaValidacao && !isPlatformUser(ctx.user.role)) {
+    if (novaVersao && !isPlatformUser(ctx.user.role)) {
       await notifyPlatformTeam({
         companyId: doc.companyId,
         tipo: "documento_enviado",
-        titulo: "Documento alterado aguardando validação",
-        mensagem: `${await companyLabel(doc.companyId)}: "${payload.nome}".`,
+        titulo: "Nova versão aguardando validação",
+        mensagem: `${await companyLabel(doc.companyId)}: "${payload.nome}" (versão ${versao}).`,
         link: "/admin/validacao-documentos",
         saude: isHealthCategory(categoria),
       });
-    } else if (voltouParaValidacao) {
+    } else if (novaVersao) {
       // A própria equipe alterou o documento: a empresa fica sabendo.
       await notifyCompanyStaff({
         companyId: doc.companyId,
@@ -2560,7 +2689,7 @@ const employeeDocsRouter = router({
         saude: isHealthCategory(categoria),
       });
     }
-    return { success: true };
+    return { success: true, id: documentoId };
   }),
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
