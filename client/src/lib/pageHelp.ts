@@ -75,8 +75,10 @@ const FERIAS = (equipe: boolean): PageHelpContent => ({
     "Preencha “Início das férias” e “Último dia das férias” e clique em “Salvar programação”.",
     "No calendário, use os seletores de mês e de ano, as setas e o botão “Hoje” para navegar. A lista abaixo tem filtros por colaborador, situação e período.",
     "Acompanhe a situação: Rascunho, Em análise, Aprovado ou Correção solicitada. O sino avisa quando algo muda ou o prazo se aproxima.",
+    "No painel “Férias vencidas”, veja os períodos cujo prazo para solicitar passou e clique em “Programar” para abrir o formulário já com aquele período.",
   ],
   dicas: [
+    "Para quem já é contratado e tirou férias fora do sistema, informe “Férias em dia até” no dossiê: os períodos até essa data deixam de ser cobrados e todos os vencidos depois dela aparecem no painel.",
     "Os prazos sugeridos vêm de Parâmetros da empresa (aba Férias) e são regras da empresa para organizar a programação; não substituem a CLT.",
     "O sistema não calcula saldo legal de férias: confira cada caso.",
   ],
@@ -447,6 +449,7 @@ const ENTRADAS: Entry[] = [
         "Use as abas: Ativos (liberados, inclusive afastados), Em efetivação (documentação pendente ou em análise) e Desligados.",
         "Busque por nome, CPF, e-mail ou telefone e filtre por situação, função e local.",
         "Para cadastrar, clique em “Novo Colaborador”: nome completo, CPF, nascimento (mínimo 13 anos), admissão, cargo e obra / local. Clique em “Cadastrar”.",
+        "Para quem já é contratado, preencha também “Férias em dia até” (opcional): o último dia do período aquisitivo cujas férias já foram tiradas.",
         "Clique em “Dossiê” para abrir os documentos do colaborador.",
       ],
       dicas: ["Cadastrar um colaborador avisa a equipe SmartDocPlan.", "A aba escolhida fica no endereço da página: dá para voltar a ela."],
@@ -465,7 +468,7 @@ const ENTRADAS: Entry[] = [
         "Para um documento que não está na lista, clique em “Enviar outro documento” e escolha o “Documento exigido” ou “Outro documento”.",
         "Para atualizar um documento, clique em “Editar” e troque o arquivo ou as datas: vira uma nova versão, que aguarda validação. A versão atual continua valendo até a aprovação; as antigas ficam em “Versões anteriores”.",
         "Em “Documentos recorrentes”, clique no período (semana, mês...) para enviar o documento daquele período, ou em “Substituir” para trocar o arquivo de um período já enviado.",
-        "Em “Próximas férias”, veja o período aquisitivo; “Consultar férias do colaborador” abre a tela de férias.",
+        "Em “Próximas férias”, veja o período aquisitivo e os períodos vencidos, com “Programar” em cada um. Em “Férias em dia até”, clique em “Informar” para dizer até quando as férias já foram tiradas (inclusive fora do sistema).",
       ],
       dicas: [
         "Aceitamos PDF, PNG ou JPG de até 10 MB.",

@@ -9,6 +9,7 @@ import { documentAlertThreshold, documentAlertTitle } from "@shared/documentAler
 import { COMPANY_DOCUMENT_TYPES, latestCompanyDocuments } from "@shared/companyDocuments";
 import { formatDateOnlyBr, normalizeTextSearch } from "@shared/formValidation";
 import { brazilToday } from "@shared/vacations";
+import { addDaysDateOnly } from "@shared/dates";
 import { buildVacationSuggestions } from "./vacationSuggestions";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
@@ -141,8 +142,11 @@ async function monthlyAlerts(db: Db, today: string): Promise<Alert[]> {
 /** Férias pelos parâmetros da empresa: aviso ao adquirir e quando o limite para solicitar se aproxima ou vence. */
 async function vacationAlerts(db: Db, today: string): Promise<Alert[]> {
   const sugestoes = await buildVacationSuggestions(db, {}, today);
+  const corte = addDaysDateOnly(today, -30);
   return sugestoes.flatMap((s) => {
     if (s.situacao === "em_aquisicao") return [];
+    // Vencido há mais de 30 dias (aparece com "Férias em dia até" informado) fica só no painel, sem aviso.
+    if (s.situacao === "prazo_vencido" && s.limite < corte) return [];
     const links = {
       linkEmpresa: `/empresa/ferias?colaborador=${s.employeeId}`,
       linkPlataforma: `/admin/ferias?empresa=${s.companyId}&colaborador=${s.employeeId}`,

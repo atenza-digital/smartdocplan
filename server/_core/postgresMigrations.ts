@@ -29,6 +29,7 @@ export const MIGRATIONS = [
   "20261104_documento_versoes.sql",
   "20261105_validacao_documentos_empresa.sql",
   "20261106_pedidos_exclusao.sql",
+  "20261107_ferias_em_dia.sql",
 ];
 
 const BASELINE = "0000_sleepy_cargill.sql";

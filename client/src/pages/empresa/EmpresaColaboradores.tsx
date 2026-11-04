@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ChevronLeft, ChevronRight, FolderOpen, Plus, Search, UserCheck, UserMinus, Users, UserX } from "lucide-react";
 import { toast } from "sonner";
 import { canManageCompanyData } from "@shared/permissions";
+import { brazilToday } from "@shared/vacations";
 import {
   formatCpf,
   formatDateOnlyBr,
@@ -52,6 +53,7 @@ const emptyForm = {
   email: "",
   telefone: "",
   dataAdmissao: "",
+  feriasEmDiaAte: "",
   dataNascimento: "",
   positionId: "",
   worksiteId: "",
@@ -170,6 +172,7 @@ export default function EmpresaColaboradores() {
       telefone: form.telefone.trim() || undefined,
       dataNascimento: form.dataNascimento || undefined,
       dataAdmissao: form.dataAdmissao || undefined,
+      feriasEmDiaAte: form.feriasEmDiaAte || undefined,
       positionId: form.positionId ? Number(form.positionId) : undefined,
       worksiteId: form.worksiteId ? Number(form.worksiteId) : undefined,
     });
@@ -511,6 +514,21 @@ export default function EmpresaColaboradores() {
                   value={form.dataAdmissao}
                   onChange={(event) => setForm((current) => ({ ...current, dataAdmissao: event.target.value }))}
                 />
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="colaborador-ferias-em-dia">Férias em dia até (opcional)</Label>
+                <Input
+                  id="colaborador-ferias-em-dia"
+                  type="date"
+                  min={form.dataAdmissao || undefined}
+                  max={brazilToday()}
+                  value={form.feriasEmDiaAte}
+                  onChange={(event) => setForm((current) => ({ ...current, feriasEmDiaAte: event.target.value }))}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Para quem já é contratado: último dia do período aquisitivo cujas férias já foram tiradas. Períodos até essa data não são cobrados.
+                </p>
               </div>
 
               <div className="space-y-1.5">
