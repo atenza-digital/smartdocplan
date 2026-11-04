@@ -13,7 +13,7 @@ import { COMPANY_MONTHLY_DOCUMENT_TIPO } from "@shared/companyDocuments";
 export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; canEdit: boolean }) {
   const utils = trpc.useUtils();
   const { data } = trpc.recurringDocs.companyGrid.useQuery({ companyId, quantidade: 6 }, { enabled: companyId > 0 });
-  const [target, setTarget] = useState<{ row: MonthlyRow; cell: MonthlyCell } | null>(null);
+  const [target, setTarget] = useState<{ row: MonthlyRow; cell: MonthlyCell; substituir: boolean } | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [sending, setSending] = useState(false);
 
@@ -35,6 +35,7 @@ export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; 
         fileBase64: await fileToBase64(file),
         recurringTypeId: target.row.tipo.id,
         competencia: target.cell.competencia,
+        substituir: target.substituir || undefined,
       });
       toast.success("Documento recorrente enviado.");
       setTarget(null);
@@ -55,16 +56,22 @@ export function CompanyMonthlyDocs({ companyId, canEdit }: { companyId: number; 
         titulo="Documentos recorrentes da empresa"
         linhas={data.linhas as MonthlyRow[]}
         canSend={canEdit}
-        onSend={(row, cell) => { setTarget({ row, cell }); setFile(null); }}
+        onSend={(row, cell) => { setTarget({ row, cell, substituir: false }); setFile(null); }}
+        onReplace={(row, cell) => { setTarget({ row, cell, substituir: true }); setFile(null); }}
       />
       <Dialog open={!!target} onOpenChange={(open) => !open && setTarget(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              Enviar {target?.row.tipo.nome} {target?.cell.rotulo}
+              {target?.substituir ? "Substituir" : "Enviar"} {target?.row.tipo.nome} {target?.cell.rotulo}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-1.5 py-2">
+            {target?.substituir && (
+              <p className="mb-2 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                O novo arquivo vira uma nova versão. Se este documento exige validação, a versão aprovada continua valendo até a equipe SmartDocPlan aprovar a nova.
+              </p>
+            )}
             <Label htmlFor="mensal-empresa-arquivo">Arquivo *</Label>
             <Input id="mensal-empresa-arquivo" type="file" accept={DOCUMENT_FILE_ACCEPT} onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
             <p className="text-xs text-muted-foreground">PDF, PNG ou JPG com até 10 MB.</p>

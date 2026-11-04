@@ -37,7 +37,7 @@ import { eq, and, desc, or, sql, ne, inArray, notInArray } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { auditClientFields } from "./_core/clientInfo";
 import { addressForDb, addressInput } from "@shared/address";
-import { COMPANY_DOCUMENT_TYPES, COMPANY_MONTHLY_DOCUMENT_TIPO, latestCompanyDocuments } from "@shared/companyDocuments";
+import { COMPANY_DOCUMENT_TYPES, COMPANY_MONTHLY_DOCUMENT_TIPO, companyDocumentKey, isCompanyDocApproved, latestCompanyDocuments, splitCompanyDocuments } from "@shared/companyDocuments";
 import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } from "./compliance";
 import { buildCompanyMonthlyGrid, buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
 import { PERIODICIDADES, asPeriodicidade, formatPeriod, isPeriodAllowed } from "@shared/recurring";
@@ -785,32 +785,52 @@ const notificationsRouter = router({
   }),
 });
 
+type CompanyDocRow = typeof companyDocuments.$inferSelect;
+
+/**
+ * Envios mais antigos do mesmo documento da empresa (mesmo tipo fixo, ou mesmo recorrente e período) que
+ * ainda aguardavam validação passam para o histórico ("substituido"): só o envio mais novo fica na fila.
+ */
+async function retireCompanyPending(db: NonNullable<Awaited<ReturnType<typeof getDb>>> | DbTx, doc: CompanyDocRow, keepId: number) {
+  const mesmoDocumento = doc.recurringTypeId
+    ? and(eq(companyDocuments.recurringTypeId, doc.recurringTypeId), eq(companyDocuments.competencia, doc.competencia ?? ""))
+    : and(sql`${companyDocuments.recurringTypeId} IS NULL`, eq(companyDocuments.tipo, doc.tipo));
+  await db.update(companyDocuments).set({ status: "substituido", updatedAt: new Date() }).where(and(
+    eq(companyDocuments.companyId, doc.companyId),
+    mesmoDocumento,
+    eq(companyDocuments.status, "aguardando_validacao"),
+    ne(companyDocuments.id, keepId),
+  ));
+}
+
 const companyDocumentsRouter = router({
   listByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    // Exclusão lógica: o registro e o arquivo ficam guardados, mas saem da lista.
     return db
       .select()
       .from(companyDocuments)
-      .where(eq(companyDocuments.companyId, input.companyId))
+      .where(and(eq(companyDocuments.companyId, input.companyId), ne(companyDocuments.status, "excluido")))
       .orderBy(companyDocuments.tipo, desc(companyDocuments.updatedAt));
   }),
 
   statsByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    const vazio = { total: 0, enviados: 0, obrigatoriosPendentes: 0, vencidos: 0, aVencer: 0, emValidacao: 0 };
     const db = await getDb();
-    if (!db) {
-      return { total: 0, enviados: 0, obrigatoriosPendentes: 0, vencidos: 0, aVencer: 0 };
-    }
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) {
-      return { total: 0, enviados: 0, obrigatoriosPendentes: 0, vencidos: 0, aVencer: 0 };
-    }
+    if (!db) return vazio;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return vazio;
 
-    const docs = await db.select().from(companyDocuments).where(eq(companyDocuments.companyId, input.companyId));
-    // Só a versão atual de cada tipo conta: versões antigas vencidas não são pendência.
+    const docs = await db.select().from(companyDocuments).where(and(eq(companyDocuments.companyId, input.companyId), ne(companyDocuments.status, "excluido")));
+    // Só a versão em vigor (aprovada mais recente) de cada tipo conta: versões antigas vencidas não são pendência.
+    const versoes = splitCompanyDocuments(docs.filter((doc) => !doc.recurringTypeId));
     const latest = latestCompanyDocuments(docs);
     const atuais = COMPANY_DOCUMENT_TYPES.map((item) => latest.get(item.tipo)).filter((doc): doc is NonNullable<typeof doc> => !!doc);
-    const obrigatoriosPendentes = COMPANY_DOCUMENT_TYPES.filter((item) => item.obrigatorio && !latest.has(item.tipo)).length;
+    const emValidacao = COMPANY_DOCUMENT_TYPES.filter((item) => versoes.get(item.tipo)?.novaVersao?.status === "aguardando_validacao").length;
+    // Obrigatório sem versão aprovada e sem envio em validação: a empresa precisa enviar.
+    const obrigatoriosPendentes = COMPANY_DOCUMENT_TYPES.filter((item) =>
+      item.obrigatorio && !latest.has(item.tipo) && versoes.get(item.tipo)?.novaVersao?.status !== "aguardando_validacao").length;
     const vencidos = atuais.filter((doc) => getValidityState(doc.validade) === "vencido").length;
     const aVencer = atuais.filter((doc) => getValidityState(doc.validade) === "a_vencer").length;
 
@@ -820,7 +840,88 @@ const companyDocumentsRouter = router({
       obrigatoriosPendentes,
       vencidos,
       aVencer,
+      emValidacao,
     };
+  }),
+
+  /** Fila de documentos da empresa aguardando validação (equipe SmartDocPlan). */
+  pendingReview: protectedProcedure.input(z.object({ companyId: z.number().optional() }).optional()).query(async ({ ctx, input }) => {
+    assertAccess(isPlatformUser(ctx.user.role), "Acesso negado");
+    const db = await getDb();
+    if (!db) return [];
+    const conditions = [eq(companyDocuments.status, "aguardando_validacao")];
+    if (input?.companyId) conditions.push(eq(companyDocuments.companyId, input.companyId));
+    const rows = await db.select({
+      id: companyDocuments.id,
+      tipo: companyDocuments.tipo,
+      nome: companyDocuments.nome,
+      fileUrl: companyDocuments.fileUrl,
+      dataEmissao: companyDocuments.dataEmissao,
+      validade: companyDocuments.validade,
+      recurringTypeId: companyDocuments.recurringTypeId,
+      competencia: companyDocuments.competencia,
+      status: companyDocuments.status,
+      createdAt: companyDocuments.createdAt,
+      updatedAt: companyDocuments.updatedAt,
+      companyId: companyDocuments.companyId,
+      empresaNome: companies.razaoSocial,
+    })
+      .from(companyDocuments)
+      .innerJoin(companies, eq(companies.id, companyDocuments.companyId))
+      .where(and(...conditions))
+      .orderBy(companyDocuments.createdAt);
+    if (!rows.length) return [];
+    // Indica quando já existe uma versão aprovada: ela continua valendo até a decisão.
+    const aprovados = await db.select({ companyId: companyDocuments.companyId, tipo: companyDocuments.tipo, recurringTypeId: companyDocuments.recurringTypeId, competencia: companyDocuments.competencia })
+      .from(companyDocuments)
+      .where(and(inArray(companyDocuments.companyId, Array.from(new Set(rows.map((row) => row.companyId)))), eq(companyDocuments.status, "valido")));
+    const chavesAprovadas = new Set(aprovados.map((doc) => `${doc.companyId}|${companyDocumentKey(doc)}`));
+    return rows.map((row) => ({ ...row, temVersaoAprovada: chavesAprovadas.has(`${row.companyId}|${companyDocumentKey(row)}`) }));
+  }),
+
+  /** Validação pela equipe SmartDocPlan: aprova ou rejeita (com motivo) um documento da empresa. */
+  review: protectedProcedure.input(z.object({
+    id: z.number(),
+    decisao: z.enum(["aprovar", "rejeitar"]),
+    motivo: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Só a equipe SmartDocPlan valida documentos.");
+    const motivo = normalizeOptionalText(input.motivo);
+    if (input.decisao === "rejeitar" && !motivo) throw new Error("Informe o motivo da rejeição.");
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [doc] = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
+    if (!doc || doc.status === "excluido") throw new Error("Documento da empresa não encontrado");
+    if (doc.status !== "aguardando_validacao") throw new Error("Este documento não está aguardando validação.");
+    await db.transaction(async (tx) => {
+      await tx.update(companyDocuments).set({
+        status: input.decisao === "aprovar" ? "valido" : "rejeitado",
+        analisadoPor: ctx.user.id,
+        analisadoAt: new Date(),
+        motivoRejeicao: input.decisao === "rejeitar" ? motivo : null,
+        updatedAt: new Date(),
+      }).where(eq(companyDocuments.id, doc.id));
+      // Aprovado: passa a ser a versão em vigor; envios mais antigos ainda na fila saem dela.
+      if (input.decisao === "aprovar") await retireCompanyPending(tx, doc, doc.id);
+    });
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: doc.companyId,
+      acao: input.decisao === "aprovar" ? "aprovou_documento_empresa" : "rejeitou_documento_empresa",
+      entidade: "company_documents",
+      entidadeId: doc.id,
+      dadosDepois: { documentoId: doc.id, nome: doc.nome, motivo: motivo ?? null },
+    });
+    await notifyCompanyStaff({
+      companyId: doc.companyId,
+      tipo: input.decisao === "aprovar" ? "documento_aprovado" : "documento_rejeitado",
+      titulo: input.decisao === "aprovar" ? "Documento da empresa aprovado" : "Documento da empresa rejeitado",
+      mensagem: input.decisao === "aprovar"
+        ? `O documento "${doc.nome}" foi aprovado pela equipe SmartDocPlan.`
+        : `O documento "${doc.nome}" foi rejeitado: ${motivo}`,
+      link: "/empresa/documentos",
+    });
+    return { success: true };
   }),
 
   create: protectedProcedure.input(z.object({
@@ -834,48 +935,61 @@ const companyDocumentsRouter = router({
     fileBase64: z.string(),
     recurringTypeId: z.number().optional(),
     competencia: z.string().optional(),
+    /** Recorrente: envia outro arquivo para um período que já tem documento (nova versão). */
+    substituir: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
-    const mensal = await assertRecurringUpload(db, { recurringTypeId: input.recurringTypeId, competencia: input.competencia, companyId: input.companyId, alvo: "empresa" });
+    const mensal = await assertRecurringUpload(db, { recurringTypeId: input.recurringTypeId, competencia: input.competencia, companyId: input.companyId, alvo: "empresa", substituir: input.substituir });
     assertAccess(mensal || COMPANY_DOCUMENT_TYPES.some((item) => item.tipo === input.tipo.trim()), "Tipo de documento da empresa inválido.");
+    // Enviado pela empresa: aguarda a validação da equipe SmartDocPlan (a versão aprovada anterior continua valendo).
+    // Enviado pela equipe, ou recorrente que não exige validação: já vale.
+    const revisao = mensal && !mensal.exigeValidacao
+      ? { status: "valido", analisadoPor: null, analisadoAt: null, motivoRejeicao: null }
+      : initialReviewFields(ctx.user);
 
     const saved = await saveDocumentFile(input.fileBase64, `company_${input.companyId}`);
     const fileUrl = saved.url;
+    let criado: CompanyDocRow | undefined;
     try {
-    await db.insert(companyDocuments).values({
-      companyId: input.companyId,
-      tipo: mensal ? COMPANY_MONTHLY_DOCUMENT_TIPO : input.tipo.trim(),
-      nome: input.nome.trim(),
-      recurringTypeId: mensal ? input.recurringTypeId : undefined,
-      competencia: mensal ? input.competencia : undefined,
-      fileUrl,
-      fileKey: fileUrl.replace("/uploads/", ""),
-      dataEmissao: input.dataEmissao || undefined,
-      validade: input.validade || undefined,
-      observacao: normalizeOptionalText(input.observacao) ?? undefined,
-    });
+      await db.transaction(async (tx) => {
+        [criado] = await tx.insert(companyDocuments).values({
+          companyId: input.companyId,
+          tipo: mensal ? COMPANY_MONTHLY_DOCUMENT_TIPO : input.tipo.trim(),
+          nome: input.nome.trim(),
+          recurringTypeId: mensal ? input.recurringTypeId : undefined,
+          competencia: mensal ? input.competencia : undefined,
+          fileUrl,
+          fileKey: fileUrl.replace("/uploads/", ""),
+          dataEmissao: input.dataEmissao || undefined,
+          validade: input.validade || undefined,
+          observacao: normalizeOptionalText(input.observacao) ?? undefined,
+          ...revisao,
+        }).returning();
+        await retireCompanyPending(tx, criado!, criado!.id);
+      });
     } catch (error) { await saved.cleanup(); throw error; }
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: input.companyId,
       acao: "criou_documento_empresa",
       entidade: "company_documents",
-      dadosDepois: { tipo: input.tipo, nome: input.nome, fileNome: input.fileNome },
+      entidadeId: criado?.id ?? null,
+      dadosDepois: { tipo: input.tipo, nome: input.nome, fileNome: input.fileNome, status: revisao.status },
     });
-    if (!mensal && !isPlatformUser(ctx.user.role)) {
+    if (revisao.status === "aguardando_validacao") {
       await notifyPlatformTeam({
         companyId: input.companyId,
         tipo: "documento_empresa_enviado",
-        titulo: "Documento da empresa enviado",
+        titulo: "Documento da empresa aguardando validação",
         mensagem: `${await companyLabel(input.companyId)}: "${input.nome.trim()}".`,
-        link: `/admin/empresas/${input.companyId}`,
+        link: "/admin/validacao-documentos?aba=empresa",
       });
     }
-    return { success: true, fileUrl };
+    return { success: true, fileUrl, id: criado?.id ?? null, status: revisao.status };
   }),
 
   update: protectedProcedure.input(z.object({
@@ -889,7 +1003,7 @@ const companyDocumentsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
     const doc = result[0];
-    if (!doc) throw new Error("Documento da empresa não encontrado");
+    if (!doc || doc.status === "excluido") throw new Error("Documento da empresa não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
     const datas = mergedDocumentDates(input, doc);
@@ -900,17 +1014,56 @@ const companyDocumentsRouter = router({
       dataEmissao: input.dataEmissao !== undefined ? input.dataEmissao || null : undefined,
       validade: input.validade !== undefined ? input.validade || null : undefined,
       observacao: input.observacao !== undefined ? normalizeOptionalText(input.observacao) ?? null : undefined,
+      updatedAt: new Date(),
     };
-    await db.update(companyDocuments).set(payload as any).where(eq(companyDocuments.id, input.id));
+    // A empresa mudar as datas de um documento aprovado cria uma versão nova (mesmo arquivo) que passa pela
+    // validação; a aprovada continua valendo até lá. A equipe SmartDocPlan altera no próprio registro.
+    const dataMudou = (nova: string | undefined, atual: unknown) =>
+      nova !== undefined && (nova || null) !== (atual ? String(atual).slice(0, 10) : null);
+    const revisao = initialReviewFields(ctx.user);
+    const [tipoRecorrente] = doc.recurringTypeId
+      ? await db.select({ exigeValidacao: recurringDocumentTypes.exigeValidacao }).from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, doc.recurringTypeId)).limit(1)
+      : [];
+    const novaVersao = isCompanyDocApproved(doc) && revisao.status !== "valido" && (tipoRecorrente?.exigeValidacao ?? true) &&
+      (dataMudou(input.dataEmissao, doc.dataEmissao) || dataMudou(input.validade, doc.validade));
+    let documentoId = doc.id;
+    if (novaVersao) {
+      await db.transaction(async (tx) => {
+        const [criado] = await tx.insert(companyDocuments).values({
+          companyId: doc.companyId,
+          tipo: doc.tipo,
+          recurringTypeId: doc.recurringTypeId,
+          competencia: doc.competencia,
+          fileUrl: doc.fileUrl,
+          fileKey: doc.fileKey,
+          dataEmissao: doc.dataEmissao,
+          validade: doc.validade,
+          observacao: doc.observacao,
+          ...Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined)),
+          ...revisao,
+        } as any).returning();
+        documentoId = criado.id;
+        await retireCompanyPending(tx, criado, criado.id);
+      });
+      await notifyPlatformTeam({
+        companyId: doc.companyId,
+        tipo: "documento_empresa_enviado",
+        titulo: "Documento da empresa aguardando validação",
+        mensagem: `${await companyLabel(doc.companyId)}: "${payload.nome}" (datas alteradas).`,
+        link: "/admin/validacao-documentos?aba=empresa",
+      });
+    } else {
+      await db.update(companyDocuments).set(payload as any).where(eq(companyDocuments.id, input.id));
+    }
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: doc.companyId,
-      acao: "atualizou_documento_empresa",
+      acao: novaVersao ? "nova_versao_documento_empresa" : "atualizou_documento_empresa",
       entidade: "company_documents",
-      entidadeId: doc.id,
-      dadosDepois: payload,
+      entidadeId: documentoId,
+      dadosDepois: { ...payload, documentoAnteriorId: novaVersao ? doc.id : null },
     });
-    return { success: true };
+    return { success: true, id: documentoId };
   }),
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
@@ -918,10 +1071,11 @@ const companyDocumentsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const result = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.id)).limit(1);
     const doc = result[0];
-    if (!doc) throw new Error("Documento da empresa não encontrado");
+    if (!doc || doc.status === "excluido") throw new Error("Documento da empresa não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
-    await db.delete(companyDocuments).where(eq(companyDocuments.id, input.id));
+    // Exclusão lógica: o registro e o arquivo são mantidos para histórico e auditoria.
+    await db.update(companyDocuments).set({ status: "excluido", updatedAt: new Date() }).where(eq(companyDocuments.id, input.id));
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: doc.companyId,
@@ -2096,13 +2250,14 @@ const usersRouter = router({
 // â”€â”€â”€ EMPLOYEE DOCUMENTS ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 /**
  * Documento recorrente: tipo e período (competência) vêm juntos, o tipo é ativo, da empresa e do alvo certo,
- * a competência não é futura e ainda não existe documento para ela. Retorna true quando é mensal.
+ * a competência não é futura e ainda não existe documento para ela (salvo `substituir`, na empresa).
+ * Retorna o tipo recorrente, ou null quando não é recorrente.
  */
 async function assertRecurringUpload(
   db: NonNullable<Awaited<ReturnType<typeof getDb>>>,
-  opts: { recurringTypeId?: number; competencia?: string; companyId: number; alvo: "colaborador" | "empresa"; employeeId?: number }
+  opts: { recurringTypeId?: number; competencia?: string; companyId: number; alvo: "colaborador" | "empresa"; employeeId?: number; substituir?: boolean }
 ) {
-  if (!opts.recurringTypeId && !opts.competencia) return false;
+  if (!opts.recurringTypeId && !opts.competencia) return null;
   if (!opts.recurringTypeId || !opts.competencia) throw new Error("Informe o tipo e o período do documento recorrente.");
   const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, opts.recurringTypeId)).limit(1);
   assertAccess(!!tipo && tipo.ativo && tipo.companyId === opts.companyId && tipo.alvo === opts.alvo, "Tipo de documento recorrente inválido para esta empresa.");
@@ -2114,9 +2269,11 @@ async function assertRecurringUpload(
         eq(employeeDocuments.competencia, opts.competencia), ne(employeeDocuments.status, "excluido"))).limit(1)
     : await db.select({ id: companyDocuments.id }).from(companyDocuments).where(and(
         eq(companyDocuments.companyId, opts.companyId), eq(companyDocuments.recurringTypeId, opts.recurringTypeId),
-        eq(companyDocuments.competencia, opts.competencia))).limit(1);
-  if (existing.length) throw new Error(`Já existe ${tipo.nome} do período ${formatPeriod(opts.competencia, periodicidade)}. Use "Editar" para substituir o arquivo.`);
-  return true;
+        eq(companyDocuments.competencia, opts.competencia), notInArray(companyDocuments.status, ["excluido", "substituido"]))).limit(1);
+  if (existing.length && !(opts.substituir && opts.alvo === "empresa")) {
+    throw new Error(`Já existe ${tipo.nome} do período ${formatPeriod(opts.competencia, periodicidade)}. Use "Substituir" para enviar outro arquivo.`);
+  }
+  return tipo;
 }
 
 // Categorias permitidas para documentos recorrentes (sem dados de saúde).
@@ -2139,6 +2296,7 @@ const recurringDocsRouter = router({
     categoria: z.enum(RECURRING_CATEGORIES).default("outros"),
     periodicidade: z.enum(PERIODICIDADES).default("mensal"),
     prazoDias: z.number().int().min(0, "O prazo vai de 0 a 90 dias.").max(90, "O prazo vai de 0 a 90 dias."),
+    exigeValidacao: z.boolean().default(true),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
@@ -2146,11 +2304,11 @@ const recurringDocsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const [created] = await db.insert(recurringDocumentTypes).values({
       companyId: input.companyId, nome: input.nome, alvo: input.alvo, categoria: input.categoria,
-      periodicidade: input.periodicidade, prazoDias: input.prazoDias,
+      periodicidade: input.periodicidade, prazoDias: input.prazoDias, exigeValidacao: input.exigeValidacao,
     }).returning({ id: recurringDocumentTypes.id });
     await insertAuditLog({
       userId: ctx.user.id, companyId: input.companyId, acao: "criou_documento_mensal", entidade: "recurring_document_types",
-      entidadeId: created?.id ?? null, dadosDepois: { nome: input.nome, alvo: input.alvo, periodicidade: input.periodicidade, prazoDias: input.prazoDias },
+      entidadeId: created?.id ?? null, dadosDepois: { nome: input.nome, alvo: input.alvo, periodicidade: input.periodicidade, prazoDias: input.prazoDias, exigeValidacao: input.exigeValidacao },
     });
     return { success: true };
   }),
@@ -2161,6 +2319,7 @@ const recurringDocsRouter = router({
     categoria: z.enum(RECURRING_CATEGORIES).optional(),
     periodicidade: z.enum(PERIODICIDADES).optional(),
     prazoDias: z.number().int().min(0, "O prazo vai de 0 a 90 dias.").max(90, "O prazo vai de 0 a 90 dias.").optional(),
+    exigeValidacao: z.boolean().optional(),
     ativo: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
@@ -2173,7 +2332,7 @@ const recurringDocsRouter = router({
     await db.update(recurringDocumentTypes).set({ ...changes, updatedAt: new Date() }).where(eq(recurringDocumentTypes.id, id));
     await insertAuditLog({
       userId: ctx.user.id, companyId: tipo.companyId, acao: "editou_documento_mensal", entidade: "recurring_document_types",
-      entidadeId: tipo.id, dadosDepois: { antes: { nome: tipo.nome, periodicidade: tipo.periodicidade, prazoDias: tipo.prazoDias, ativo: tipo.ativo }, depois: changes },
+      entidadeId: tipo.id, dadosDepois: { antes: { nome: tipo.nome, periodicidade: tipo.periodicidade, prazoDias: tipo.prazoDias, exigeValidacao: tipo.exigeValidacao, ativo: tipo.ativo }, depois: changes },
     });
     return { success: true };
   }),
@@ -2524,6 +2683,10 @@ const employeeDocsRouter = router({
     if (input.requirementId) await assertRequirementOfEmployee(db, input.requirementId, employee.positionId);
     const mensal = await assertRecurringUpload(db, { recurringTypeId: input.recurringTypeId, competencia: input.competencia, companyId: employee.companyId, alvo: "colaborador", employeeId: employee.id });
     const { fileBase64, fileNome, ...data } = input;
+    // Recorrente que não exige validação já vale; os demais passam pela validação da equipe (salvo envio da própria equipe).
+    const revisao = mensal && !mensal.exigeValidacao
+      ? { status: "valido", analisadoPor: null, analisadoAt: null, motivoRejeicao: null }
+      : initialReviewFields(ctx.user);
     const saved = fileBase64 ? await saveDocumentFile(fileBase64, `employee_${input.employeeId}`) : null;
     const fileUrl = saved?.url ?? data.fileUrl;
     let createdDoc: { id: number } | undefined;
@@ -2535,8 +2698,7 @@ const employeeDocsRouter = router({
         dataEmissao: data.dataEmissao || undefined,
         validade: data.validade || undefined,
         uploadedBy: ctx.user.id,
-        // Documento recorrente não passa pela validação da equipe (não interfere na liberação); os do checklist passam.
-        ...(mensal ? { status: "valido" } : initialReviewFields(ctx.user)),
+        ...revisao,
       } as any).returning({ id: employeeDocuments.id });
     } catch (error) { await saved?.cleanup(); throw error; }
     await recalcCompliance(db, [input.employeeId]);
@@ -2548,8 +2710,8 @@ const employeeDocsRouter = router({
       entidadeId: createdDoc?.id ?? null,
       dadosDepois: { colaboradorId: input.employeeId, categoria: input.categoria, nome: input.nome, arquivo: fileNome ?? null },
     });
-    // Documento recorrente não passa por validação; os demais entram na fila da equipe.
-    if (!mensal && !isPlatformUser(ctx.user.role)) {
+    // Envio que aguarda validação entra na fila da equipe.
+    if (revisao.status === "aguardando_validacao") {
       await notifyPlatformTeam({
         companyId: input.companyId,
         tipo: "documento_enviado",
@@ -2606,10 +2768,14 @@ const employeeDocsRouter = router({
     if (input.observacao !== undefined) payload.observacao = normalizeOptionalText(input.observacao) ?? null;
     if (input.requirementId !== undefined) payload.requirementId = input.requirementId;
     // Arquivo novo ou data diferente geram uma versão nova, que passa pela validação; a anterior aprovada
-    // continua valendo até a aprovação. Documento recorrente é alterado no próprio registro.
+    // continua valendo até a aprovação. Recorrente que não exige validação é alterado no próprio registro.
     const dataMudou = (nova: string | undefined, atual: unknown) =>
       nova !== undefined && (nova || null) !== (atual ? String(atual).slice(0, 10) : null);
-    const novaVersao = !doc.recurringTypeId && (!!saved || dataMudou(input.dataEmissao, doc.dataEmissao) || dataMudou(input.validade, doc.validade));
+    const [tipoRecorrente] = doc.recurringTypeId
+      ? await db.select({ exigeValidacao: recurringDocumentTypes.exigeValidacao }).from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, doc.recurringTypeId)).limit(1)
+      : [];
+    const versionado = !doc.recurringTypeId || (tipoRecorrente?.exigeValidacao ?? true);
+    const novaVersao = versionado && (!!saved || dataMudou(input.dataEmissao, doc.dataEmissao) || dataMudou(input.validade, doc.validade));
     let documentoId = doc.id;
     let versao = doc.versao;
     try {
@@ -2648,6 +2814,8 @@ const employeeDocsRouter = router({
             obrigatorio: doc.obrigatorio,
             observacao: doc.observacao,
             requirementId: doc.requirementId,
+            recurringTypeId: doc.recurringTypeId,
+            competencia: doc.competencia,
             ...payload,
             ...(saved ? { fileUrl: saved.url, fileKey: saved.url.replace("/uploads/", "") } : {}),
             versao,

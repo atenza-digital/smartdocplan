@@ -10,7 +10,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
-import { COMPANY_DOCUMENT_TYPES, companyDocumentTypeKey } from "@shared/companyDocuments";
+import { COMPANY_DOCUMENT_TYPES, splitCompanyDocuments } from "@shared/companyDocuments";
+import { isPlatformUser } from "@shared/permissions";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { formatDateOnlyBr, getDocumentDateBounds, getDocumentDatesError, getValidityState } from "@shared/formValidation";
 
 // Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
@@ -39,6 +41,20 @@ function formatDate(value?: string | Date | null) {
   return date.toLocaleDateString("pt-BR");
 }
 
+/** Situação de um envio ainda não aprovado (em validação ou rejeitado). */
+const REVIEW_STATUS: Record<string, { label: string; tone: string }> = {
+  aguardando_validacao: { label: "Em validação", tone: "bg-blue-500/10 text-blue-700 border border-blue-500/20" },
+  rejeitado: { label: "Rejeitado", tone: "bg-red-500/10 text-red-700 border border-red-500/20" },
+};
+
+/** Rótulo de uma versão no histórico. */
+const HISTORY_LABELS: Record<string, string> = {
+  valido: "Versão anterior",
+  substituido: "Substituído",
+  rejeitado: "Rejeitado",
+  aguardando_validacao: "Em validação",
+};
+
 function getDocumentStatus(validade?: string | Date | null) {
   const state = getValidityState(validade);
   if (state === "sem_validade") return { key: "sem_validade", label: "Sem validade", tone: "bg-muted text-muted-foreground" };
@@ -59,6 +75,7 @@ export default function CompanyDocumentsManager({
   description?: string;
 }) {
   const utils = trpc.useUtils();
+  const { user } = useAuth();
   const { data: docs = [] } = trpc.companyDocuments.listByCompany.useQuery({ companyId }, { enabled: companyId > 0 });
   const { data: stats } = trpc.companyDocuments.statsByCompany.useQuery({ companyId }, { enabled: companyId > 0 });
 
@@ -68,8 +85,10 @@ export default function CompanyDocumentsManager({
   const [editForm, setEditForm] = useState<EditForm | null>(null);
 
   const createMutation = trpc.companyDocuments.create.useMutation({
-    onSuccess: async () => {
-      toast.success("Documento da empresa enviado com sucesso!");
+    onSuccess: async (result) => {
+      toast.success(result.status === "aguardando_validacao"
+        ? "Documento enviado. Ele passa a valer depois da validação da equipe SmartDocPlan."
+        : "Documento da empresa enviado com sucesso!");
       await utils.companyDocuments.listByCompany.invalidate({ companyId });
       await utils.companyDocuments.statsByCompany.invalidate({ companyId });
       setUploadTarget(null);
@@ -80,8 +99,10 @@ export default function CompanyDocumentsManager({
   });
 
   const updateMutation = trpc.companyDocuments.update.useMutation({
-    onSuccess: async () => {
-      toast.success("Documento da empresa atualizado!");
+    onSuccess: async (result, variables) => {
+      toast.success(result.id !== variables.id
+        ? "Datas alteradas: a nova versão aguarda a validação da equipe SmartDocPlan; a atual continua valendo."
+        : "Documento da empresa atualizado!");
       await utils.companyDocuments.listByCompany.invalidate({ companyId });
       await utils.companyDocuments.statsByCompany.invalidate({ companyId });
       setEditForm(null);
@@ -98,24 +119,15 @@ export default function CompanyDocumentsManager({
     onError: (error) => toast.error(error.message),
   });
 
-  const docsByType = useMemo(() => {
-    const map = new Map<string, any[]>();
-    for (const doc of docs) {
-      if (doc.recurringTypeId) continue;
-      const key = companyDocumentTypeKey(doc.tipo);
-      const current = map.get(key) ?? [];
-      current.push(doc);
-      map.set(key, current);
-    }
-    return map;
-  }, [docs]);
+  // Por tipo: a versão em vigor (aprovada mais recente), a nova versão ainda não aprovada e o histórico.
+  const versoes = useMemo(() => splitCompanyDocuments(docs.filter((doc) => !doc.recurringTypeId)), [docs]);
 
   const documentRows = COMPANY_DOCUMENT_TYPES.map((item) => {
-    const versions = [...(docsByType.get(item.tipo) ?? [])].sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || b.id - a.id
-    );
-    const latest = versions[0];
-    return { ...item, latest, versions };
+    const grupo = versoes.get(item.tipo);
+    const emVigor = grupo?.emVigor ?? null;
+    // Sem versão aprovada, o envio mais novo (em validação ou rejeitado) é o que aparece.
+    const latest = emVigor ?? grupo?.novaVersao ?? null;
+    return { ...item, latest, emVigor, nova: emVigor ? grupo?.novaVersao ?? null : null, historico: grupo?.historico ?? [] };
   });
 
   const handleOpenUpload = (target: (typeof COMPANY_DOCUMENT_TYPES)[number]) => {
@@ -158,11 +170,17 @@ export default function CompanyDocumentsManager({
         <p className="mt-1 text-sm text-muted-foreground">{description}</p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Card>
           <CardContent className="p-4">
-            <p className="text-xs uppercase tracking-wide text-muted-foreground">Enviados</p>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Aprovados</p>
             <p className="mt-2 text-2xl font-semibold text-foreground">{stats?.enviados ?? 0}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Em validação</p>
+            <p className="mt-2 text-2xl font-semibold text-blue-600">{stats?.emValidacao ?? 0}</p>
           </CardContent>
         </Card>
         <Card>
@@ -188,7 +206,8 @@ export default function CompanyDocumentsManager({
       <div className="space-y-3">
         {documentRows.map((item) => {
           const latest = item.latest;
-          const status = latest ? getDocumentStatus(latest.validade) : null;
+          // Aprovado: situação pela validade. Sem versão aprovada: em validação ou rejeitado.
+          const status = latest ? (item.emVigor ? getDocumentStatus(latest.validade) : REVIEW_STATUS[latest.status] ?? null) : null;
 
           return (
             <Card key={item.tipo}>
@@ -212,6 +231,12 @@ export default function CompanyDocumentsManager({
                     {latest ? (
                       <div className="space-y-1 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">{latest.nome}</p>
+                        {!item.emVigor && latest.status === "aguardando_validacao" ? (
+                          <p className="text-xs">Aguardando a validação da equipe SmartDocPlan para passar a valer.</p>
+                        ) : null}
+                        {!item.emVigor && latest.status === "rejeitado" ? (
+                          <p className="text-xs text-red-700 dark:text-red-400">Motivo da rejeição: {latest.motivoRejeicao ?? "não informado"}. Envie uma nova versão.</p>
+                        ) : null}
                         <p>Última atualização: {formatDate(latest.updatedAt) ?? "-"}</p>
                         {latest.dataEmissao ? <p>Emissão: {formatDateOnlyBr(latest.dataEmissao)}</p> : null}
                         {latest.validade ? <p>Validade: {formatDateOnlyBr(latest.validade)}</p> : null}
@@ -279,16 +304,39 @@ export default function CompanyDocumentsManager({
                   )}
                 </div>
 
-                {item.versions.length > 1 ? (
+                {item.nova ? (
+                  <div className={`rounded-xl border p-3 text-sm ${item.nova.status === "rejeitado" ? "border-red-500/30 bg-red-500/5" : "border-blue-500/30 bg-blue-500/5"}`}>
+                    <p className="font-medium text-foreground">
+                      {item.nova.status === "rejeitado" ? "Nova versão rejeitada" : "Nova versão em validação"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Enviada em {formatDate(item.nova.createdAt) ?? "-"}
+                      {item.nova.validade ? ` · validade ${formatDateOnlyBr(item.nova.validade)}` : ""}
+                      {item.nova.status === "rejeitado"
+                        ? ` · motivo: ${item.nova.motivoRejeicao ?? "não informado"}. A versão acima continua valendo.`
+                        : ". A versão acima continua valendo até a equipe SmartDocPlan aprovar a nova."}
+                    </p>
+                    {item.nova.fileUrl ? (
+                      <a href={item.nova.fileUrl} target="_blank" rel="noopener noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs text-primary hover:underline">
+                        <FileText className="h-3.5 w-3.5" />
+                        Ver arquivo enviado
+                      </a>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {item.historico.length > 0 ? (
                   <div className="rounded-xl border border-border bg-muted/30 p-3">
                     <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Versões anteriores</p>
                     <div className="space-y-2">
-                      {item.versions.slice(1).map((doc) => (
+                      {item.historico.map((doc) => (
                         <div key={doc.id} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-background px-3 py-2 text-sm">
                           <div>
                             <p className="font-medium text-foreground">{doc.nome}</p>
                             <p className="text-xs text-muted-foreground">
-                              Atualizado em {formatDate(doc.updatedAt) ?? "-"}
+                              {HISTORY_LABELS[doc.status] ?? "Versão anterior"}
+                              {doc.status === "rejeitado" && doc.motivoRejeicao ? ` (${doc.motivoRejeicao})` : ""}
+                              {` • enviado em ${formatDate(doc.createdAt) ?? "-"}`}
                               {doc.validade ? ` • validade ${formatDateOnlyBr(doc.validade)}` : ""}
                             </p>
                           </div>
@@ -333,6 +381,11 @@ export default function CompanyDocumentsManager({
             <DialogTitle>Enviar documento da empresa</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+              {isPlatformUser(user?.role)
+                ? "Enviado pela equipe SmartDocPlan, o documento já entra aprovado e passa a ser a versão em vigor."
+                : "O envio da empresa passa pela validação da equipe SmartDocPlan. Se já houver uma versão aprovada, ela continua valendo até a nova ser aprovada."}
+            </p>
             <div className="space-y-1.5">
               <Label>Documento</Label>
               <Input value={uploadForm.nome} onChange={(event) => setUploadForm((current) => ({ ...current, nome: event.target.value }))} />

@@ -152,6 +152,10 @@ export const companyDocuments = smartdocSchema.table("company_documents", {
   observacao: text("observacao"),
   recurringTypeId: integer("recurringTypeId"), // documento mensal da empresa: tipo e competência (AAAA-MM)
   competencia: varchar("competencia", { length: 10 }), // início do período (AAAA-MM-DD)
+  status: text("status").default("valido").notNull(), // aguardando_validacao | valido | rejeitado | substituido | excluido
+  analisadoPor: integer("analisadoPor"),
+  analisadoAt: timestamp("analisadoAt"),
+  motivoRejeicao: text("motivoRejeicao"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
@@ -234,6 +238,7 @@ export const recurringDocumentTypes = smartdocSchema.table("recurring_document_t
   diaLimite: integer("diaLimite").default(10).notNull(), // legado (mensal); substituído por periodicidade + prazoDias
   periodicidade: text("periodicidade").default("mensal").notNull(), // semanal | quinzenal | mensal | bimestral | trimestral | semestral | anual
   prazoDias: integer("prazoDias").default(10).notNull(), // dias após o fim do período para enviar
+  exigeValidacao: boolean("exigeValidacao").default(true).notNull(), // envio passa pela validação da equipe SmartDocPlan
   ativo: boolean("ativo").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),

@@ -2,6 +2,10 @@
 
 ## [Não publicado]
 
+- Documentos da empresa passam pela validação da equipe SmartDocPlan: o envio da empresa entra “Em validação” e só vale depois de aprovado; a versão aprovada anterior continua valendo até lá, e a rejeição (com motivo) não a derruba. Mudar as datas de um documento aprovado também gera nova versão. O envio da equipe já entra aprovado. Contadores, alertas de vencimento e BI passam a contar só a versão aprovada (novo quadro “Em validação”). Migration só adiciona colunas; os documentos existentes ficam aprovados.
+- Exclusão de documento da empresa passa a ser lógica: o registro e o arquivo ficam guardados (a equipe ainda abre o arquivo; a empresa não).
+- Documentos recorrentes: nova opção “Exige validação da SmartDocPlan” no cadastro (padrão: marcada, inclusive nos tipos já cadastrados); com ela, o envio do colaborador e da empresa entra em validação. Nova ação “Substituir” na grade: o arquivo novo vira nova versão e o aprovado vale até a decisão.
+- Fila de validação em abas “Colaboradores” e “Empresa”, com aprovar e rejeitar para os documentos da empresa e avisos à empresa no sino.
 - Versões dos documentos do colaborador: trocar o arquivo ou as datas cria uma nova versão, que aguarda validação; a versão aprovada continua valendo (e liberando o colaborador) até a nova ser aprovada, e a rejeição não a derruba. As anteriores ficam em “Versões anteriores”, com o arquivo ainda acessível. Nova coluna `substituiDocId` (migration só adiciona); documentos existentes não mudam.
 - Documentos de saúde: o Administrador da empresa passa a enviar exame e atestado e a ver a situação e a validade, sem abrir o arquivo nem ver observação ou motivo; abrir continua restrito ao Administrador Geral e ao RH.
 - Fila de validação: selo “Nova versão” quando a versão anterior continua valendo até a aprovação.
