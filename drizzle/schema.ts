@@ -289,6 +289,7 @@ export const employees = smartdocSchema.table("employees", {
   positionId: integer("positionId"),
   worksiteId: integer("worksiteId"),
   dataAdmissao: date("dataAdmissao"),
+  feriasEmDiaAte: date("feriasEmDiaAte"), // períodos aquisitivos que terminam até aqui já foram gozados (fora do sistema)
   salario: decimal("salario", { precision: 10, scale: 2 }),
   status: text("status").default("ativo").notNull(),
   email: varchar("email", { length: 320 }),

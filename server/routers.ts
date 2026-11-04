@@ -42,6 +42,7 @@ import { getEmployeeChecklist, recalcCompliance, recalcComplianceForPositions } 
 import { buildCompanyMonthlyGrid, buildCompanyMonthlyOverview, buildEmployeeMonthlyGrid } from "./recurring";
 import { PERIODICIDADES, asPeriodicidade, formatPeriod, isPeriodAllowed } from "@shared/recurring";
 import { brazilToday } from "@shared/vacations";
+import { feriasEmDiaAteError } from "@shared/vacationSuggestion";
 import { campaignVisibleTo, isSafeCampaignLink } from "@shared/campaigns";
 import {
   formatCnpj,
@@ -1160,12 +1161,15 @@ const employeesRouter = router({
     positionId: z.number().optional(),
     worksiteId: z.number().optional(),
     dataAdmissao: z.union([z.iso.date(), z.literal("")]).optional(),
+    feriasEmDiaAte: z.union([z.iso.date(), z.literal("")]).optional(),
     salario: z.string().optional(),
     email: z.string().email().optional(),
     telefone: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar colaboradores.");
+    const erroFerias = feriasEmDiaAteError(input.feriasEmDiaAte, input.dataAdmissao, brazilToday());
+    if (erroFerias) throw new Error(erroFerias);
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     assertFullName(input.nome);
@@ -1182,6 +1186,7 @@ const employeesRouter = router({
       cpf: formatCpf(input.cpf),
       dataNascimento: input.dataNascimento || undefined,
       dataAdmissao: input.dataAdmissao || undefined,
+      feriasEmDiaAte: input.feriasEmDiaAte || undefined,
       email: normalizeOptionalText(input.email) ?? undefined,
       telefone: normalizeOptionalText(input.telefone) ? formatPhone(input.telefone!) : undefined,
     } as any).returning({ id: employees.id });
@@ -1213,13 +1218,17 @@ const employeesRouter = router({
     status: z.enum(["ativo", "afastado", "desligado"]).optional(),
     email: z.string().email().optional(),
     telefone: z.string().optional(),
+    /** Períodos aquisitivos que terminam até esta data já foram gozados ("" limpa). */
+    feriasEmDiaAte: z.union([z.iso.date(), z.literal("")]).optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
     assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar colaboradores.");
-    const { id, ...data } = input;
+    const erroFerias = feriasEmDiaAteError(input.feriasEmDiaAte, employee.dataAdmissao, brazilToday());
+    if (erroFerias) throw new Error(erroFerias);
+    const { id, feriasEmDiaAte, ...data } = input;
     assertFullName(data.nome);
     if (data.telefone && !isValidPhone(data.telefone)) {
       throw new Error("Informe um telefone válido com DDD.");
@@ -1232,6 +1241,7 @@ const employeesRouter = router({
       nome: data.nome?.trim(),
       email: data.email !== undefined ? normalizeOptionalText(data.email) ?? null : undefined,
       telefone: data.telefone !== undefined ? (normalizeOptionalText(data.telefone) ? formatPhone(data.telefone) : null) : undefined,
+      feriasEmDiaAte: feriasEmDiaAte !== undefined ? feriasEmDiaAte || null : undefined,
     };
     await db.update(employees).set(payload).where(eq(employees.id, id));
     if (payload.positionId !== undefined) await recalcCompliance(db, [id]);

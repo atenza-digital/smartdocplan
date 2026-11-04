@@ -25,6 +25,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { canManageCompanyData, canManageRequestWorkflow, canSendHealthDocuments, isPlatformOperator } from "@shared/permissions";
 import { DeletionRequestDialog, type DeletionTarget } from "@/components/DeletionRequestDialog";
+import { brazilToday } from "@shared/vacations";
 import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
 import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
 import { VACATION_SUGGESTION_LABELS } from "@shared/vacationSuggestion";
@@ -129,7 +130,19 @@ export default function EmpresaDossie() {
     { companyId: employee?.companyId ?? 0, employeeId },
     { enabled: (employee?.companyId ?? 0) > 0 && employeeId > 0 }
   );
-  const proximasFerias = sugestoesFerias[0];
+  // Períodos com prazo vencido e o próximo período no prazo (com "Férias em dia até", os já tirados não aparecem).
+  const feriasVencidas = sugestoesFerias[0]?.vencidos ?? [];
+  const proximaNoPrazo = sugestoesFerias[0]?.proxima ?? null;
+  const [feriasEmDiaForm, setFeriasEmDiaForm] = useState<string | null>(null);
+  const feriasEmDiaMutation = trpc.employees.update.useMutation({
+    onSuccess: () => {
+      toast.success("“Férias em dia até” salvo.");
+      setFeriasEmDiaForm(null);
+      utils.employees.get.invalidate({ id: employeeId });
+      utils.vacations.suggestions.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
   const { data: mensais } = trpc.recurringDocs.employeeGrid.useQuery(
     { employeeId, quantidade: 6 },
     { enabled: employeeId > 0 }
@@ -341,6 +354,9 @@ export default function EmpresaDossie() {
     );
   }
 
+  const linkFerias = `${isAdminRoute ? "/admin" : "/empresa"}/ferias?empresa=${employee?.companyId}&colaborador=${employee?.id}`;
+  // Admitido há mais de dois anos: vale a pena informar "Férias em dia até".
+  const admitidoHaMaisDeDoisPeriodos = !!employee?.dataAdmissao && String(employee.dataAdmissao).slice(0, 10) < `${Number(brazilToday().slice(0, 4)) - 2}${brazilToday().slice(4)}`;
   const selectedCargo = cargos.find((cargo) => cargo.id === employee?.positionId);
   const selectedObra = obras.find((obra) => obra.id === employee?.worksiteId);
 
@@ -478,40 +494,72 @@ export default function EmpresaDossie() {
             {employee.status !== "desligado" && (
               <Card className="border-border">
                 <CardContent className="flex flex-wrap items-start justify-between gap-3 p-5">
-                  <div>
+                  <div className="min-w-0 flex-[1_1_18rem]">
                     <h3 className="font-semibold text-foreground flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-primary" />
                       Próximas férias
                     </h3>
-                    {proximasFerias ? (
+                    {proximaNoPrazo ? (
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {proximasFerias.numero}º período aquisitivo de {formatDateOnlyBr(proximasFerias.inicio)} a {formatDateOnlyBr(proximasFerias.fim)}.
-                        Adquire em {formatDateOnlyBr(proximasFerias.aquisicao)} e deve solicitar até <strong className="text-foreground">{formatDateOnlyBr(proximasFerias.limite)}</strong>.
+                        {proximaNoPrazo.numero}º período aquisitivo de {formatDateOnlyBr(proximaNoPrazo.inicio)} a {formatDateOnlyBr(proximaNoPrazo.fim)}.
+                        Adquire em {formatDateOnlyBr(proximaNoPrazo.aquisicao)} e deve solicitar até <strong className="text-foreground">{formatDateOnlyBr(proximaNoPrazo.limite)}</strong>.
                       </p>
                     ) : (
                       <p className="mt-1 text-sm text-muted-foreground">
-                        {employee.dataAdmissao ? "Nenhum período pendente de programação." : "Informe a data de admissão para calcular as férias."}
+                        {employee.dataAdmissao
+                          ? feriasVencidas.length ? "Nenhum período no prazo além dos vencidos abaixo." : "Nenhum período pendente de programação."
+                          : "Informe a data de admissão para calcular as férias."}
                       </p>
+                    )}
+                    <p className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
+                      Férias em dia até: {employee.feriasEmDiaAte ? formatDateOnlyBr(employee.feriasEmDiaAte) : "não informado"}
+                      {canManage && employee.dataAdmissao && (
+                        <button type="button" className="text-primary hover:underline" onClick={() => setFeriasEmDiaForm(employee.feriasEmDiaAte ? String(employee.feriasEmDiaAte).slice(0, 10) : "")}>
+                          {employee.feriasEmDiaAte ? "Alterar" : "Informar"}
+                        </button>
+                      )}
+                    </p>
+                    {!employee.feriasEmDiaAte && admitidoHaMaisDeDoisPeriodos && (
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Colaborador contratado há mais tempo: informe “Férias em dia até” para o sistema mostrar todos os períodos vencidos depois dessa data (sem ele, um vencido some 30 dias após o prazo).
+                      </p>
+                    )}
+                    {feriasVencidas.length > 0 && (
+                      <div className="mt-3 rounded-lg border border-red-500/30 bg-red-500/5 p-3">
+                        <p className="text-sm font-medium text-red-700 dark:text-red-400">Períodos vencidos ({feriasVencidas.length})</p>
+                        <ul className="mt-1 space-y-1">
+                          {feriasVencidas.map((periodo) => (
+                            <li key={periodo.inicio} className="flex flex-wrap items-center gap-x-3 text-xs text-foreground">
+                              <span>
+                                {periodo.numero}º período, {formatDateOnlyBr(periodo.inicio)} a {formatDateOnlyBr(periodo.fim)} · prazo para solicitar era {formatDateOnlyBr(periodo.limite)}
+                              </span>
+                              {canManage && (
+                                <Link href={`${linkFerias}&programar=1&inicio=${periodo.inicio}`} className="text-primary hover:underline">
+                                  Programar
+                                </Link>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
                     )}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {proximasFerias && (
+                    {proximaNoPrazo && (
                       <Badge
                         variant="outline"
                         className={
-                          proximasFerias.situacao === "prazo_vencido"
-                            ? "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20"
-                            : proximasFerias.situacao === "a_solicitar"
-                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
-                              : "bg-muted text-muted-foreground"
+                          proximaNoPrazo.situacao === "a_solicitar"
+                            ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                            : "bg-muted text-muted-foreground"
                         }
                       >
-                        {VACATION_SUGGESTION_LABELS[proximasFerias.situacao]}
+                        {VACATION_SUGGESTION_LABELS[proximaNoPrazo.situacao]}
                       </Badge>
                     )}
-                    {proximasFerias && canManage && (
+                    {proximaNoPrazo && canManage && (
                       <Button asChild size="sm" variant="outline">
-                        <Link href={`${isAdminRoute ? "/admin" : "/empresa"}/ferias?empresa=${employee.companyId}&colaborador=${employee.id}&programar=1`}>
+                        <Link href={`${linkFerias}&programar=1&inicio=${proximaNoPrazo.inicio}`}>
                           Programar férias
                         </Link>
                       </Button>
@@ -742,6 +790,35 @@ export default function EmpresaDossie() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={feriasEmDiaForm !== null} onOpenChange={(open) => !open && setFeriasEmDiaForm(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Férias em dia até</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2 py-2">
+            <p className="text-sm text-muted-foreground">
+              Informe o último dia do período aquisitivo cujas férias o colaborador já tirou (inclusive fora do sistema). Os períodos até essa data deixam de ser cobrados; os vencidos depois dela aparecem todos.
+            </p>
+            <Label htmlFor="ferias-em-dia">Data</Label>
+            <Input
+              id="ferias-em-dia"
+              type="date"
+              min={employee?.dataAdmissao ? String(employee.dataAdmissao).slice(0, 10) : undefined}
+              max={brazilToday()}
+              value={feriasEmDiaForm ?? ""}
+              onChange={(e) => setFeriasEmDiaForm(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">Deixe em branco e salve para remover a informação.</p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFeriasEmDiaForm(null)}>Cancelar</Button>
+            <Button disabled={feriasEmDiaMutation.isPending} onClick={() => feriasEmDiaMutation.mutate({ id: employeeId, feriasEmDiaAte: feriasEmDiaForm ?? "" })}>
+              {feriasEmDiaMutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <DeletionRequestDialog
         target={pedidoTarget}

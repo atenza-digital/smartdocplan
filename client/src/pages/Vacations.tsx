@@ -131,8 +131,10 @@ export default function Vacations() {
   const suggestionFor = (employeeId: string) =>
     suggestions.data?.find(s => String(s.employeeId) === employeeId);
   // Novo formulário já com o colaborador e a sugestão, quando houver.
-  const openCreate = (employeeId = "") => {
-    const sugestao = employeeId ? suggestionFor(employeeId) : undefined;
+  // `inicio`: um período específico (ex.: um dos vencidos); sem ele, a sugestão (o mais antigo pendente).
+  const openCreate = (employeeId = "", inicio = "") => {
+    const geral = employeeId ? suggestionFor(employeeId) : undefined;
+    const sugestao = (inicio && geral ? [...geral.vencidos, ...(geral.proxima ? [geral.proxima] : [])].find(p => p.inicio === inicio) : undefined) ?? geral;
     setEditing(null);
     setForm({
       ...blankForm(),
@@ -149,7 +151,7 @@ export default function Vacations() {
     const params = new URLSearchParams(window.location.search);
     if (autoOpened || !canEdit || params.get("programar") !== "1" || !employeeFilter || !suggestions.isFetched) return;
     setAutoOpened(true);
-    openCreate(employeeFilter);
+    openCreate(employeeFilter, params.get("inicio") ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [suggestions.isFetched, employeeFilter, canEdit, autoOpened]);
   const selected = periods.data?.find(p => p.id === selectedId);
@@ -482,6 +484,42 @@ export default function Vacations() {
             >
               Limpar filtros
             </Button>
+            {(() => {
+              // Períodos com prazo para solicitar vencido, por colaborador (respeita o filtro de colaborador).
+              const linhas = (suggestions.data ?? [])
+                .filter(s => !employeeFilter || String(s.employeeId) === employeeFilter)
+                .flatMap(s => s.vencidos.map(p => ({ ...p, employeeId: s.employeeId, nome: s.nome })));
+              if (!linhas.length) return null;
+              return (
+                <Card className="border-red-500/30">
+                  <CardHeader>
+                    <CardTitle>Férias vencidas ({linhas.length})</CardTitle>
+                    <p className="text-sm text-muted-foreground">
+                      Períodos aquisitivos cujo prazo para solicitar já passou e que ainda não têm programação. Para quem já tirou essas férias fora do sistema, informe “Férias em dia até” no dossiê do colaborador.
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="divide-y divide-border rounded-lg border border-border">
+                      {linhas.map(l => (
+                        <li key={`${l.employeeId}-${l.inicio}`} className="flex flex-wrap items-center gap-3 p-3 text-sm">
+                          <div className="min-w-[12rem] flex-1">
+                            <p className="font-medium text-foreground">{l.nome}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {l.numero}º período, {formatDateOnlyBr(l.inicio)} a {formatDateOnlyBr(l.fim)} · prazo para solicitar era {formatDateOnlyBr(l.limite)}
+                            </p>
+                          </div>
+                          {canEdit && (
+                            <Button size="sm" variant="outline" onClick={() => openCreate(String(l.employeeId), l.inicio)}>
+                              Programar
+                            </Button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </CardContent>
+                </Card>
+              );
+            })()}
             <div className="grid gap-5 xl:grid-cols-2">
               <Card className="min-w-0">
                 <CardHeader>
@@ -915,7 +953,9 @@ export default function Vacations() {
                   ))}
               </select>
               {!editing && form.employeeId && (() => {
-                const sugestao = suggestionFor(form.employeeId);
+                const geral = suggestionFor(form.employeeId);
+                // Mostra o período escolhido (ex.: um vencido aberto pelo painel), senão a sugestão.
+                const sugestao = (geral && [...geral.vencidos, ...(geral.proxima ? [geral.proxima] : [])].find(p => p.inicio === form.acquisitionStart)) ?? geral;
                 if (!sugestao) return (
                   <p className="text-xs text-muted-foreground">Sem sugestão: informe a data de admissão do colaborador para calcular o período.</p>
                 );

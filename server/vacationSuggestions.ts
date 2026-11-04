@@ -1,6 +1,6 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { companies, employees, vacations } from "../drizzle/schema";
-import { DEFAULT_VACATION_PARAMS, suggestNextVacation, type VacationParams } from "@shared/vacationSuggestion";
+import { DEFAULT_VACATION_PARAMS, suggestNextVacation, vacationStatus, type VacationParams } from "@shared/vacationSuggestion";
 import { brazilToday } from "@shared/vacations";
 import { getDb } from "./db";
 
@@ -29,6 +29,7 @@ export async function buildVacationSuggestions(db: Db, opts: { companyId?: numbe
       nome: employees.nome,
       companyId: employees.companyId,
       dataAdmissao: employees.dataAdmissao,
+      feriasEmDiaAte: employees.feriasEmDiaAte,
       feriasMesesAquisicao: companies.feriasMesesAquisicao,
       feriasMesesParaSolicitar: companies.feriasMesesParaSolicitar,
     })
@@ -41,14 +42,20 @@ export async function buildVacationSuggestions(db: Db, opts: { companyId?: numbe
     .from(vacations)
     .where(and(inArray(vacations.employeeId, lista.map((e) => e.id)), inArray(vacations.status, ACTIVE_VACATION_STATUSES)));
   return lista.flatMap((emp) => {
-    const sugestao = suggestNextVacation(
-      {
-        dataAdmissao: emp.dataAdmissao,
-        params: { feriasMesesAquisicao: emp.feriasMesesAquisicao, feriasMesesParaSolicitar: emp.feriasMesesParaSolicitar },
-        programados: programacoes.filter((p) => p.employeeId === emp.id).map((p) => String(p.acquisitionStart)),
-      },
-      today
-    );
-    return sugestao ? [{ employeeId: emp.id, nome: emp.nome, companyId: emp.companyId, ...sugestao }] : [];
+    const opts = {
+      dataAdmissao: emp.dataAdmissao,
+      feriasEmDiaAte: emp.feriasEmDiaAte,
+      params: { feriasMesesAquisicao: emp.feriasMesesAquisicao, feriasMesesParaSolicitar: emp.feriasMesesParaSolicitar },
+      programados: programacoes.filter((p) => p.employeeId === emp.id).map((p) => String(p.acquisitionStart)),
+    };
+    const sugestao = suggestNextVacation(opts, today);
+    // Todos os períodos vencidos e o próximo no prazo (quadro do dossiê e painel "Férias vencidas").
+    const { vencidos, proxima } = vacationStatus(opts, today);
+    return sugestao
+      ? [{
+          employeeId: emp.id, nome: emp.nome, companyId: emp.companyId, dataAdmissao: emp.dataAdmissao,
+          feriasEmDiaAte: emp.feriasEmDiaAte, ...sugestao, vencidos, proxima,
+        }]
+      : [];
   });
 }
