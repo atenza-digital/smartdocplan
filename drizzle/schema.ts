@@ -303,6 +303,7 @@ export const employeeDocuments = smartdocSchema.table("employee_documents", {
   motivoRejeicao: text("motivoRejeicao"),
   recurringTypeId: integer("recurringTypeId"), // documento mensal: tipo e competência (AAAA-MM)
   competencia: varchar("competencia", { length: 10 }), // início do período (AAAA-MM-DD)
+  substituiDocId: integer("substituiDocId"), // versão anterior que este documento substitui (histórico de versões)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });

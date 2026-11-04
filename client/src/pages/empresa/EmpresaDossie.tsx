@@ -18,12 +18,12 @@ import {
 import {
   FolderOpen, FileText, CheckCircle2, AlertCircle, Clock,
   Upload, ArrowLeft, User, Calendar, Download, Briefcase, MapPin, Mail, Phone,
-  Eye, Pencil, Trash2,
+  Eye, Pencil, Trash2, Lock, History,
 } from "lucide-react";
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { canManageCompanyData, canManageRequestWorkflow } from "@shared/permissions";
+import { canManageCompanyData, canManageRequestWorkflow, canSendHealthDocuments } from "@shared/permissions";
 import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
 import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
 import { VACATION_SUGGESTION_LABELS } from "@shared/vacationSuggestion";
@@ -58,9 +58,11 @@ const docStatusLabels: Record<string, string> = {
   pendente: "Pendente",
   rejeitado: "Rejeitado",
   aguardando_validacao: "Aguardando validação",
+  substituido: "Substituído",
 };
 
 const docStatusColors: Record<string, string> = {
+  substituido: "bg-muted text-muted-foreground border-border",
   valido: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/20",
   vencido: "bg-red-500/10 text-red-700 dark:text-red-400 border-red-500/20",
   a_vencer: "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20",
@@ -95,6 +97,8 @@ export default function EmpresaDossie() {
   const { user } = useAuth();
   const canManage = canManageCompanyData(user?.role ?? null);
   const canReview = canManageRequestWorkflow(user?.role ?? null);
+  // O Admin da empresa envia documento de saúde e vê a situação, sem abrir o arquivo.
+  const canSendHealth = canManage && canSendHealthDocuments(user?.role ?? null);
   const utils = trpc.useUtils();
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -132,6 +136,7 @@ export default function EmpresaDossie() {
     utils.employeeDocs.checklist.invalidate({ employeeId });
     utils.employees.get.invalidate({ id: employeeId });
     utils.recurringDocs.employeeGrid.invalidate({ employeeId });
+    utils.employeeDocs.versions.invalidate();
   };
   const { data: cargos = [] } = trpc.positions.list.useQuery(
     { companyId: employee?.companyId ?? 0 },
@@ -318,8 +323,8 @@ export default function EmpresaDossie() {
 
   const byCategoria = (cat: string) => documentos.filter((d) => d.categoria === cat);
 
-  // Documentos exigidos do cargo que a pessoa pode enviar (itens de saúde restritos ficam de fora).
-  const exigidos = ((checklist?.items ?? []) as ChecklistItem[]).filter((item) => !item.restrito);
+  // Documentos exigidos do cargo que a pessoa pode enviar (itens de saúde só para quem pode enviá-los).
+  const exigidos = ((checklist?.items ?? []) as ChecklistItem[]).filter((item) => !item.restrito || canSendHealth);
 
   // Escolher o item exigido vincula o documento ao checklist e já preenche categoria e nome.
   const escolherDocumentoExigido = (valor: string) => {
@@ -439,6 +444,7 @@ export default function EmpresaDossie() {
                 aprovados={checklist.aprovados}
                 liberacao={checklist.liberacao}
                 canSend={canManage}
+                canSendRestrito={canSendHealth}
                 onSend={openChecklistUpload}
               />
             )}
@@ -590,6 +596,19 @@ export default function EmpresaDossie() {
                 Este documento atende o item exigido pelo cargo e será validado pela equipe SmartDocPlan.
               </p>
             )}
+            {editingDoc && !editingDoc.recurringTypeId && (
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Trocar o arquivo ou as datas cria uma nova versão, que passa pela validação da equipe SmartDocPlan.
+                {editingDoc.status === "valido" ? " A versão atual continua valendo até a nova ser aprovada." : ""}
+                {" "}As versões anteriores ficam guardadas no histórico do documento.
+              </p>
+            )}
+            {editingDoc?.restrito && (
+              <p className="flex items-start gap-1.5 rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                <Lock className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                Documento de saúde: você pode enviar uma nova versão, mas o arquivo só abre para o Administrador Geral e o RH.
+              </p>
+            )}
             {!editingDoc && !uploadForm.competencia && (
               <div className="space-y-1.5">
                 <Label>Documento exigido</Label>
@@ -612,7 +631,7 @@ export default function EmpresaDossie() {
             {!uploadForm.requirementId && (
               <div className="space-y-1.5">
                 <Label>Categoria *</Label>
-                <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v })}>
+                <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v })} disabled={!!editingDoc?.restrito}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {Object.entries(categoriaLabels).map(([k, v]) => (
@@ -785,15 +804,26 @@ function DocGrid({
                     <>
                       <button type="button" onClick={() => onEdit(doc)} className="inline-flex items-center gap-1 text-xs text-primary hover:underline">
                         <Pencil className="h-3 w-3" />
-                        Editar
+                        {doc.restrito ? "Enviar nova versão" : "Editar"}
                       </button>
-                      <button type="button" onClick={() => onDelete(doc)} className="inline-flex items-center gap-1 text-xs text-destructive hover:underline">
-                        <Trash2 className="h-3 w-3" />
-                        Excluir
-                      </button>
+                      {!doc.restrito && (
+                        <button type="button" onClick={() => onDelete(doc)} className="inline-flex items-center gap-1 text-xs text-destructive hover:underline">
+                          <Trash2 className="h-3 w-3" />
+                          Excluir
+                        </button>
+                      )}
                     </>
                   )}
                 </div>
+                {doc.restrito && (
+                  <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Lock className="h-3 w-3" />
+                    Dado de saúde: o arquivo abre só para o Administrador Geral e o RH.
+                  </p>
+                )}
+                {doc.novaVersao && (
+                  <NovaVersao versao={doc.novaVersao} canReview={canReview} reviewing={reviewing} onApprove={onApprove} onReject={onReject} />
+                )}
                 {doc.status === "rejeitado" && doc.motivoRejeicao && (
                   <p className="mt-2 rounded-md bg-red-500/10 px-2 py-1 text-xs text-red-700 dark:text-red-400">Motivo da rejeição: {doc.motivoRejeicao}</p>
                 )}
@@ -810,11 +840,96 @@ function DocGrid({
                   </div>
                 )}
                 {doc.versao > 1 && <p className="text-xs text-muted-foreground mt-1">Versão {doc.versao}</p>}
+                {doc.substituiDocId != null && <VersoesAnteriores docId={doc.id} />}
               </div>
             </div>
           </CardContent>
         </Card>
       ))}
+    </div>
+  );
+}
+
+/** Versão nova enviada para um documento em vigor: aguardando validação ou rejeitada (a atual continua valendo). */
+function NovaVersao({
+  versao,
+  canReview,
+  reviewing,
+  onApprove,
+  onReject,
+}: {
+  versao: any;
+  canReview: boolean;
+  reviewing: boolean;
+  onApprove: (doc: any) => void;
+  onReject: (doc: any) => void;
+}) {
+  const rejeitada = versao.status === "rejeitado";
+  return (
+    <div className={`mt-2 rounded-md border px-2.5 py-2 text-xs ${rejeitada ? "border-red-500/30 bg-red-500/5" : "border-blue-500/30 bg-blue-500/5"}`}>
+      <p className="font-medium text-foreground">
+        {rejeitada ? `Nova versão (${versao.versao}) rejeitada` : `Nova versão (${versao.versao}) aguardando validação`}
+      </p>
+      <p className="text-muted-foreground">
+        {rejeitada ? "A versão atual continua valendo. Envie outra versão se precisar." : "A versão atual continua valendo até a equipe SmartDocPlan aprovar a nova."}
+      </p>
+      {rejeitada && versao.motivoRejeicao && <p className="mt-1 text-red-700 dark:text-red-400">Motivo: {versao.motivoRejeicao}</p>}
+      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-muted-foreground">
+        {versao.validade && <span>Validade: {formatDateOnlyBr(versao.validade)}</span>}
+        {versao.fileUrl && (
+          <a href={versao.fileUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-primary hover:underline">
+            <Eye className="h-3 w-3" />
+            Visualizar nova versão
+          </a>
+        )}
+      </div>
+      {canReview && versao.status === "aguardando_validacao" && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          <Button size="sm" variant="outline" disabled={reviewing} onClick={() => onApprove(versao)} className="h-7 border-green-500/40 text-green-700 hover:bg-green-500/10 dark:text-green-400">
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+            Aprovar nova versão
+          </Button>
+          <Button size="sm" variant="outline" disabled={reviewing} onClick={() => onReject(versao)} className="h-7 border-red-500/40 text-red-700 hover:bg-red-500/10 dark:text-red-400">
+            <AlertCircle className="h-3.5 w-3.5 mr-1" />
+            Rejeitar
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Histórico de versões de um documento, carregado só quando a pessoa abre. */
+function VersoesAnteriores({ docId }: { docId: number }) {
+  const [aberto, setAberto] = useState(false);
+  const { data: versoes = [], isLoading } = trpc.employeeDocs.versions.useQuery({ id: docId }, { enabled: aberto });
+  return (
+    <div className="mt-1">
+      <button type="button" onClick={() => setAberto(!aberto)} className="inline-flex items-center gap-1 text-xs text-primary hover:underline" aria-expanded={aberto}>
+        <History className="h-3 w-3" />
+        {aberto ? "Ocultar versões anteriores" : "Versões anteriores"}
+      </button>
+      {aberto && (
+        <ul className="mt-1.5 space-y-1.5 border-l-2 border-border pl-2.5">
+          {isLoading && <li className="text-xs text-muted-foreground">Carregando...</li>}
+          {!isLoading && versoes.length === 0 && <li className="text-xs text-muted-foreground">Nenhuma versão anterior.</li>}
+          {versoes.map((versao) => (
+            <li key={versao.id} className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">Versão {versao.versao}</span>
+              {" · "}{docStatusLabels[versao.status] ?? versao.status}
+              {" · enviada em "}{new Date(versao.createdAt).toLocaleDateString("pt-BR")}
+              {versao.validade ? ` · validade ${formatDateOnlyBr(versao.validade)}` : ""}
+              {versao.fileUrl && (
+                <a href={versao.fileUrl} target="_blank" rel="noopener noreferrer" className="ml-2 inline-flex items-center gap-1 text-primary hover:underline">
+                  <Eye className="h-3 w-3" />
+                  Visualizar
+                </a>
+              )}
+              {versao.status === "rejeitado" && versao.motivoRejeicao && <p className="text-red-700 dark:text-red-400">Motivo: {versao.motivoRejeicao}</p>}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

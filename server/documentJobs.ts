@@ -4,6 +4,7 @@ import { getDb } from "./db";
 import { recalcCompliance } from "./compliance";
 import { buildCompanyMonthlyOverview } from "./recurring";
 import { canAccessHealthData, isHealthCategory, isPlatformUser } from "@shared/permissions";
+import { splitDocumentVersions } from "@shared/documentVersions";
 import { documentAlertThreshold, documentAlertTitle } from "@shared/documentAlerts";
 import { COMPANY_DOCUMENT_TYPES, latestCompanyDocuments } from "@shared/companyDocuments";
 import { formatDateOnlyBr, normalizeTextSearch } from "@shared/formValidation";
@@ -45,12 +46,14 @@ async function employeeDocumentAlerts(db: Db, today: string): Promise<Alert[]> {
       employeeId: employeeDocuments.employeeId,
       companyId: employeeDocuments.companyId,
       colaborador: employees.nome,
+      status: employeeDocuments.status,
+      substituiDocId: employeeDocuments.substituiDocId,
     })
     .from(employeeDocuments)
     .innerJoin(employees, eq(employees.id, employeeDocuments.employeeId))
     .where(and(
       // Status gravados podem incluir "vencido"/"a_vencer" de dados antigos; a validade é que decide.
-      notInArray(employeeDocuments.status, ["excluido", "rejeitado"]),
+      notInArray(employeeDocuments.status, ["excluido", "rejeitado", "substituido"]),
       ne(employees.status, "desligado"),
       sql`${employeeDocuments.validade} IS NOT NULL`,
     ));
@@ -58,7 +61,9 @@ async function employeeDocumentAlerts(db: Db, today: string): Promise<Alert[]> {
   const sameDoc = (a: (typeof rows)[number], b: (typeof rows)[number]) =>
     a.employeeId === b.employeeId &&
     (a.requirementId != null ? a.requirementId === b.requirementId : normalizeTextSearch(a.nome) === normalizeTextSearch(b.nome));
-  const current = rows.filter((doc) => !rows.some((other) => other.id !== doc.id && sameDoc(doc, other) && new Date(other.createdAt) > new Date(doc.createdAt)));
+  // Versão nova ainda em validação não conta: a anterior aprovada continua valendo (e avisando).
+  const { emVigor } = splitDocumentVersions(rows);
+  const current = emVigor.filter((doc) => !emVigor.some((other) => other.id !== doc.id && sameDoc(doc, other) && new Date(other.createdAt) > new Date(doc.createdAt)));
   return current.flatMap((doc) => {
     const threshold = documentAlertThreshold(doc.validade, today);
     if (!threshold) return [];
