@@ -228,6 +228,12 @@ export default function Vacations() {
     d.setUTCDate(d.getUTCDate() + index);
     return d.toISOString().slice(0, 10);
   });
+  // Seletores de mês e ano: ir direto a outro período sem clicar mês a mês.
+  const anoAtual = Number(today.slice(0, 4));
+  const anosDisponiveis = Array.from({ length: 12 }, (_, i) => anoAtual - 6 + i);
+  if (!anosDisponiveis.includes(year)) anosDisponiveis.push(year);
+  anosDisponiveis.sort((a, b) => a - b);
+  const mesesNome = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
   function changeMonth(offset: number) {
     const d = new Date(Date.UTC(year, monthNumber - 1 + offset, 1));
     setMonth(d.toISOString().slice(0, 7));
@@ -487,7 +493,27 @@ export default function Vacations() {
                         timeZone: "UTC",
                       })}
                     </CardTitle>
-                    <div className="flex gap-1">
+                    <div className="flex flex-wrap items-center gap-1">
+                      <select
+                        aria-label="Mês"
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                        value={monthNumber}
+                        onChange={e => setMonth(`${year}-${String(e.target.value).padStart(2, "0")}`)}
+                      >
+                        {mesesNome.map((nome, index) => (
+                          <option key={nome} value={index + 1}>{nome}</option>
+                        ))}
+                      </select>
+                      <select
+                        aria-label="Ano"
+                        className="h-9 rounded-md border border-input bg-background px-2 text-sm"
+                        value={year}
+                        onChange={e => setMonth(`${e.target.value}-${String(monthNumber).padStart(2, "0")}`)}
+                      >
+                        {anosDisponiveis.map(ano => (
+                          <option key={ano} value={ano}>{ano}</option>
+                        ))}
+                      </select>
                       <Button
                         variant="outline"
                         size="icon"

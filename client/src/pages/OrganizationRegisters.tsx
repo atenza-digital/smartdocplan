@@ -82,7 +82,9 @@ export default function OrganizationRegisters() {
           <h1 className="text-2xl font-bold">Estrutura da empresa</h1>
           <p className="mt-2 text-muted-foreground">
             Cadastre contratos, unidades e obras separadamente e selecione-os
-            nas solicitações. As frentes existentes são preservadas.
+            nas solicitações. As frentes existentes são preservadas. Atenção: as
+            obras daqui não são as “Frentes / Locais” de Parâmetros da empresa;
+            os locais de lá é que aparecem no cadastro de colaboradores.
           </p>
         </div>
         <div className="flex flex-wrap gap-3 items-center">

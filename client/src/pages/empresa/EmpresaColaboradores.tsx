@@ -327,9 +327,9 @@ export default function EmpresaColaboradores() {
             return (
               <Card key={colaborador.id} className="border-border transition-colors hover:border-primary/30">
                 <CardContent className="p-4">
-                  <div className="mb-3 flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10">
                         <span className="text-sm font-semibold text-primary">
                           {colaborador.nome
                             .split(" ")
@@ -339,12 +339,12 @@ export default function EmpresaColaboradores() {
                             .toUpperCase()}
                         </span>
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <p className="text-sm font-semibold leading-tight text-foreground">{colaborador.nome}</p>
                         <p className="font-mono text-xs text-muted-foreground">{colaborador.cpf}</p>
                       </div>
                     </div>
-                    <Badge variant="outline" className={`text-xs ${statusColors[colaborador.status]}`}>
+                    <Badge variant="outline" className={`shrink-0 text-xs ${statusColors[colaborador.status]}`}>
                       <StatusIcon className="mr-1 h-3 w-3" />
                       {colaborador.status}
                     </Badge>

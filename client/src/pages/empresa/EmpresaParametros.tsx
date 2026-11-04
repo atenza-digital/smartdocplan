@@ -30,7 +30,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Link } from "wouter";
+import { Link, useLocation, useSearch } from "wouter";
 import {
   formatCnpj,
   formatPhone,
@@ -95,7 +95,10 @@ const requirementProcessLabel: Record<string, string> = {
  * documentos recorrentes e prazos de férias). Preferências pessoais ficam em Configurações.
  */
 export default function EmpresaParametros() {
-  const abaInicial = new URLSearchParams(window.location.search).get("aba");
+  // A aba ativa fica no endereço (?aba=): o botão voltar retorna à mesma aba e a ajuda da tela sabe qual é.
+  const [, navigate] = useLocation();
+  const abaDoEndereco = new URLSearchParams(useSearch()).get("aba") ?? "";
+  const abaAtiva = ABAS_PARAMETROS.includes(abaDoEndereco) ? abaDoEndereco : "empresa";
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
   const canEdit = ["platform_admin", "company_admin", "company_hr"].includes(user?.role ?? "");
@@ -455,7 +458,7 @@ export default function EmpresaParametros() {
           </p>
         </div>
 
-        <Tabs defaultValue={ABAS_PARAMETROS.includes(abaInicial ?? "") ? abaInicial! : "empresa"}>
+        <Tabs value={abaAtiva} onValueChange={(aba) => navigate(`/empresa/parametros?aba=${aba}`, { replace: true })}>
           <TabsList className="flex h-auto w-full max-w-3xl flex-wrap justify-start">
             <TabsTrigger value="empresa" className="text-xs">
               <Building2 className="mr-1 h-3.5 w-3.5" />
@@ -776,7 +779,7 @@ export default function EmpresaParametros() {
                 <div>
                   <h3 className="font-semibold text-foreground">Frentes / Locais</h3>
                   <p className="mt-0.5 text-xs text-muted-foreground">
-                    Cadastre obras, frentes e locais auxiliares para uso nos processos.
+                    Cadastre obras, frentes e locais de trabalho. Eles aparecem ao cadastrar colaboradores e nas solicitações. Contratos, unidades e obras da “Estrutura da empresa” são outro cadastro, usado só nas solicitações.
                   </p>
                 </div>
                 {canEdit && (
@@ -1113,8 +1116,8 @@ export default function EmpresaParametros() {
             </div>
 
             <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Requisito legal relacionado</Label>
+              <div className="col-span-2 space-y-1.5">
+                <Label>Norma da Matriz Legal (opcional)</Label>
                 <select
                   className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
                   value={positionRequirementForm.legalRequirementId}
@@ -1122,25 +1125,29 @@ export default function EmpresaParametros() {
                     setPositionRequirementForm((current) => ({ ...current, legalRequirementId: event.target.value }))
                   }
                 >
-                  <option value="none">Nenhum</option>
+                  <option value="none">Nenhuma</option>
                   {matrizLegal.map((item) => (
                     <option key={item.id} value={String(item.id)}>
                       {item.norma} • {item.documentoExigido}
                     </option>
                   ))}
                 </select>
+                <p className="text-xs text-muted-foreground">
+                  Só para referência: liga este item à norma da Matriz Legal que o fundamenta (por exemplo, a NR-7 para o ASO). Não preenche nada sozinho.
+                </p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Validade</Label>
+                  <Label>Validade (meses)</Label>
                   <Input
                     type="number"
                     value={positionRequirementForm.validadeMeses}
                     onChange={(event) =>
                       setPositionRequirementForm((current) => ({ ...current, validadeMeses: event.target.value }))
                     }
-                    placeholder="Meses"
+                    placeholder="Ex.: 12"
                   />
+                  <p className="text-xs text-muted-foreground">Deixe vazio se o documento não vence.</p>
                 </div>
                 <div className="space-y-1.5">
                   <Label>Ordem</Label>

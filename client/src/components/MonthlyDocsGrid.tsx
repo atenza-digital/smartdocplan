@@ -59,6 +59,11 @@ export function MonthlyDocsGrid({
                   {PERIODICIDADE_LABELS[row.tipo.periodicidade]} · prazo de {row.tipo.prazoDias} dia(s) após o fim do período
                 </span>
               </p>
+              {row.celulas.every((cell) => !cell.aplica) && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Nenhum período cobrado ainda: o colaborador foi admitido depois destes períodos ou o documento foi cadastrado há pouco. O primeiro período aparece aqui assim que terminar.
+                </p>
+              )}
               <ul className="mt-2 flex flex-wrap gap-2">
                 {row.celulas.map((cell) => {
                   if (!cell.aplica) {

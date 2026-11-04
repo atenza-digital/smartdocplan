@@ -318,6 +318,25 @@ export default function EmpresaDossie() {
 
   const byCategoria = (cat: string) => documentos.filter((d) => d.categoria === cat);
 
+  // Documentos exigidos do cargo que a pessoa pode enviar (itens de saúde restritos ficam de fora).
+  const exigidos = ((checklist?.items ?? []) as ChecklistItem[]).filter((item) => !item.restrito);
+
+  // Escolher o item exigido vincula o documento ao checklist e já preenche categoria e nome.
+  const escolherDocumentoExigido = (valor: string) => {
+    if (valor === "outro") {
+      setUploadForm({ ...uploadForm, requirementId: null });
+      return;
+    }
+    const item = exigidos.find((exigido) => String(exigido.requirementId) === valor);
+    if (!item) return;
+    setUploadForm({
+      ...uploadForm,
+      requirementId: item.requirementId,
+      categoria: item.categoria in categoriaLabels ? item.categoria : "outros",
+      nome: item.documentoNome,
+    });
+  };
+
   return (
     <Layout title={employee ? `Dossiê — ${employee.nome}` : "Dossiê"}>
       <div className="space-y-6">
@@ -335,13 +354,13 @@ export default function EmpresaDossie() {
             {/* Header do Colaborador */}
             <Card className="border-border">
               <CardContent className="p-5">
-                <div className="flex items-start gap-4">
+                <div className="flex flex-wrap items-start gap-4">
                   <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                     <span className="text-primary font-bold text-lg">
                       {employee.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
                     </span>
                   </div>
-                  <div className="flex-1 min-w-0">
+                  <div className="flex-1 min-w-[12rem]">
                     <div className="flex items-start justify-between gap-3 flex-wrap">
                       <div>
                         <h3 className="text-lg font-bold text-foreground">{employee.nome}</h3>
@@ -395,7 +414,8 @@ export default function EmpresaDossie() {
                       )}
                     </div>
                   </div>
-                  <div className="text-center shrink-0">
+                  {/* No celular o bloco de conformidade desce para uma linha própria, sem cobrir o CPF e os dados. */}
+                  <div className="w-full shrink-0 rounded-md bg-muted/40 p-3 text-center sm:w-auto sm:bg-transparent sm:p-0">
                     {employee.scoreConformidade !== null && employee.scoreConformidade !== undefined ? (
                       <p className={`text-3xl font-bold ${scoreColor(employee.scoreConformidade)}`}>
                         {employee.scoreConformidade}%
@@ -404,7 +424,7 @@ export default function EmpresaDossie() {
                       <p className="text-3xl font-bold text-muted-foreground">—</p>
                     )}
                     <p className="text-xs text-muted-foreground">Conformidade</p>
-                    <Badge variant="outline" className={`mt-1.5 text-xs ${RELEASE_COLORS[employee.liberacao as EmployeeRelease] ?? ""}`}>
+                    <Badge variant="outline" className={`mt-1.5 max-w-full whitespace-normal text-xs ${RELEASE_COLORS[employee.liberacao as EmployeeRelease] ?? ""}`}>
                       {RELEASE_LABELS[employee.liberacao as EmployeeRelease] ?? employee.liberacao}
                     </Badge>
                   </div>
@@ -522,10 +542,13 @@ export default function EmpresaDossie() {
               {canManage && (
                 <Button size="sm" onClick={openNewDoc} className="bg-primary hover:bg-primary/90 text-primary-foreground">
                   <Upload className="w-4 h-4 mr-2" />
-                  Enviar Documento
+                  Enviar outro documento
                 </Button>
               )}
             </div>
+            <p className="-mt-3 text-xs text-muted-foreground">
+              Os documentos exigidos para liberar o colaborador têm o botão “Enviar” no quadro acima. Aqui ficam todos os documentos enviados; use “Enviar outro documento” para incluir um que não está nessa lista.
+            </p>
 
             <Tabs defaultValue="todos">
               <TabsList className="flex-wrap h-auto">
@@ -567,24 +590,41 @@ export default function EmpresaDossie() {
                 Este documento atende o item exigido pelo cargo e será validado pela equipe SmartDocPlan.
               </p>
             )}
-            <div className="space-y-1.5">
-              <Label>Categoria *</Label>
-              <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(categoriaLabels).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            {!editingDoc && !uploadForm.competencia && (
+              <div className="space-y-1.5">
+                <Label>Documento exigido</Label>
+                <Select value={uploadForm.requirementId ? String(uploadForm.requirementId) : "outro"} onValueChange={escolherDocumentoExigido}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {exigidos.map((item) => (
+                      <SelectItem key={item.requirementId} value={String(item.requirementId)}>
+                        {item.documentoNome} · {categoriaLabels[item.categoria] ?? "Outros"}
+                      </SelectItem>
+                    ))}
+                    <SelectItem value="outro">Outro documento (fora da lista exigida)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Escolha o item da lista do cargo para o documento contar na liberação do colaborador. Use “Outro documento” para o que não está na lista.
+                </p>
+              </div>
+            )}
+            {!uploadForm.requirementId && (
+              <div className="space-y-1.5">
+                <Label>Categoria *</Label>
+                <Select value={uploadForm.categoria} onValueChange={(v) => setUploadForm({ ...uploadForm, categoria: v })}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(categoriaLabels).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>{v}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Nome do Documento *</Label>
               <Input value={uploadForm.nome} onChange={(e) => setUploadForm({ ...uploadForm, nome: e.target.value })} placeholder="Ex: Certificado NR35 - João Silva" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Tipo</Label>
-              <Input value={uploadForm.tipo} onChange={(e) => setUploadForm({ ...uploadForm, tipo: e.target.value })} placeholder="Ex: PDF, Certificado, ASO" />
             </div>
             <div className="space-y-1.5">
               <Label>Data de Emissão</Label>

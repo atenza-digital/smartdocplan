@@ -96,31 +96,32 @@ export default function EmpresaPendencias() {
               {[...criticos, ...atencao].map((col) => {
                 const score = col.scoreConformidade ?? 0;
                 return (
-                  <div key={col.id} className="flex items-center gap-4 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
+                  <div key={col.id} className="flex flex-wrap items-center gap-x-4 gap-y-3 p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors">
                     <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
                       <span className="text-primary font-semibold text-xs">
                         {col.nome.split(" ").map((n: string) => n[0]).slice(0, 2).join("").toUpperCase()}
                       </span>
                     </div>
-                    <div className="flex-1 min-w-0">
+                    <div className="flex-1 min-w-[9rem]">
                       <p className="text-sm font-semibold text-foreground">{col.nome}</p>
                       <p className="text-xs text-muted-foreground font-mono">{col.cpf}</p>
                     </div>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="w-24 h-2 bg-muted rounded-full overflow-hidden">
+                    {/* No celular a barra e o botão passam para uma segunda linha, sem sobrepor o nome. */}
+                    <div className="flex w-full items-center gap-3 sm:w-auto">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted sm:w-24 sm:flex-none">
                         <div
                           className={`h-full rounded-full ${scoreBg(score)}`}
                           style={{ width: `${score}%` }}
                         />
                       </div>
-                      <span className={`text-sm font-bold w-10 text-right ${scoreColor(score)}`}>{score}%</span>
+                      <span className={`w-10 text-right text-sm font-bold ${scoreColor(score)}`}>{score}%</span>
+                      <Button variant="outline" size="sm" className="text-xs shrink-0" asChild>
+                        <Link href={`/empresa/colaboradores/${col.id}`}>
+                          <FolderOpen className="w-3 h-3 mr-1" />
+                          Dossiê
+                        </Link>
+                      </Button>
                     </div>
-                    <Button variant="outline" size="sm" className="text-xs shrink-0" asChild>
-                      <Link href={`/empresa/colaboradores/${col.id}`}>
-                        <FolderOpen className="w-3 h-3 mr-1" />
-                        Dossiê
-                      </Link>
-                    </Button>
                   </div>
                 );
               })}
