@@ -21,8 +21,9 @@ const CATEGORIA_LABELS: Record<string, string> = {
   opcional: "Opcional", outros: "Outros",
 };
 
-type Alvo = "colaborador" | "empresa";
+type Alvo = "colaborador" | "empresa" | "exclusao";
 type RejectTarget = { alvo: Alvo; id: number; nome: string };
+const ABAS: Alvo[] = ["colaborador", "empresa", "exclusao"];
 
 const NovaVersaoSelo = ({ texto }: { texto: string }) => (
   <span className="ml-2 rounded border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-700 dark:text-blue-400">
@@ -46,7 +47,11 @@ export default function AdminValidacaoDocumentos() {
   const utils = trpc.useUtils();
   const { data: fila = [], isLoading } = trpc.employeeDocs.pendingReview.useQuery();
   const { data: filaEmpresa = [], isLoading: carregandoEmpresa } = trpc.companyDocuments.pendingReview.useQuery();
-  const [aba, setAba] = useState<Alvo>(() => (new URLSearchParams(window.location.search).get("aba") === "empresa" ? "empresa" : "colaborador"));
+  const { data: pedidos = [], isLoading: carregandoPedidos } = trpc.deletionRequests.pendingReview.useQuery();
+  const [aba, setAba] = useState<Alvo>(() => {
+    const inicial = new URLSearchParams(window.location.search).get("aba") as Alvo | null;
+    return inicial && ABAS.includes(inicial) ? inicial : "colaborador";
+  });
   const [rejectTarget, setRejectTarget] = useState<RejectTarget | null>(null);
   const [motivo, setMotivo] = useState("");
 
@@ -69,15 +74,24 @@ export default function AdminValidacaoDocumentos() {
     },
     onError: (e) => toast.error(e.message),
   });
-  const reviewing = reviewMutation.isPending || reviewEmpresaMutation.isPending;
+  const decideMutation = trpc.deletionRequests.decide.useMutation({
+    onSuccess: (_, variables) => {
+      toast.success(variables.decisao === "aprovar" ? "Exclusão aprovada; o documento saiu da lista." : "Pedido de exclusão rejeitado; a empresa foi avisada.");
+      setRejectTarget(null);
+      setMotivo("");
+      utils.deletionRequests.pendingReview.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const reviewing = reviewMutation.isPending || reviewEmpresaMutation.isPending || decideMutation.isPending;
   const decidir = (alvo: Alvo, id: number, decisao: "aprovar" | "rejeitar", motivoRejeicao?: string) =>
-    (alvo === "empresa" ? reviewEmpresaMutation : reviewMutation).mutate({ id, decisao, motivo: motivoRejeicao });
+    (alvo === "exclusao" ? decideMutation : alvo === "empresa" ? reviewEmpresaMutation : reviewMutation).mutate({ id, decisao, motivo: motivoRejeicao });
 
   const botoes = (alvo: Alvo, doc: { id: number; nome: string }) =>
     canReview && (
       <>
         <Button size="sm" variant="outline" disabled={reviewing} onClick={() => decidir(alvo, doc.id, "aprovar")} className="border-green-500/40 text-green-700 hover:bg-green-500/10 dark:text-green-400">
-          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />Aprovar
+          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />{alvo === "exclusao" ? "Aprovar exclusão" : "Aprovar"}
         </Button>
         <Button size="sm" variant="outline" disabled={reviewing} onClick={() => setRejectTarget({ alvo, id: doc.id, nome: doc.nome })} className="border-red-500/40 text-red-700 hover:bg-red-500/10 dark:text-red-400">
           <AlertCircle className="mr-1 h-3.5 w-3.5" />Rejeitar
@@ -106,6 +120,7 @@ export default function AdminValidacaoDocumentos() {
           <TabsList className="h-auto flex-wrap">
             <TabsTrigger value="colaborador">Colaboradores ({fila.length})</TabsTrigger>
             <TabsTrigger value="empresa">Empresa ({filaEmpresa.length})</TabsTrigger>
+            <TabsTrigger value="exclusao">Pedidos de exclusão ({pedidos.length})</TabsTrigger>
           </TabsList>
 
           <TabsContent value="colaborador" className="mt-4">
@@ -183,17 +198,54 @@ export default function AdminValidacaoDocumentos() {
               </div>
             )}
           </TabsContent>
+
+          <TabsContent value="exclusao" className="mt-4">
+            {carregandoPedidos ? (
+              <div className="h-40 animate-pulse rounded-lg bg-muted" />
+            ) : pedidos.length === 0 ? (
+              <FilaVazia texto="Nenhum pedido de exclusão aguardando decisão." />
+            ) : (
+              <div className="space-y-3">
+                <p className="text-sm text-muted-foreground">{pedidos.length} pedido(s), dos mais antigos para os mais recentes. Aprovar tira o documento da lista (o registro fica guardado); rejeitar o mantém.</p>
+                {pedidos.map((pedido) => (
+                  <Card key={pedido.id} className="border-border">
+                    <CardContent className="flex flex-wrap items-center gap-3 p-4">
+                      <div className="min-w-[14rem] flex-1">
+                        <p className="text-sm font-semibold text-foreground">{pedido.documentoNome}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {pedido.empresaNome} · {pedido.alvo === "colaborador" ? `${pedido.colaboradorNome ?? "Colaborador"} · ${CATEGORIA_LABELS[pedido.categoria ?? ""] ?? "Documento do colaborador"}` : "Documento da empresa"}
+                        </p>
+                        <p className="text-xs text-muted-foreground">Pedido em {new Date(pedido.createdAt).toLocaleDateString("pt-BR")}</p>
+                        <p className="mt-1 rounded-md bg-muted px-2 py-1 text-xs text-foreground">Motivo: {pedido.motivo}</p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {verArquivo(pedido.fileUrl)}
+                        <Button asChild size="sm" variant="ghost">
+                          <Link href={pedido.alvo === "colaborador" && pedido.employeeId ? `/admin/colaboradores/${pedido.employeeId}` : `/admin/empresas/${pedido.companyId}`}>
+                            <FolderOpen className="mr-1 h-3.5 w-3.5" />{pedido.alvo === "colaborador" ? "Dossiê" : "Empresa"}
+                          </Link>
+                        </Button>
+                        {botoes("exclusao", { id: pedido.id, nome: pedido.documentoNome })}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
         </Tabs>
       </div>
 
       <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setMotivo(""); } }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Rejeitar documento</DialogTitle>
+            <DialogTitle>{rejectTarget?.alvo === "exclusao" ? "Rejeitar pedido de exclusão" : "Rejeitar documento"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-2 py-2">
             <p className="text-sm text-muted-foreground">
-              A empresa recebe o motivo e precisa enviar um novo arquivo para "{rejectTarget?.nome}". Se houver uma versão aprovada, ela continua valendo.
+              {rejectTarget?.alvo === "exclusao"
+                ? `O documento "${rejectTarget?.nome}" continua no lugar e a empresa recebe o motivo.`
+                : `A empresa recebe o motivo e precisa enviar um novo arquivo para "${rejectTarget?.nome}". Se houver uma versão aprovada, ela continua valendo.`}
             </p>
             <Label htmlFor="fila-motivo">Motivo *</Label>
             <Textarea id="fila-motivo" rows={3} value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="Ex.: arquivo ilegível ou sem assinatura" />

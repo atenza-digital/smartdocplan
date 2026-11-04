@@ -160,6 +160,25 @@ export const companyDocuments = smartdocSchema.table("company_documents", {
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
 
+// --- PEDIDOS DE EXCLUSÃO DE DOCUMENTOS (empresa pede, equipe SmartDocPlan decide) ---
+export const documentChangeRequests = smartdocSchema.table("document_change_requests", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  alvo: text("alvo").notNull(), // colaborador | empresa
+  documentoId: integer("documentoId").notNull(),
+  employeeId: integer("employeeId"),
+  documentoNome: varchar("documentoNome", { length: 255 }).notNull(),
+  categoria: text("categoria"),
+  motivo: text("motivo").notNull(),
+  status: text("status").default("pendente").notNull(), // pendente | aprovado | rejeitado | cancelado
+  solicitadoPor: integer("solicitadoPor").notNull(),
+  analisadoPor: integer("analisadoPor"),
+  analisadoAt: timestamp("analisadoAt"),
+  motivoDecisao: text("motivoDecisao"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+
 // --- WORKSITES (OBRAS/CNOs) ---
 export const worksites = smartdocSchema.table("worksites", {
   id: serial("id").primaryKey(),

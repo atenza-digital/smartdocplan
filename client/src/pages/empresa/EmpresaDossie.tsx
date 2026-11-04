@@ -23,7 +23,8 @@ import {
 import { Link } from "wouter";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { canManageCompanyData, canManageRequestWorkflow, canSendHealthDocuments } from "@shared/permissions";
+import { canManageCompanyData, canManageRequestWorkflow, canSendHealthDocuments, isPlatformOperator } from "@shared/permissions";
+import { DeletionRequestDialog, type DeletionTarget } from "@/components/DeletionRequestDialog";
 import { DossieChecklist, RELEASE_COLORS, type ChecklistItem } from "@/components/DossieChecklist";
 import { MonthlyDocsGrid, type MonthlyCell, type MonthlyRow } from "@/components/MonthlyDocsGrid";
 import { VACATION_SUGGESTION_LABELS } from "@shared/vacationSuggestion";
@@ -105,6 +106,9 @@ export default function EmpresaDossie() {
   const [showUpload, setShowUpload] = useState(false);
   const [editingDoc, setEditingDoc] = useState<any | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<any | null>(null);
+  // Só a equipe SmartDocPlan exclui direto; a empresa pede a exclusão.
+  const podeExcluirDireto = isPlatformOperator(user?.role ?? null);
+  const [pedidoTarget, setPedidoTarget] = useState<DeletionTarget | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isReadingFile, setIsReadingFile] = useState(false);
   const [uploadForm, setUploadForm] = useState<DocForm>(emptyDocForm);
@@ -130,6 +134,20 @@ export default function EmpresaDossie() {
     { employeeId, quantidade: 6 },
     { enabled: employeeId > 0 }
   );
+  const { data: pedidosExclusao = [] } = trpc.deletionRequests.pendingByCompany.useQuery(
+    { companyId: employee?.companyId ?? 0 },
+    { enabled: (employee?.companyId ?? 0) > 0 }
+  );
+  const pedidosPorDoc = new Map(pedidosExclusao.filter((p) => p.alvo === "colaborador").map((p) => [p.documentoId, p.id]));
+  const cancelPedidoMutation = trpc.deletionRequests.cancel.useMutation({
+    onSuccess: () => {
+      toast.success("Pedido de exclusão cancelado.");
+      utils.deletionRequests.pendingByCompany.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const onDeleteDoc = (doc: any) =>
+    podeExcluirDireto ? setDeleteTarget(doc) : setPedidoTarget({ alvo: "colaborador", documentoId: doc.id, nome: doc.nome });
   // Documentos, checklist e conformidade mudam juntos: recarrega os três após qualquer alteração.
   const refreshDossie = () => {
     refetch();
@@ -137,6 +155,7 @@ export default function EmpresaDossie() {
     utils.employees.get.invalidate({ id: employeeId });
     utils.recurringDocs.employeeGrid.invalidate({ employeeId });
     utils.employeeDocs.versions.invalidate();
+    utils.deletionRequests.pendingByCompany.invalidate();
   };
   const { data: cargos = [] } = trpc.positions.list.useQuery(
     { companyId: employee?.companyId ?? 0 },
@@ -304,6 +323,13 @@ export default function EmpresaDossie() {
   };
 
   const isSavingDoc = isReadingFile || createDocMutation.isPending || updateDocMutation.isPending;
+  const exclusaoProps = {
+    podeExcluirDireto,
+    pedidos: pedidosPorDoc,
+    podePedirRestrito: canSendHealth,
+    cancelando: cancelPedidoMutation.isPending,
+    onCancelPedido: (pedidoId: number) => cancelPedidoMutation.mutate({ id: pedidoId }),
+  };
 
   if (!employee && employeeId > 0) {
     return (
@@ -575,11 +601,11 @@ export default function EmpresaDossie() {
               </TabsList>
 
               <TabsContent value="todos" className="mt-4">
-                <DocGrid docs={documentos} canManage={canManage} canReview={canReview} reviewing={reviewMutation.isPending} onEdit={openEditDoc} onDelete={setDeleteTarget} onApprove={(doc) => reviewMutation.mutate({ id: doc.id, decisao: "aprovar" })} onReject={setRejectTarget} />
+                <DocGrid docs={documentos} canManage={canManage} canReview={canReview} reviewing={reviewMutation.isPending} onEdit={openEditDoc} onDelete={onDeleteDoc} onApprove={(doc) => reviewMutation.mutate({ id: doc.id, decisao: "aprovar" })} onReject={setRejectTarget} {...exclusaoProps} />
               </TabsContent>
               {Object.keys(categoriaLabels).map((cat) => (
                 <TabsContent key={cat} value={cat} className="mt-4">
-                  <DocGrid docs={byCategoria(cat)} canManage={canManage} canReview={canReview} reviewing={reviewMutation.isPending} onEdit={openEditDoc} onDelete={setDeleteTarget} onApprove={(doc) => reviewMutation.mutate({ id: doc.id, decisao: "aprovar" })} onReject={setRejectTarget} />
+                  <DocGrid docs={byCategoria(cat)} canManage={canManage} canReview={canReview} reviewing={reviewMutation.isPending} onEdit={openEditDoc} onDelete={onDeleteDoc} onApprove={(doc) => reviewMutation.mutate({ id: doc.id, decisao: "aprovar" })} onReject={setRejectTarget} {...exclusaoProps} />
                 </TabsContent>
               ))}
             </Tabs>
@@ -698,7 +724,7 @@ export default function EmpresaDossie() {
           <AlertDialogHeader>
             <AlertDialogTitle>Excluir documento?</AlertDialogTitle>
             <AlertDialogDescription>
-              O documento "{deleteTarget?.nome}" deixará de aparecer no dossiê. O registro fica guardado no histórico da auditoria.
+              O documento "{deleteTarget?.nome}" deixará de aparecer no dossiê, junto com a nova versão dele que ainda aguarda validação. O registro fica guardado no histórico da auditoria e um pedido de exclusão aberto pela empresa fica como aprovado.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -716,6 +742,12 @@ export default function EmpresaDossie() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <DeletionRequestDialog
+        target={pedidoTarget}
+        onClose={() => setPedidoTarget(null)}
+        onDone={() => { setPedidoTarget(null); utils.deletionRequests.pendingByCompany.invalidate(); }}
+      />
 
       <Dialog open={!!rejectTarget} onOpenChange={(open) => { if (!open) { setRejectTarget(null); setRejectReason(""); } }}>
         <DialogContent>
@@ -752,6 +784,11 @@ function DocGrid({
   onDelete,
   onApprove,
   onReject,
+  podeExcluirDireto,
+  pedidos,
+  podePedirRestrito,
+  cancelando,
+  onCancelPedido,
 }: {
   docs: any[];
   canManage: boolean;
@@ -761,6 +798,14 @@ function DocGrid({
   onDelete: (doc: any) => void;
   onApprove: (doc: any) => void;
   onReject: (doc: any) => void;
+  /** Equipe SmartDocPlan: exclui direto. Empresa: pede a exclusão. */
+  podeExcluirDireto: boolean;
+  /** Documento → pedido de exclusão pendente. */
+  pedidos: Map<number, number>;
+  /** Admin da empresa pede exclusão de documento de saúde sem abrir o arquivo. */
+  podePedirRestrito: boolean;
+  cancelando: boolean;
+  onCancelPedido: (pedidoId: number) => void;
 }) {
   if (docs.length === 0) {
     return (
@@ -819,15 +864,25 @@ function DocGrid({
                         <Pencil className="h-3 w-3" />
                         {doc.restrito ? "Enviar nova versão" : "Editar"}
                       </button>
-                      {!doc.restrito && (
+                      {(podeExcluirDireto || !pedidos.has(doc.id)) && (!doc.restrito || (!podeExcluirDireto && podePedirRestrito)) && (
                         <button type="button" onClick={() => onDelete(doc)} className="inline-flex items-center gap-1 text-xs text-destructive hover:underline">
                           <Trash2 className="h-3 w-3" />
-                          Excluir
+                          {podeExcluirDireto ? "Excluir" : "Pedir exclusão"}
                         </button>
                       )}
                     </>
                   )}
                 </div>
+                {pedidos.has(doc.id) && (
+                  <p className="mt-2 flex flex-wrap items-center gap-2 rounded-md bg-amber-500/10 px-2 py-1 text-xs text-amber-800 dark:text-amber-300">
+                    Exclusão solicitada: aguardando a decisão da equipe SmartDocPlan.
+                    {canManage && !podeExcluirDireto && (
+                      <button type="button" disabled={cancelando} onClick={() => onCancelPedido(pedidos.get(doc.id)!)} className="font-medium underline">
+                        Cancelar pedido
+                      </button>
+                    )}
+                  </p>
+                )}
                 {doc.restrito && (
                   <p className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
                     <Lock className="h-3 w-3" />

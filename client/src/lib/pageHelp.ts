@@ -325,7 +325,8 @@ const ENTRADAS: Entry[] = [
       titulo: "Validação de documentos",
       paraQueServe: "Fila dos documentos enviados pelas empresas que aguardam a sua conferência: dos colaboradores e da própria empresa.",
       passos: [
-        "Escolha a aba: “Colaboradores” (dossiê e recorrentes do colaborador) ou “Empresa” (documentos legais e recorrentes da empresa).",
+        "Escolha a aba: “Colaboradores” (dossiê e recorrentes do colaborador), “Empresa” (documentos legais e recorrentes da empresa) ou “Pedidos de exclusão”.",
+        "Em “Pedidos de exclusão”, leia o motivo e confira o arquivo: “Aprovar exclusão” tira o documento da lista (o registro fica guardado) e recalcula a conformidade; “Rejeitar” mantém o documento e avisa a empresa com o motivo.",
         "Clique em “Ver arquivo” para abrir e conferir. O selo “Nova versão” indica que a versão aprovada anterior continua valendo até a sua decisão.",
         "Estando certo, clique em “Aprovar”. O documento sai da fila e passa a valer.",
         "Havendo problema, clique em “Rejeitar” e escreva o motivo (obrigatório). A empresa é avisada no sino.",
@@ -468,6 +469,7 @@ const ENTRADAS: Entry[] = [
       ],
       dicas: [
         "Aceitamos PDF, PNG ou JPG de até 10 MB.",
+        "Para tirar um documento do dossiê, clique em “Pedir exclusão” e escreva o motivo. Ele continua valendo até a equipe SmartDocPlan aprovar; enquanto isso aparece “Exclusão solicitada”, com a opção de cancelar o pedido.",
         "A data de emissão não pode ser futura e a validade não pode ser anterior à emissão.",
         "Documentos de saúde só podem ser abertos pelo RH da empresa e pelo Administrador Geral. O Admin da empresa envia e acompanha a situação e a validade, sem abrir o arquivo.",
       ],
@@ -493,6 +495,7 @@ const ENTRADAS: Entry[] = [
       dicas: [
         "O sino avisa quando um documento é aprovado ou rejeitado, e quando vence em 30 dias, em 7 dias ou venceu.",
         "Mudar só as datas de um documento aprovado também gera uma nova versão para validação.",
+        "Para tirar um documento, use a lixeira (“Pedir exclusão”) e escreva o motivo. Ele continua no lugar até a equipe SmartDocPlan aprovar; dá para cancelar o pedido enquanto isso.",
         "Aceitamos PDF, PNG ou JPG de até 10 MB.",
       ],
       quemPode: EMPRESA_EDITA,
