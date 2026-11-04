@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { CalendarClock, Pencil, Plus } from "lucide-react";
@@ -16,8 +17,8 @@ import { brazilToday } from "@shared/vacations";
 const ALVO_LABELS: Record<string, string> = { colaborador: "Por colaborador", empresa: "Da empresa" };
 const CATEGORIA_LABELS: Record<string, string> = { pessoal: "Pessoal", contratual: "Contratual", treinamento: "Treinamento", outros: "Outros" };
 
-type FormState = { id?: number; nome: string; alvo: "colaborador" | "empresa"; categoria: string; periodicidade: Periodicidade; prazoDias: string };
-const emptyForm: FormState = { nome: "", alvo: "colaborador", categoria: "outros", periodicidade: "mensal", prazoDias: "10" };
+type FormState = { id?: number; nome: string; alvo: "colaborador" | "empresa"; categoria: string; periodicidade: Periodicidade; prazoDias: string; exigeValidacao: boolean };
+const emptyForm: FormState = { nome: "", alvo: "colaborador", categoria: "outros", periodicidade: "mensal", prazoDias: "10", exigeValidacao: true };
 
 /** Cadastro dos documentos recorrentes da empresa (folha de ponto, ficha de EPI, contracheque…), de semanal a anual. */
 export function RecurringTypesManager({ companyId, canEdit }: { companyId: number; canEdit: boolean }) {
@@ -42,8 +43,9 @@ export function RecurringTypesManager({ companyId, canEdit }: { companyId: numbe
       return;
     }
     const prazoDias = Number(form.prazoDias);
-    if (form.id) updateMutation.mutate({ id: form.id, nome: form.nome, categoria: form.categoria as any, periodicidade: form.periodicidade, prazoDias });
-    else createMutation.mutate({ companyId, nome: form.nome, alvo: form.alvo, categoria: form.categoria as any, periodicidade: form.periodicidade, prazoDias });
+    const exigeValidacao = form.exigeValidacao;
+    if (form.id) updateMutation.mutate({ id: form.id, nome: form.nome, categoria: form.categoria as any, periodicidade: form.periodicidade, prazoDias, exigeValidacao });
+    else createMutation.mutate({ companyId, nome: form.nome, alvo: form.alvo, categoria: form.categoria as any, periodicidade: form.periodicidade, prazoDias, exigeValidacao });
   };
 
   // Exemplo com o último período encerrado, para a pessoa entender o prazo.
@@ -93,6 +95,7 @@ export function RecurringTypesManager({ companyId, canEdit }: { companyId: numbe
                     <p className="text-xs text-muted-foreground">
                       {ALVO_LABELS[tipo.alvo]} · {PERIODICIDADE_LABELS[periodicidade]} · prazo de {tipo.prazoDias} dia(s) após o fim do período
                       {tipo.alvo === "colaborador" ? ` · ${CATEGORIA_LABELS[tipo.categoria] ?? tipo.categoria}` : ""}
+                      {tipo.exigeValidacao ? " · validado pela SmartDocPlan" : " · sem validação"}
                     </p>
                   </div>
                   {!tipo.ativo && <Badge variant="outline">Inativo</Badge>}
@@ -101,7 +104,7 @@ export function RecurringTypesManager({ companyId, canEdit }: { companyId: numbe
                       <Button
                         size="sm"
                         variant="ghost"
-                        onClick={() => setForm({ id: tipo.id, nome: tipo.nome, alvo: tipo.alvo as any, categoria: tipo.categoria, periodicidade, prazoDias: String(tipo.prazoDias) })}
+                        onClick={() => setForm({ id: tipo.id, nome: tipo.nome, alvo: tipo.alvo as any, categoria: tipo.categoria, periodicidade, prazoDias: String(tipo.prazoDias), exigeValidacao: tipo.exigeValidacao })}
                       >
                         <Pencil className="mr-1 h-3.5 w-3.5" />
                         Editar
@@ -166,6 +169,21 @@ export function RecurringTypesManager({ companyId, canEdit }: { companyId: numbe
                 </div>
               </div>
               {exemplo && <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">{exemplo}</p>}
+              <div className="flex items-start gap-2 rounded-lg border border-border p-3">
+                <Checkbox
+                  id="recorrente-validacao"
+                  checked={form.exigeValidacao}
+                  onCheckedChange={(checked) => setForm({ ...form, exigeValidacao: checked === true })}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <Label htmlFor="recorrente-validacao" className="cursor-pointer">Exige validação da SmartDocPlan</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Marcado: cada envio fica “em validação” até a equipe SmartDocPlan aprovar, e um arquivo novo vira nova versão (a aprovada vale até lá). Desmarcado: o envio já vale.
+                    {form.id ? " A mudança vale para os próximos envios." : ""}
+                  </p>
+                </div>
+              </div>
               <div className="space-y-1 rounded-lg border border-border p-3 text-xs text-muted-foreground">
                 <p className="font-medium text-foreground">Como os períodos são contados</p>
                 <p>Os períodos seguem o calendário: semana de segunda a domingo, quinzena de 1 a 15 e de 16 ao fim do mês, mês cheio, bimestre, trimestre, semestre ou ano. A data do primeiro envio não define o período.</p>

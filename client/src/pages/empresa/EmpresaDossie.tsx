@@ -496,7 +496,15 @@ export default function EmpresaDossie() {
             )}
 
             {mensais && (
-              <MonthlyDocsGrid linhas={mensais.linhas as MonthlyRow[]} canSend={canManage} onSend={openMonthlyUpload} />
+              <MonthlyDocsGrid
+                linhas={mensais.linhas as MonthlyRow[]}
+                canSend={canManage}
+                onSend={openMonthlyUpload}
+                onReplace={(_, cell) => {
+                  const doc = documentos.find((item: any) => item.id === cell.documento?.id);
+                  if (doc) openEditDoc(doc);
+                }}
+              />
             )}
 
             <Card className="border-border">
@@ -601,6 +609,11 @@ export default function EmpresaDossie() {
                 Trocar o arquivo ou as datas cria uma nova versão, que passa pela validação da equipe SmartDocPlan.
                 {editingDoc.status === "valido" ? " A versão atual continua valendo até a nova ser aprovada." : ""}
                 {" "}As versões anteriores ficam guardadas no histórico do documento.
+              </p>
+            )}
+            {editingDoc?.recurringTypeId && (
+              <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">
+                Documento recorrente. Se ele exige validação, o novo arquivo vira uma nova versão e a atual continua valendo até a equipe SmartDocPlan aprovar.
               </p>
             )}
             {editingDoc?.restrito && (

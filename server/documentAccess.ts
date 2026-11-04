@@ -80,15 +80,16 @@ export function registerDocumentAccess(app: Express) {
         })
         .from(employeeDocuments)
         .where(eq(employeeDocuments.fileUrl, fileUrl));
-      // Documento excluído (exclusão lógica) só continua acessível à plataforma, para auditoria.
-      const deletedForUser =
-        !isPlatformUser(user.role) &&
-        employeeFiles.length > 0 &&
-        employeeFiles.every(r => r.status === "excluido");
       const companyFiles = await db
-        .select({ companyId: companyDocuments.companyId })
+        .select({ companyId: companyDocuments.companyId, status: companyDocuments.status })
         .from(companyDocuments)
         .where(eq(companyDocuments.fileUrl, fileUrl));
+      // Documento excluído (exclusão lógica) só continua acessível à plataforma, para auditoria.
+      const documentFiles = [...employeeFiles, ...companyFiles];
+      const deletedForUser =
+        !isPlatformUser(user.role) &&
+        documentFiles.length > 0 &&
+        documentFiles.every(r => r.status === "excluido");
       // Logo da empresa: liberada para a plataforma e para a própria empresa, sem registro de acesso.
       const logoOwners = await db
         .select({ companyId: companies.id })

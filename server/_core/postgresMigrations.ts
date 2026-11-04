@@ -27,6 +27,7 @@ export const MIGRATIONS = [
   "20261009_processo_outros.sql",
   "20261009_senha_inicial.sql",
   "20261104_documento_versoes.sql",
+  "20261105_validacao_documentos_empresa.sql",
 ];
 
 const BASELINE = "0000_sleepy_cargill.sql";

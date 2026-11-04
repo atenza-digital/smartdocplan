@@ -19,7 +19,9 @@ export type MonthlyCell = {
   aplica: boolean;
   prazo: string;
   estado: RecurringCellState;
-  documento: { id: number; nome: string; fileUrl: string | null } | null;
+  documento: { id: number; nome: string; fileUrl: string | null; motivoRejeicao?: string | null } | null;
+  /** Outro arquivo enviado para um período já aprovado, ainda não aprovado (o aprovado continua valendo). */
+  novaVersao?: { id: number; status: string; motivoRejeicao: string | null } | null;
 };
 export type MonthlyRow = {
   tipo: { id: number; nome: string; categoria: string; periodicidade: Periodicidade; prazoDias: number };
@@ -28,17 +30,20 @@ export type MonthlyRow = {
 
 /**
  * Grade de documentos recorrentes: cada linha é um tipo com seus últimos períodos encerrados
- * (cada tipo tem a sua periodicidade). Clicar num período sem envio abre o envio.
+ * (cada tipo tem a sua periodicidade). Clicar num período sem envio abre o envio; "Substituir" envia outro
+ * arquivo para um período que já tem documento.
  */
 export function MonthlyDocsGrid({
   linhas,
   canSend,
   onSend,
+  onReplace,
   titulo = "Documentos recorrentes",
 }: {
   linhas: MonthlyRow[];
   canSend: boolean;
   onSend: (row: MonthlyRow, cell: MonthlyCell) => void;
+  onReplace?: (row: MonthlyRow, cell: MonthlyCell) => void;
   titulo?: string;
 }) {
   if (linhas.length === 0) return null;
@@ -74,10 +79,16 @@ export function MonthlyDocsGrid({
                     );
                   }
                   const label = RECURRING_STATE_LABELS[cell.estado];
-                  const title = `${row.tipo.nome} ${cell.rotulo}: ${label}. Prazo ${formatDateOnlyBr(cell.prazo)}.`;
+                  const nova = cell.novaVersao
+                    ? cell.novaVersao.status === "rejeitado"
+                      ? ` Nova versão rejeitada${cell.novaVersao.motivoRejeicao ? `: ${cell.novaVersao.motivoRejeicao}` : ""}.`
+                      : " Nova versão aguardando validação; esta continua valendo até a aprovação."
+                    : "";
+                  const motivo = cell.documento?.motivoRejeicao ? ` Motivo: ${cell.documento.motivoRejeicao}.` : "";
+                  const title = `${row.tipo.nome} ${cell.rotulo}: ${label}.${motivo}${nova} Prazo ${formatDateOnlyBr(cell.prazo)}.`;
                   const className = `inline-block rounded-md border px-2 py-1 text-xs ${RECURRING_STATE_COLORS[cell.estado]}`;
                   return (
-                    <li key={cell.competencia}>
+                    <li key={cell.competencia} className="inline-flex items-center gap-1">
                       {cell.documento?.fileUrl ? (
                         <a href={cell.documento.fileUrl} target="_blank" rel="noopener noreferrer" title={title} className={`${className} hover:underline`}>
                           {cell.rotulo} · {label}
@@ -88,6 +99,22 @@ export function MonthlyDocsGrid({
                         </button>
                       ) : (
                         <span title={title} className={className}>{cell.rotulo} · {label}</span>
+                      )}
+                      {cell.novaVersao && (
+                        <span title={title} className={`rounded-md border px-1.5 py-1 text-[11px] ${cell.novaVersao.status === "rejeitado" ? RECURRING_STATE_COLORS.rejeitado : RECURRING_STATE_COLORS.aguardando_validacao}`}>
+                          {cell.novaVersao.status === "rejeitado" ? "nova versão rejeitada" : "nova versão em validação"}
+                        </span>
+                      )}
+                      {canSend && onReplace && cell.documento && (
+                        <button
+                          type="button"
+                          onClick={() => onReplace(row, cell)}
+                          aria-label={`Substituir ${row.tipo.nome} ${cell.rotulo}`}
+                          title="Enviar outro arquivo para este período"
+                          className="rounded-md px-1.5 py-1 text-[11px] text-primary hover:underline"
+                        >
+                          Substituir
+                        </button>
                       )}
                     </li>
                   );
