@@ -43,6 +43,7 @@ import {
 import { formatDateOnlyBr, getDocumentDateBounds } from "@shared/formValidation";
 import { DOCUMENT_FILE_ACCEPT } from "@/lib/files";
 import { AddressFields } from "@/components/AddressFields";
+import { EmployeePicker } from "@/components/EmployeePicker";
 import { emptyAddress, type AddressValue } from "@shared/address";
 
 // Limites dos campos de data de documentos (barra anos implausíveis, como 1900).
@@ -194,6 +195,21 @@ export default function EmpresaNovaSolicitacao() {
         (matchedEmployee.dataNascimento ? new Date(matchedEmployee.dataNascimento).toISOString().slice(0, 10) : ""),
     }));
   }, [matchedEmployee]);
+
+  // Processos sobre quem já trabalha na empresa: escolhe o colaborador na lista em vez de digitar o CPF.
+  const exigeColaboradorExistente = form.tipo !== "admissao" && form.tipo !== "outros";
+  const colaboradoresAtivos = useMemo(() => employees.filter((employee) => employee.status !== "desligado"), [employees]);
+  const escolherColaborador = (employee: (typeof employees)[number]) => {
+    // Troca todos os dados da pessoa (o preenchimento automático por CPF só completa campos vazios).
+    setForm((current) => ({
+      ...current,
+      cpf: formatCpf(employee.cpf),
+      nome: employee.nome,
+      positionId: employee.positionId ? String(employee.positionId) : "",
+      worksiteId: employee.worksiteId ? String(employee.worksiteId) : "",
+      dataNascimento: employee.dataNascimento ? String(employee.dataNascimento).slice(0, 10) : "",
+    }));
+  };
 
   const selectedProcess = PROCESS_OPTIONS.find((option) => option.key === form.tipo) ?? PROCESS_OPTIONS[0];
   useEffect(() => { setPendingUploads([]); }, [form.tipo, form.positionId]);
@@ -662,6 +678,15 @@ export default function EmpresaNovaSolicitacao() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
+            {exigeColaboradorExistente && (
+              <div className="space-y-1.5">
+                <Label>Colaborador da empresa</Label>
+                <EmployeePicker employees={colaboradoresAtivos} selectedId={matchedEmployee?.id ?? null} onSelect={escolherColaborador} />
+                <p className="text-xs text-muted-foreground">
+                  Escolha o colaborador na lista: CPF, nome, função e local são preenchidos sozinhos. Também dá para digitar o CPF abaixo.
+                </p>
+              </div>
+            )}
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-1.5">
                 <Label>CPF</Label>
@@ -748,7 +773,7 @@ export default function EmpresaNovaSolicitacao() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Cadastro de frentes de trabalho. Obras, contratos e unidades são selecionados separadamente.
+                  Frentes e locais de trabalho cadastrados em Parâmetros da empresa (os mesmos do cadastro de colaboradores). Contratos, unidades e obras da Estrutura da empresa são outro cadastro, selecionado separadamente.
                 </p>
                 {worksites.length === 0 && (
                   <Alert>

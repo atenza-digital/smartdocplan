@@ -166,6 +166,11 @@ export function RecurringTypesManager({ companyId, canEdit }: { companyId: numbe
                 </div>
               </div>
               {exemplo && <p className="rounded-lg border border-border bg-muted/40 p-3 text-sm text-foreground">{exemplo}</p>}
+              <div className="space-y-1 rounded-lg border border-border p-3 text-xs text-muted-foreground">
+                <p className="font-medium text-foreground">Como os períodos são contados</p>
+                <p>Os períodos seguem o calendário: semana de segunda a domingo, quinzena de 1 a 15 e de 16 ao fim do mês, mês cheio, bimestre, trimestre, semestre ou ano. A data do primeiro envio não define o período.</p>
+                <p>O prazo conta a partir do fim do período. Só são cobrados os períodos desde a admissão do colaborador e a partir do período anterior ao cadastro deste documento.</p>
+              </div>
               {form.id && <p className="text-xs text-muted-foreground">Mudar a periodicidade muda os períodos cobrados daqui em diante; documentos já enviados continuam no dossiê.</p>}
             </div>
           )}

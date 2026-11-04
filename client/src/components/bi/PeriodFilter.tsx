@@ -5,6 +5,7 @@ import {
   AGRUPAMENTO_LABELS,
   PRESET_LABELS,
   autoAgrupamento,
+  hojeIso,
   presetRange,
   type Agrupamento,
   type Periodo,
@@ -28,8 +29,11 @@ export function PeriodFilter({ value, onChange }: { value: PeriodState; onChange
     onChange({ preset, ...range, agrupamento: autoAgrupamento(range.inicio, range.fim) });
   };
 
-  const setData = (campo: "inicio" | "fim", data: string) => {
-    if (!data) return;
+  const hoje = hojeIso();
+
+  const setData = (campo: "inicio" | "fim", dataEscolhida: string) => {
+    if (!dataEscolhida) return;
+    const data = dataEscolhida > hoje ? hoje : dataEscolhida; // o relatório não passa de hoje
     const next = { ...value, preset: "personalizado" as const, [campo]: data };
     if (next.inicio > next.fim) {
       if (campo === "inicio") next.fim = data;
@@ -53,11 +57,11 @@ export function PeriodFilter({ value, onChange }: { value: PeriodState; onChange
       </div>
       <div className="space-y-1.5 min-w-0">
         <Label htmlFor="bi-inicio">De</Label>
-        <Input id="bi-inicio" type="date" value={value.inicio} max={value.fim} onChange={(e) => setData("inicio", e.target.value)} />
+        <Input id="bi-inicio" type="date" value={value.inicio} max={hoje < value.fim ? hoje : value.fim} onChange={(e) => setData("inicio", e.target.value)} />
       </div>
       <div className="space-y-1.5 min-w-0">
         <Label htmlFor="bi-fim">Até</Label>
-        <Input id="bi-fim" type="date" value={value.fim} min={value.inicio} onChange={(e) => setData("fim", e.target.value)} />
+        <Input id="bi-fim" type="date" value={value.fim} min={value.inicio} max={hoje} onChange={(e) => setData("fim", e.target.value)} />
       </div>
       <div className="space-y-1.5 min-w-0">
         <Label htmlFor="bi-agrupamento">Agrupar gráfico</Label>

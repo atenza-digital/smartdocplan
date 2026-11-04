@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Users, Search, UserPlus, MoreVertical, UserCog, KeyRound, UserCheck, UserX, Building2, MapPin } from "lucide-react";
+import { Users, Search, UserPlus, MoreVertical, UserCog, KeyRound, UserCheck, UserX, Building2, MapPin, Eye, EyeOff, Pencil } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 
@@ -33,10 +33,36 @@ const roleColors: Record<string, string> = {
   company_viewer: "bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20",
 };
 
-type ModalType = "create" | "editRole" | "resetPassword" | "worksites" | null;
+type ModalType = "create" | "edit" | "editRole" | "resetPassword" | "worksites" | null;
+
+/** Campo de senha com botão para mostrar ou ocultar o que foi digitado. */
+function SenhaInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder?: string }) {
+  const [visivel, setVisivel] = useState(false);
+  return (
+    <div className="relative">
+      <Input
+        type={visivel ? "text" : "password"}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="new-password"
+        className="pr-10"
+      />
+      <button
+        type="button"
+        onClick={() => setVisivel((v) => !v)}
+        aria-label={visivel ? "Ocultar senha" : "Mostrar senha"}
+        className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-muted-foreground hover:text-foreground"
+      >
+        {visivel ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
 
 export default function AdminUsuarios() {
   const [search, setSearch] = useState("");
+  const [empresaFiltro, setEmpresaFiltro] = useState("todas");
   const [modal, setModal] = useState<ModalType>(null);
   const [selectedUser, setSelectedUser] = useState<any>(null);
 
@@ -44,6 +70,8 @@ export default function AdminUsuarios() {
   const [createForm, setCreateForm] = useState({
     name: "", email: "", password: "", role: "company_hr", companyId: "",
   });
+  // Form de edicao de dados (nome e e-mail)
+  const [editForm, setEditForm] = useState({ name: "", email: "" });
   // Form de edicao de papel
   const [editRole, setEditRole] = useState({ role: "", companyId: "" });
   // Form de reset de senha
@@ -57,6 +85,15 @@ export default function AdminUsuarios() {
       toast.success("Usuário criado com sucesso!");
       setModal(null);
       setCreateForm({ name: "", email: "", password: "", role: "company_hr", companyId: "" });
+      refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  const updateMutation = trpc.users.update.useMutation({
+    onSuccess: () => {
+      toast.success("Dados do usuário atualizados!");
+      setModal(null);
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -103,8 +140,9 @@ export default function AdminUsuarios() {
   });
 
   const filtered = usuarios.filter((u) =>
-    (u.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
-    (u.email ?? "").toLowerCase().includes(search.toLowerCase())
+    ((u.name ?? "").toLowerCase().includes(search.toLowerCase()) ||
+      (u.email ?? "").toLowerCase().includes(search.toLowerCase())) &&
+    (empresaFiltro === "todas" || String(u.companyId) === empresaFiltro)
   );
 
   const getEmpresaNome = (companyId: number | null) => {
@@ -135,15 +173,26 @@ export default function AdminUsuarios() {
           </Button>
         </div>
 
-        {/* Busca */}
-        <div className="relative max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            className="pl-9"
-            placeholder="Buscar por nome ou e-mail..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
+        {/* Busca e filtro por empresa */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="relative w-full sm:max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+            <Input
+              className="pl-9"
+              placeholder="Buscar por nome ou e-mail..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+            />
+          </div>
+          <Select value={empresaFiltro} onValueChange={setEmpresaFiltro}>
+            <SelectTrigger className="w-full sm:w-64" aria-label="Filtrar por empresa"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="todas">Todas as empresas</SelectItem>
+              {empresas.map((e) => (
+                <SelectItem key={e.id} value={e.id.toString()}>{e.nomeFantasia || e.razaoSocial}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {/* Secoes: Plataforma e Empresas */}
@@ -208,6 +257,14 @@ export default function AdminUsuarios() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => {
+                                setSelectedUser(u);
+                                setEditForm({ name: u.name ?? "", email: u.email ?? "" });
+                                setModal("edit");
+                              }}>
+                                <Pencil className="w-4 h-4 mr-2" />
+                                Editar dados
+                              </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => {
                                 setSelectedUser(u);
                                 setEditRole({ role: u.role, companyId: u.companyId?.toString() ?? "" });
@@ -324,7 +381,7 @@ export default function AdminUsuarios() {
             </div>
             <div className="space-y-1.5">
               <Label>Senha inicial *</Label>
-              <Input type="password" value={createForm.password} onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })} placeholder="Mínimo 6 caracteres" />
+              <SenhaInput value={createForm.password} onChange={(password) => setCreateForm({ ...createForm, password })} placeholder="Mínimo 6 caracteres" />
             </div>
             <div className="space-y-1.5">
               <Label>Papel *</Label>
@@ -365,6 +422,36 @@ export default function AdminUsuarios() {
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {createMutation.isPending ? "Criando..." : "Criar Usuário"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Modal: Editar dados (nome e e-mail) */}
+      <Dialog open={modal === "edit"} onOpenChange={(o) => !o && setModal(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar dados — {selectedUser?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <Label>Nome completo *</Label>
+              <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>E-mail *</Label>
+              <Input type="email" value={editForm.email} onChange={(e) => setEditForm({ ...editForm, email: e.target.value })} />
+              <p className="text-xs text-muted-foreground">O e-mail é o login do usuário: depois de salvar, ele entra com o e-mail novo. Ele é gravado em minúsculas.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setModal(null)}>Cancelar</Button>
+            <Button
+              onClick={() => updateMutation.mutate({ userId: selectedUser.id, name: editForm.name, email: editForm.email })}
+              disabled={!editForm.name.trim() || !editForm.email.trim() || updateMutation.isPending}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {updateMutation.isPending ? "Salvando..." : "Salvar"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -428,12 +515,7 @@ export default function AdminUsuarios() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Nova Senha</Label>
-              <Input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="Mínimo 6 caracteres"
-              />
+              <SenhaInput value={newPassword} onChange={setNewPassword} placeholder="Mínimo 6 caracteres" />
             </div>
           </div>
           <DialogFooter>

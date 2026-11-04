@@ -2,6 +2,17 @@
 
 ## [Não publicado]
 
+- Ajuda nas telas: botão “Ajuda” (?) no cabeçalho de todas as telas, com para que serve, passo a passo, dicas e quem pode fazer o quê; em Parâmetros da empresa a ajuda muda conforme a aba (a aba ativa passou a ficar no endereço).
+- Avisos: o sino atualiza sozinho a cada 30 segundos; vencido, rejeitado e atrasado aparecem em vermelho e o que vence em breve em amarelo; a equipe SmartDocPlan é avisada quando a empresa cadastra colaborador, envia ou altera documento, abre solicitação ou abre chamado (a resposta da empresa num chamado avisa o responsável e toda a equipe); a empresa é avisada quando um documento é aprovado ou alterado pela equipe.
+- Usuários (admin): olho para mostrar a senha, filtro por empresa e “Editar dados” (nome e e-mail). O e-mail é gravado sem espaços e em minúsculas e o login deixa de diferenciar maiúsculas, o que corrige quem foi cadastrado com maiúscula e não conseguia entrar.
+- BI: o período não passa mais de hoje (atalhos, campos de data e servidor).
+- Dossiê: o envio de documento troca o campo “Tipo” (texto livre sem efeito) por “Documento exigido” (preenche categoria e nome e liga ao checklist) ou “Outro documento”; o botão geral virou “Enviar outro documento”, com explicação.
+- Documentos recorrentes: texto de ajuda sobre como os períodos são contados e mensagem quando ainda não há período cobrado.
+- Parâmetros da empresa: “Requisito legal relacionado” virou “Norma da Matriz Legal (opcional)”, com explicação; validade em meses com ajuda; textos explicam a diferença entre Locais e Estrutura (Obras), sem renomear nada.
+- Nova solicitação: demissão, mudança de função, afastamento e atestado escolhem o colaborador numa lista pesquisável, que preenche CPF, nome, função e local.
+- Férias: seletores de mês e de ano no calendário.
+- Celular: Pendências, cabeçalho do Dossiê e cartões de colaboradores deixam de se sobrepor; o botão do VLibras sobe para o canto de baixo em telas pequenas.
+- Logo: arquivos gravados no caminho antigo (dist/public/uploads) voltam a ser encontrados; a lista de notificações carrega só as 30 mais recentes.
 - Correção: a separação manual das bibliotecas em arquivos próprios deixava a tela em branco no build de produção (dependência circular entre os pacotes); o Vite volta a dividir os arquivos sozinho, e as telas continuam carregando sob demanda.
 - Deploy de homologação: grava `APP_ENV=Homologação` no `.env` do servidor (ou o valor da variável `APP_ENV` do GitHub), sem sobrescrever um `APP_ENV` já definido no secret.
 - Segurança: sair da plataforma encerra a sessão também no servidor (o mesmo token deixa de valer) e trocar a senha encerra as outras sessões do usuário; quem já está logado continua logado. Nova tabela `session_revocations` (migration só de adição), limpa de hora em hora.

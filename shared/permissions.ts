@@ -29,6 +29,16 @@ export function isPlatformOperator(role?: string | null) {
   return role === "platform_admin" || role === "platform_analyst";
 }
 
+/**
+ * Destinatários da equipe SmartDocPlan (administrador e analista) de um aviso.
+ * Aviso de dado de saúde só vai a quem pode ver dado de saúde.
+ */
+export function platformTeamRecipients(rows: { id: number; role: string }[], saude = false) {
+  return rows
+    .filter((row) => isPlatformOperator(row.role) && (!saude || canAccessHealthData(row.role)))
+    .map((row) => row.id);
+}
+
 export function isPlatformAuditor(role?: string | null) {
   return role === "platform_auditor";
 }

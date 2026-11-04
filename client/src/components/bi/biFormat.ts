@@ -20,8 +20,17 @@ export const AGRUPAMENTO_LABELS: Record<Agrupamento, string> = {
 const pad = (n: number) => String(n).padStart(2, "0");
 export const toIso = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
-/** Intervalo do atalho, no fuso do navegador (semana começa na segunda). */
+/** Hoje (AAAA-MM-DD), no fuso do navegador: o relatório nunca passa desta data. */
+export const hojeIso = (hoje = new Date()) => toIso(hoje);
+
+/** Intervalo do atalho, no fuso do navegador (semana começa na segunda). O fim nunca passa de hoje. */
 export function presetRange(preset: Exclude<Preset, "personalizado">, hoje = new Date()): { inicio: string; fim: string } {
+  const range = presetRangeCompleto(preset, hoje);
+  const limite = hojeIso(hoje);
+  return { inicio: range.inicio, fim: range.fim > limite ? limite : range.fim };
+}
+
+function presetRangeCompleto(preset: Exclude<Preset, "personalizado">, hoje: Date): { inicio: string; fim: string } {
   const d = new Date(hoje.getFullYear(), hoje.getMonth(), hoje.getDate());
   if (preset === "semana") {
     const diaSemana = (d.getDay() + 6) % 7; // 0 = segunda

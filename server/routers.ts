@@ -10,6 +10,7 @@ import {
   isPlatformOperator,
   isPlatformUser,
   canManagePlatformSettings,
+  platformTeamRecipients,
 } from "@shared/permissions";
 import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -175,6 +176,54 @@ async function createNotifications(opts: {
   );
 }
 
+/** Ids da equipe SmartDocPlan ativa (administrador e analista); com `saude`, só quem vê dado de saúde. */
+async function platformTeamIds(opts: { saude?: boolean } = {}) {
+  const db = await getDb();
+  if (!db) return [];
+  const rows = await db.select({ id: users.id, role: users.role }).from(users).where(eq(users.ativo, true));
+  return platformTeamRecipients(rows, opts.saude);
+}
+
+/** Avisa a equipe SmartDocPlan de algo que a empresa fez. Nunca bloqueia a ação principal. */
+async function notifyPlatformTeam(opts: {
+  companyId: number;
+  tipo: string;
+  titulo: string;
+  mensagem?: string | null;
+  link?: string | null;
+  saude?: boolean;
+}) {
+  try {
+    await createNotifications({ ...opts, userIds: await platformTeamIds({ saude: opts.saude }) });
+  } catch { /* não bloquear a ação principal */ }
+}
+
+/** Avisa o admin e o RH da empresa; dado de saúde só vai a quem pode vê-lo. */
+async function notifyCompanyStaff(opts: {
+  companyId: number;
+  tipo: string;
+  titulo: string;
+  mensagem?: string | null;
+  link?: string | null;
+  saude?: boolean;
+}) {
+  try {
+    const db = await getDb();
+    if (!db) return;
+    const rows = await db.select({ id: users.id, role: users.role }).from(users)
+      .where(and(eq(users.companyId, opts.companyId), inArray(users.role, ["company_admin", "company_hr"]), eq(users.ativo, true)));
+    await createNotifications({ ...opts, userIds: rows.filter((row) => !opts.saude || canAccessHealthData(row.role)).map((row) => row.id) });
+  } catch { /* não bloquear a ação principal */ }
+}
+
+/** Nome da empresa para as mensagens de aviso. */
+async function companyLabel(companyId: number) {
+  const db = await getDb();
+  if (!db) return "Empresa";
+  const [row] = await db.select({ fantasia: companies.nomeFantasia, razao: companies.razaoSocial }).from(companies).where(eq(companies.id, companyId)).limit(1);
+  return row?.fantasia || row?.razao || "Empresa";
+}
+
 // Categorias do dossiê; inclui as dos requisitos por cargo (psicossocial, outros) para o checklist.
 const EMPLOYEE_DOC_CATEGORIES = ["pessoal","contratual","exame_medico","treinamento","psicossocial","advertencia","afastamento","atestado","opcional","outros"] as const;
 
@@ -277,11 +326,9 @@ async function notifyTicketMessage(
       });
       return;
     }
-    const destinatarios = ticket.responsavelId
-      ? [ticket.responsavelId]
-      : (await db!.select({ id: users.id }).from(users)
-          .where(and(or(eq(users.role, "platform_admin"), eq(users.role, "platform_analyst")), eq(users.ativo, true))))
-          .map(item => item.id);
+    // Responsável (se houver) e toda a equipe: antes, com responsável definido, só ele era avisado.
+    const equipe = await platformTeamIds();
+    const destinatarios = ticket.responsavelId ? [ticket.responsavelId, ...equipe] : equipe;
     await createNotifications({
       userIds: destinatarios,
       companyId: ticket.companyId,
@@ -638,7 +685,8 @@ const notificationsRouter = router({
       .select()
       .from(userNotifications)
       .where(eq(userNotifications.userId, ctx.user.id))
-      .orderBy(desc(userNotifications.createdAt));
+      .orderBy(desc(userNotifications.createdAt))
+      .limit(30); // a tela mostra os 8 mais recentes e consulta a cada 30 s
   }),
 
   unreadCount: protectedProcedure.query(async ({ ctx }) => {
@@ -753,6 +801,15 @@ const companyDocumentsRouter = router({
       entidade: "company_documents",
       dadosDepois: { tipo: input.tipo, nome: input.nome, fileNome: input.fileNome },
     });
+    if (!mensal && !isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: input.companyId,
+        tipo: "documento_empresa_enviado",
+        titulo: "Documento da empresa enviado",
+        mensagem: `${await companyLabel(input.companyId)}: "${input.nome.trim()}".`,
+        link: `/admin/empresas/${input.companyId}`,
+      });
+    }
     return { success: true, fileUrl };
   }),
 
@@ -883,6 +940,15 @@ const employeesRouter = router({
       entidade: "employees",
       dadosDepois: { nome: input.nome.trim(), cpf: formatCpf(input.cpf), positionId: input.positionId ?? null, worksiteId: input.worksiteId ?? null },
     });
+    if (created && !isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: input.companyId,
+        tipo: "colaborador_novo",
+        titulo: "Novo colaborador cadastrado",
+        mensagem: `${await companyLabel(input.companyId)}: ${input.nome.trim()}.`,
+        link: `/admin/colaboradores/${created.id}`,
+      });
+    }
     return { success: true };
   }),
 
@@ -1054,7 +1120,18 @@ const requestsRouter = router({
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
     assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode abrir solicitações.");
     assertAccess(!isHealthCategory(input.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
-    return createRequestWithRequirements(input, ctx.user.id);
+    const result = await createRequestWithRequirements(input, ctx.user.id);
+    if (!isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: input.companyId,
+        tipo: "solicitacao_nova",
+        titulo: "Nova solicitação de RH",
+        mensagem: `${await companyLabel(input.companyId)} abriu uma solicitação (${input.tipo}).`,
+        link: "/admin/solicitacoes",
+        saude: isHealthCategory(input.tipo),
+      });
+    }
+    return result;
   }),
 
   updateStatus: protectedProcedure.input(z.object({
@@ -1217,8 +1294,17 @@ const ticketsRouter = router({
     assertAccess(canCreateTickets(ctx.user.role), "Seu perfil não pode abrir chamados.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
-    await db.insert(tickets).values({ ...input, criadoPor: ctx.user.id });
+    const [novo] = await db.insert(tickets).values({ ...input, criadoPor: ctx.user.id }).returning({ id: tickets.id });
     await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: "criou_chamado", entidade: "tickets", dadosDepois: { tipo: input.tipo, titulo: input.titulo } });
+    if (!isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: input.companyId,
+        tipo: "chamado_novo",
+        titulo: novo ? `Novo chamado #${novo.id}` : "Novo chamado",
+        mensagem: `${await companyLabel(input.companyId)}: "${input.titulo}" (prioridade ${input.prioridade}).`,
+        link: "/admin/chamados",
+      });
+    }
     return { success: true };
   }),
 
@@ -1815,7 +1901,7 @@ const auditRouter = router({
 const usersRouter = router({
   create: superAdminProcedure.input(z.object({
     name: z.string().min(1),
-    email: z.string().email(),
+    email: z.string().trim().toLowerCase().email(),
     password: z.string().min(6),
     role: z.enum(["platform_admin","platform_analyst","platform_auditor","company_admin","company_hr","company_manager","company_viewer"]),
     companyId: z.number().optional(),
@@ -1910,6 +1996,23 @@ const usersRouter = router({
       role: users.role, companyId: users.companyId, createdAt: users.createdAt,
       ativo: users.ativo,
     }).from(users).where(eq(users.companyId, input.companyId));
+  }),
+
+  /** Edita nome e e-mail (o e-mail é o login). O e-mail é gravado em minúsculas e não pode repetir. */
+  update: superAdminProcedure.input(z.object({
+    userId: z.number(),
+    name: z.string().trim().min(1, "Informe o nome."),
+    email: z.string().trim().toLowerCase().email("Informe um e-mail válido."),
+  })).mutation(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [atual] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+    if (!atual) throw new Error("Usuário não encontrado.");
+    const existing = await getUserByEmail(input.email);
+    if (existing && existing.id !== input.userId) throw new Error("E-mail já cadastrado.");
+    await db.update(users).set({ name: input.name, email: input.email, updatedAt: new Date() } as any).where(eq(users.id, input.userId));
+    await insertAuditLog({ userId: ctx.user.id, companyId: atual.companyId ?? null, acao: "editou_usuario", entidade: "users", entidadeId: input.userId, dadosDepois: { nome: input.name, email: input.email } });
+    return { success: true };
   }),
 
   updateRole: superAdminProcedure.input(z.object({
@@ -2204,6 +2307,15 @@ const employeeDocsRouter = router({
         mensagem: `O documento "${doc.nome}" foi rejeitado: ${motivo}`,
         link: `/empresa/colaboradores/${doc.employeeId}`,
       });
+    } else {
+      await notifyCompanyStaff({
+        companyId: doc.companyId,
+        tipo: "documento_aprovado",
+        titulo: "Documento aprovado",
+        mensagem: `O documento "${doc.nome}" foi aprovado pela equipe SmartDocPlan.`,
+        link: `/empresa/colaboradores/${doc.employeeId}`,
+        saude: isHealthCategory(doc.categoria),
+      });
     }
     return { success: true };
   }),
@@ -2291,6 +2403,17 @@ const employeeDocsRouter = router({
       entidadeId: createdDoc?.id ?? null,
       dadosDepois: { colaboradorId: input.employeeId, categoria: input.categoria, nome: input.nome, arquivo: fileNome ?? null },
     });
+    // Documento recorrente não passa por validação; os demais entram na fila da equipe.
+    if (!mensal && !isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: input.companyId,
+        tipo: "documento_enviado",
+        titulo: "Documento aguardando validação",
+        mensagem: `${await companyLabel(input.companyId)}: "${input.nome}" de ${employee.nome}.`,
+        link: "/admin/validacao-documentos",
+        saude: isHealthCategory(input.categoria),
+      });
+    }
     return { success: true, fileUrl };
   }),
 
@@ -2352,6 +2475,27 @@ const employeeDocsRouter = router({
       entidadeId: doc.id,
       dadosDepois: { documentoId: doc.id, categoria, nome: payload.nome, versao: payload.versao ?? doc.versao, arquivo: input.fileNome ?? null },
     });
+    const voltouParaValidacao = !doc.recurringTypeId && (saved || input.dataEmissao !== undefined || input.validade !== undefined);
+    if (voltouParaValidacao && !isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: doc.companyId,
+        tipo: "documento_enviado",
+        titulo: "Documento alterado aguardando validação",
+        mensagem: `${await companyLabel(doc.companyId)}: "${payload.nome}".`,
+        link: "/admin/validacao-documentos",
+        saude: isHealthCategory(categoria),
+      });
+    } else if (voltouParaValidacao) {
+      // A própria equipe alterou o documento: a empresa fica sabendo.
+      await notifyCompanyStaff({
+        companyId: doc.companyId,
+        tipo: "documento_alterado",
+        titulo: "Documento alterado pela SmartDocPlan",
+        mensagem: `O documento "${payload.nome}" foi atualizado pela equipe SmartDocPlan.`,
+        link: `/empresa/colaboradores/${doc.employeeId}`,
+        saude: isHealthCategory(categoria),
+      });
+    }
     return { success: true };
   }),
 

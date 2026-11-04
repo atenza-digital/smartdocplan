@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useLocation } from "wouter";
 import { Bell } from "lucide-react";
 import { trpc } from "@/lib/trpc";
+import { notificationSeverity } from "@shared/notificationSeverity";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -13,22 +14,29 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+/** Cor do item pela urgência: vermelho (vencido, rejeitado, atrasado) e amarelo (a vencer). */
+const SEVERITY_CLASS = {
+  urgente: "border-l-4 border-red-500 bg-red-500/5",
+  atencao: "border-l-4 border-amber-500 bg-amber-500/5",
+  info: "border-l-4 border-transparent",
+} as const;
+
+// Atualiza sozinho: sem isso o aviso só aparecia ao trocar de tela ou voltar o foco à janela.
+const POLLING = { refetchInterval: 30_000, refetchIntervalInBackground: false } as const;
+
 export default function NotificationCenter() {
   const [, navigate] = useLocation();
-  const { data: items = [], refetch } = trpc.notifications.list.useQuery();
-  const { data: unread } = trpc.notifications.unreadCount.useQuery();
+  const utils = trpc.useUtils();
+  const { data: items = [], refetch } = trpc.notifications.list.useQuery(undefined, POLLING);
+  const { data: unread } = trpc.notifications.unreadCount.useQuery(undefined, POLLING);
 
   const unreadCount = unread?.total ?? 0;
-  const markReadMutation = trpc.notifications.markRead.useMutation({
-    onSuccess: () => {
-      refetch();
-    },
-  });
-  const markAllReadMutation = trpc.notifications.markAllRead.useMutation({
-    onSuccess: () => {
-      refetch();
-    },
-  });
+  const refreshAll = () => {
+    refetch();
+    utils.notifications.unreadCount.invalidate();
+  };
+  const markReadMutation = trpc.notifications.markRead.useMutation({ onSuccess: refreshAll });
+  const markAllReadMutation = trpc.notifications.markAllRead.useMutation({ onSuccess: refreshAll });
 
   const latestItems = useMemo(() => items.slice(0, 8), [items]);
 
@@ -74,7 +82,7 @@ export default function NotificationCenter() {
           latestItems.map((item) => (
             <DropdownMenuItem
               key={item.id}
-              className="block cursor-pointer space-y-1 p-3"
+              className={`block cursor-pointer space-y-1 p-3 ${SEVERITY_CLASS[notificationSeverity(item.tipo)]}`}
               onClick={() => handleOpenItem(item.id, item.link)}
             >
               <div className="flex items-center justify-between gap-2">

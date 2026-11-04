@@ -21,6 +21,23 @@ import {
 } from "../shared/permissions";
 import { auditClientFields } from "./_core/clientInfo";
 
+/**
+ * Caminho do arquivo no volume atual; se não estiver lá, tenta o caminho antigo (dist/public/uploads) de versões
+ * anteriores. Devolve null se o caminho pedido escapar da pasta; lança se o arquivo não existir em nenhum dos dois.
+ */
+async function existingFilePath(path: string, requestPath: string) {
+  try {
+    await access(path);
+    return path;
+  } catch {
+    const legacyRoot = resolve("dist/public/uploads");
+    const legacy = resolve(legacyRoot, `.${decodeURIComponent(requestPath)}`);
+    if (!legacy.startsWith(legacyRoot + sep)) return null;
+    await access(legacy);
+    return legacy;
+  }
+}
+
 // Keep legacy URLs working, but never allow them to fall through to static serving.
 export function registerDocumentAccess(app: Express) {
   app.use("/uploads", async (req, res) => {
@@ -41,7 +58,7 @@ export function registerDocumentAccess(app: Express) {
       }
       const fileUrl = `/uploads${decodeURIComponent(req.path)}`;
       const root = uploadRoot();
-      let path = resolve(root, `.${decodeURIComponent(req.path)}`);
+      const path = resolve(root, `.${decodeURIComponent(req.path)}`);
       if (!path.startsWith(root + sep)) {
         res.sendStatus(404);
         return;
@@ -82,9 +99,13 @@ export function registerDocumentAccess(app: Express) {
           res.sendStatus(404);
           return;
         }
-        await access(path);
+        const logoPath = await existingFilePath(path, req.path);
+        if (!logoPath) {
+          res.sendStatus(404);
+          return;
+        }
         res.set("Cache-Control", "private, max-age=300");
-        res.sendFile(path, { dotfiles: "deny" });
+        res.sendFile(logoPath, { dotfiles: "deny" });
         return;
       }
       const vacationFiles = await db
@@ -112,16 +133,10 @@ export function registerDocumentAccess(app: Express) {
         res.sendStatus(404);
         return;
       }
-      try {
-        await access(path);
-      } catch {
-        const legacyRoot = resolve("dist/public/uploads");
-        path = resolve(legacyRoot, `.${decodeURIComponent(req.path)}`);
-        if (!path.startsWith(legacyRoot + sep)) {
-          res.sendStatus(404);
-          return;
-        }
-        await access(path);
+      const filePath = await existingFilePath(path, req.path);
+      if (!filePath) {
+        res.sendStatus(404);
+        return;
       }
       await db.insert(auditLogs).values({
         ...auditClientFields(),
@@ -131,7 +146,7 @@ export function registerDocumentAccess(app: Express) {
         entity: "documento",
         details: JSON.stringify({ arquivo: fileUrl, sensivel: sensitive }),
       });
-      res.sendFile(path, { dotfiles: "deny" });
+      res.sendFile(filePath, { dotfiles: "deny" });
     } catch {
       res.sendStatus(404);
     }
