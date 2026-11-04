@@ -29,7 +29,7 @@ import { z } from "zod";
 import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
-  positions, worksites, companyDocuments, employeeDocuments,
+  positions, worksites, companyDocuments, employeeDocuments, documentChangeRequests,
   legalRequirements, positionRequirements, recurringDocumentTypes, healthCampaigns, users, documentTypeTemplates, requestDocumentUploads,
   companyUpdateRequests, userNotifications, ticketMessages, userWorksites
 } from "../drizzle/schema";
@@ -803,6 +803,38 @@ async function retireCompanyPending(db: NonNullable<Awaited<ReturnType<typeof ge
   ));
 }
 
+/**
+ * Exclusão lógica do documento da empresa inteiro: todas as versões do mesmo tipo fixo (ou do mesmo
+ * recorrente e período), para uma versão aprovada mais antiga não voltar a valer. Os registros e arquivos ficam guardados.
+ */
+async function excluirDocumentoEmpresa(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, doc: CompanyDocRow) {
+  const mesmoDocumento = doc.recurringTypeId
+    ? and(eq(companyDocuments.recurringTypeId, doc.recurringTypeId), eq(companyDocuments.competencia, doc.competencia ?? ""))
+    : and(sql`${companyDocuments.recurringTypeId} IS NULL`, eq(companyDocuments.tipo, doc.tipo));
+  await db.update(companyDocuments).set({ status: "excluido", updatedAt: new Date() }).where(and(
+    eq(companyDocuments.companyId, doc.companyId),
+    mesmoDocumento,
+    ne(companyDocuments.status, "excluido"),
+  ));
+}
+
+/** Exclusão lógica do documento do colaborador e das versões novas dele ainda não aprovadas. */
+async function excluirDocumentoColaborador(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, docId: number) {
+  await db.update(employeeDocuments).set({ status: "excluido", updatedAt: new Date() }).where(and(
+    ne(employeeDocuments.status, "excluido"),
+    or(
+      eq(employeeDocuments.id, docId),
+      and(eq(employeeDocuments.substituiDocId, docId), inArray(employeeDocuments.status, NOT_IN_FORCE_STATUSES)),
+    ),
+  ));
+}
+
+/** Documento excluído direto pela equipe: o pedido de exclusão pendente dele fica como aprovado. */
+async function encerrarPedidosDeExclusao(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, alvo: "colaborador" | "empresa", documentoId: number, userId: number) {
+  await db.update(documentChangeRequests).set({ status: "aprovado", analisadoPor: userId, analisadoAt: new Date(), updatedAt: new Date() })
+    .where(and(eq(documentChangeRequests.alvo, alvo), eq(documentChangeRequests.documentoId, documentoId), eq(documentChangeRequests.status, "pendente")));
+}
+
 const companyDocumentsRouter = router({
   listByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
@@ -1073,9 +1105,11 @@ const companyDocumentsRouter = router({
     const doc = result[0];
     if (!doc || doc.status === "excluido") throw new Error("Documento da empresa não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    // Só a equipe SmartDocPlan exclui direto; a empresa pede a exclusão, que a equipe aprova.
+    assertAccess(isPlatformOperator(ctx.user.role), "Seu perfil não pode excluir direto: peça a exclusão, que a equipe SmartDocPlan aprova.");
     // Exclusão lógica: o registro e o arquivo são mantidos para histórico e auditoria.
-    await db.update(companyDocuments).set({ status: "excluido", updatedAt: new Date() }).where(eq(companyDocuments.id, input.id));
+    await excluirDocumentoEmpresa(db, doc);
+    await encerrarPedidosDeExclusao(db, "empresa", doc.id, ctx.user.id);
     await insertAuditLog({
       userId: ctx.user.id,
       companyId: doc.companyId,
@@ -2861,14 +2895,16 @@ const employeeDocsRouter = router({
   }),
 
   delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode excluir documentos de colaboradores.");
+    // Só a equipe SmartDocPlan exclui direto; a empresa pede a exclusão, que a equipe aprova.
+    assertAccess(isPlatformOperator(ctx.user.role), "Seu perfil não pode excluir direto: peça a exclusão, que a equipe SmartDocPlan aprova.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
     assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     // Exclusão lógica: o registro e o arquivo são mantidos para histórico e auditoria.
-    await db.update(employeeDocuments).set({ status: "excluido", updatedAt: new Date() }).where(eq(employeeDocuments.id, doc.id));
+    await excluirDocumentoColaborador(db, doc.id);
+    await encerrarPedidosDeExclusao(db, "colaborador", doc.id, ctx.user.id);
     await recalcCompliance(db, [doc.employeeId]);
     await insertAuditLog({
       userId: ctx.user.id,
@@ -2883,6 +2919,181 @@ const employeeDocsRouter = router({
 });
 
 // â”€â”€â”€ DASHBOARD ROUTER â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+/**
+ * Pedidos de exclusão de documentos: a empresa pede (com motivo), a equipe SmartDocPlan aprova ou rejeita.
+ * Aprovar faz a exclusão lógica; rejeitar mantém o documento.
+ */
+const deletionRequestsRouter = router({
+  create: protectedProcedure.input(z.object({
+    alvo: z.enum(["colaborador", "empresa"]),
+    documentoId: z.number(),
+    motivo: z.string().trim().min(5, "Explique o motivo da exclusão.").max(1000),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageCompanyData(ctx.user.role) && !isPlatformUser(ctx.user.role), "Só o Admin e o RH da empresa pedem exclusão; a equipe SmartDocPlan exclui direto.");
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    let alvo: { companyId: number; employeeId: number | null; nome: string; categoria: string | null; saude: boolean };
+    if (input.alvo === "colaborador") {
+      const doc = await getEmployeeDocByIdOrThrow(db, input.documentoId);
+      const saude = isHealthCategory(doc.categoria);
+      assertAccess(!saude || canSendHealthDocuments(ctx.user.role), "Acesso a dados de saúde restrito.");
+      alvo = { companyId: doc.companyId, employeeId: doc.employeeId, nome: doc.nome, categoria: doc.categoria, saude };
+    } else {
+      const [doc] = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.documentoId)).limit(1);
+      if (!doc || doc.status === "excluido") throw new Error("Documento da empresa não encontrado");
+      alvo = { companyId: doc.companyId, employeeId: null, nome: doc.nome, categoria: null, saude: false };
+    }
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, alvo.companyId), "Acesso negado");
+    let criado: { id: number } | undefined;
+    try {
+      [criado] = await db.insert(documentChangeRequests).values({
+        companyId: alvo.companyId,
+        alvo: input.alvo,
+        documentoId: input.documentoId,
+        employeeId: alvo.employeeId,
+        documentoNome: alvo.nome,
+        categoria: alvo.categoria,
+        motivo: input.motivo,
+        solicitadoPor: ctx.user.id,
+      }).returning({ id: documentChangeRequests.id });
+    } catch (error: any) {
+      // Índice único parcial: um pedido pendente por documento.
+      if (error?.code === "23505" || error?.cause?.code === "23505") throw new Error("Já existe um pedido de exclusão pendente para este documento.");
+      throw error;
+    }
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: alvo.companyId, acao: "pediu_exclusao_documento", entidade: "document_change_requests",
+      entidadeId: criado?.id ?? null, dadosDepois: { alvo: input.alvo, documentoId: input.documentoId, nome: alvo.nome, motivo: alvo.saude ? MOTIVO_SAUDE_RESTRITO : input.motivo },
+    });
+    await notifyPlatformTeam({
+      companyId: alvo.companyId,
+      tipo: "pedido_exclusao_documento",
+      titulo: "Pedido de exclusão de documento",
+      mensagem: `${await companyLabel(alvo.companyId)}: "${alvo.nome}".`,
+      link: "/admin/validacao-documentos?aba=exclusao",
+      saude: alvo.saude,
+    });
+    return { success: true, id: criado?.id ?? null };
+  }),
+
+  /** A empresa desiste do pedido ainda pendente. */
+  cancel: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageCompanyData(ctx.user.role) && !isPlatformUser(ctx.user.role), "Acesso negado");
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [pedido] = await db.select().from(documentChangeRequests).where(eq(documentChangeRequests.id, input.id)).limit(1);
+    if (!pedido) throw new Error("Pedido não encontrado.");
+    assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, pedido.companyId), "Acesso negado");
+    if (pedido.status !== "pendente") throw new Error("Este pedido já foi decidido.");
+    await db.update(documentChangeRequests).set({ status: "cancelado", updatedAt: new Date() }).where(eq(documentChangeRequests.id, pedido.id));
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: pedido.companyId, acao: "cancelou_pedido_exclusao", entidade: "document_change_requests",
+      entidadeId: pedido.id, dadosDepois: { alvo: pedido.alvo, documentoId: pedido.documentoId, nome: pedido.documentoNome },
+    });
+    return { success: true };
+  }),
+
+  /** Pedidos pendentes da empresa (selo "Exclusão solicitada" nas telas). */
+  pendingByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    const db = await getDb();
+    if (!db) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    return db.select({ id: documentChangeRequests.id, alvo: documentChangeRequests.alvo, documentoId: documentChangeRequests.documentoId })
+      .from(documentChangeRequests)
+      .where(and(eq(documentChangeRequests.companyId, input.companyId), eq(documentChangeRequests.status, "pendente")));
+  }),
+
+  /** Fila da equipe SmartDocPlan: pedidos pendentes, dos mais antigos para os mais recentes. */
+  pendingReview: protectedProcedure.query(async ({ ctx }) => {
+    assertAccess(isPlatformUser(ctx.user.role), "Acesso negado");
+    const db = await getDb();
+    if (!db) return [];
+    const rows = await db.select({
+      id: documentChangeRequests.id,
+      alvo: documentChangeRequests.alvo,
+      documentoId: documentChangeRequests.documentoId,
+      employeeId: documentChangeRequests.employeeId,
+      documentoNome: documentChangeRequests.documentoNome,
+      categoria: documentChangeRequests.categoria,
+      motivo: documentChangeRequests.motivo,
+      createdAt: documentChangeRequests.createdAt,
+      companyId: documentChangeRequests.companyId,
+      empresaNome: companies.razaoSocial,
+      colaboradorNome: employees.nome,
+    })
+      .from(documentChangeRequests)
+      .innerJoin(companies, eq(companies.id, documentChangeRequests.companyId))
+      .leftJoin(employees, eq(employees.id, documentChangeRequests.employeeId))
+      .where(eq(documentChangeRequests.status, "pendente"))
+      .orderBy(documentChangeRequests.createdAt);
+    // Pedido de documento de saúde só aparece para quem pode ver dado de saúde.
+    const visiveis = rows.filter((row) => !isHealthCategory(row.categoria ?? "") || canAccessHealthData(ctx.user.role));
+    const idsColaborador = visiveis.filter((row) => row.alvo === "colaborador").map((row) => row.documentoId);
+    const idsEmpresa = visiveis.filter((row) => row.alvo === "empresa").map((row) => row.documentoId);
+    const arquivosColaborador = idsColaborador.length
+      ? await db.select({ id: employeeDocuments.id, fileUrl: employeeDocuments.fileUrl }).from(employeeDocuments).where(inArray(employeeDocuments.id, idsColaborador))
+      : [];
+    const arquivosEmpresa = idsEmpresa.length
+      ? await db.select({ id: companyDocuments.id, fileUrl: companyDocuments.fileUrl }).from(companyDocuments).where(inArray(companyDocuments.id, idsEmpresa))
+      : [];
+    return visiveis.map((row) => ({
+      ...row,
+      fileUrl: (row.alvo === "colaborador" ? arquivosColaborador : arquivosEmpresa).find((arquivo) => arquivo.id === row.documentoId)?.fileUrl ?? null,
+    }));
+  }),
+
+  /** Decisão da equipe SmartDocPlan: aprovar exclui o documento (exclusão lógica); rejeitar o mantém. */
+  decide: protectedProcedure.input(z.object({
+    id: z.number(),
+    decisao: z.enum(["aprovar", "rejeitar"]),
+    motivo: z.string().optional(),
+  })).mutation(async ({ ctx, input }) => {
+    assertAccess(canManageRequestWorkflow(ctx.user.role), "Só a equipe SmartDocPlan decide pedidos de exclusão.");
+    const motivo = normalizeOptionalText(input.motivo);
+    if (input.decisao === "rejeitar" && !motivo) throw new Error("Informe o motivo da rejeição.");
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [pedido] = await db.select().from(documentChangeRequests).where(eq(documentChangeRequests.id, input.id)).limit(1);
+    if (!pedido) throw new Error("Pedido não encontrado.");
+    if (pedido.status !== "pendente") throw new Error("Este pedido já foi decidido ou cancelado.");
+    const saude = isHealthCategory(pedido.categoria ?? "");
+    assertAccess(!saude || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    if (input.decisao === "aprovar") {
+      if (pedido.alvo === "colaborador") {
+        await excluirDocumentoColaborador(db, pedido.documentoId);
+        if (pedido.employeeId) await recalcCompliance(db, [pedido.employeeId]);
+      } else {
+        const [doc] = await db.select().from(companyDocuments).where(eq(companyDocuments.id, pedido.documentoId)).limit(1);
+        if (doc) await excluirDocumentoEmpresa(db, doc);
+      }
+    }
+    await db.update(documentChangeRequests).set({
+      status: input.decisao === "aprovar" ? "aprovado" : "rejeitado",
+      analisadoPor: ctx.user.id,
+      analisadoAt: new Date(),
+      motivoDecisao: motivo,
+      updatedAt: new Date(),
+    }).where(eq(documentChangeRequests.id, pedido.id));
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: pedido.companyId,
+      acao: input.decisao === "aprovar" ? "aprovou_exclusao_documento" : "rejeitou_exclusao_documento",
+      entidade: "document_change_requests", entidadeId: pedido.id,
+      dadosDepois: { alvo: pedido.alvo, documentoId: pedido.documentoId, nome: pedido.documentoNome, motivo: motivo ?? null },
+    });
+    await notifyCompanyStaff({
+      companyId: pedido.companyId,
+      tipo: input.decisao === "aprovar" ? "exclusao_aprovada" : "exclusao_rejeitada",
+      titulo: input.decisao === "aprovar" ? "Exclusão de documento aprovada" : "Exclusão de documento rejeitada",
+      mensagem: input.decisao === "aprovar"
+        ? `O documento "${pedido.documentoNome}" foi excluído, conforme o pedido.`
+        : `O pedido de exclusão de "${pedido.documentoNome}" foi rejeitado: ${motivo}`,
+      link: pedido.alvo === "colaborador" && pedido.employeeId ? `/empresa/colaboradores/${pedido.employeeId}` : "/empresa/documentos",
+      saude,
+    });
+    return { success: true };
+  }),
+});
+
 const dashboardRouter = router({
   // Dashboard da empresa
   company: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
@@ -3169,6 +3380,7 @@ export const appRouter = router({
   companies: companiesRouter,
   companyUpdateRequests: companyUpdateRequestsRouter,
   companyDocuments: companyDocumentsRouter,
+  deletionRequests: deletionRequestsRouter,
   employees: employeesRouter,
   notifications: notificationsRouter,
   requests: requestsRouter,

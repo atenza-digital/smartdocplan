@@ -2,6 +2,8 @@
 
 ## [Não publicado]
 
+- Exclusão de documento só por pedido aprovado: no dossiê e em Documentos da Empresa, o Admin e o RH da empresa passam a “Pedir exclusão” (com motivo; o Admin da empresa também para documento de saúde). O documento continua no lugar com o selo “Exclusão solicitada” (e opção de cancelar) até a equipe SmartDocPlan aprovar ou rejeitar, na nova aba “Pedidos de exclusão” da validação; a empresa é avisada no sino. A equipe continua excluindo direto. Nova tabela `document_change_requests` (migration só cria).
+- Excluir passa a tirar o documento inteiro: no colaborador, junto com a nova versão ainda em validação; na empresa, todas as versões do tipo (ou do recorrente e período), para uma versão antiga não voltar a valer. Os registros ficam guardados.
 - Documentos da empresa passam pela validação da equipe SmartDocPlan: o envio da empresa entra “Em validação” e só vale depois de aprovado; a versão aprovada anterior continua valendo até lá, e a rejeição (com motivo) não a derruba. Mudar as datas de um documento aprovado também gera nova versão. O envio da equipe já entra aprovado. Contadores, alertas de vencimento e BI passam a contar só a versão aprovada (novo quadro “Em validação”). Migration só adiciona colunas; os documentos existentes ficam aprovados.
 - Exclusão de documento da empresa passa a ser lógica: o registro e o arquivo ficam guardados (a equipe ainda abre o arquivo; a empresa não).
 - Documentos recorrentes: nova opção “Exige validação da SmartDocPlan” no cadastro (padrão: marcada, inclusive nos tipos já cadastrados); com ela, o envio do colaborador e da empresa entra em validação. Nova ação “Substituir” na grade: o arquivo novo vira nova versão e o aprovado vale até a decisão.

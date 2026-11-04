@@ -70,6 +70,16 @@ describe("Recorrentes: situação do período", () => {
   });
 });
 
+describe("Migration da Etapa 3b-2", () => {
+  it("registrada depois da 3b-1, só cria a tabela de pedidos e índices, com um pedido pendente por documento", () => {
+    expect(MIGRATIONS.indexOf("20261106_pedidos_exclusao.sql")).toBeGreaterThan(MIGRATIONS.indexOf("20261105_validacao_documentos_empresa.sql"));
+    const sql = readFileSync(resolve("drizzle/migrations", "20261106_pedidos_exclusao.sql"), "utf8");
+    const codigo = sql.split("\n").filter((linha) => !linha.trim().startsWith("--")).join("\n").toUpperCase();
+    expect(codigo).not.toMatch(/DROP\s+(TABLE|COLUMN|INDEX)|DELETE\s+FROM|TRUNCATE|UPDATE\s|ALTER\s+TABLE/);
+    expect(sql).toMatch(/CREATE UNIQUE INDEX IF NOT EXISTS document_change_requests_pendente_uq[\s\S]*WHERE status = 'pendente'/);
+  });
+});
+
 describe("Migration da Etapa 3b-1", () => {
   it("registrada depois da 3a, só adiciona colunas e índice, com padrões que mantêm os dados atuais", () => {
     expect(MIGRATIONS.indexOf("20261105_validacao_documentos_empresa.sql")).toBeGreaterThan(MIGRATIONS.indexOf("20261104_documento_versoes.sql"));

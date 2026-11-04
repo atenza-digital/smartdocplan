@@ -11,7 +11,8 @@ import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, P
 import { toast } from "sonner";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
 import { COMPANY_DOCUMENT_TYPES, splitCompanyDocuments } from "@shared/companyDocuments";
-import { isPlatformUser } from "@shared/permissions";
+import { isPlatformOperator, isPlatformUser } from "@shared/permissions";
+import { DeletionRequestDialog, type DeletionTarget } from "@/components/DeletionRequestDialog";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { formatDateOnlyBr, getDocumentDateBounds, getDocumentDatesError, getValidityState } from "@shared/formValidation";
 
@@ -83,6 +84,18 @@ export default function CompanyDocumentsManager({
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadForm, setUploadForm] = useState<UploadForm>({ tipo: "", nome: "", dataEmissao: "", validade: "", observacao: "" });
   const [editForm, setEditForm] = useState<EditForm | null>(null);
+  // Só a equipe SmartDocPlan exclui direto; a empresa pede a exclusão.
+  const podeExcluirDireto = isPlatformOperator(user?.role);
+  const [pedidoTarget, setPedidoTarget] = useState<DeletionTarget | null>(null);
+  const { data: pedidosExclusao = [] } = trpc.deletionRequests.pendingByCompany.useQuery({ companyId }, { enabled: companyId > 0 });
+  const pedidosPorDoc = new Map(pedidosExclusao.filter((p) => p.alvo === "empresa").map((p) => [p.documentoId, p.id]));
+  const cancelPedidoMutation = trpc.deletionRequests.cancel.useMutation({
+    onSuccess: () => {
+      toast.success("Pedido de exclusão cancelado.");
+      utils.deletionRequests.pendingByCompany.invalidate({ companyId });
+    },
+    onError: (error) => toast.error(error.message),
+  });
 
   const createMutation = trpc.companyDocuments.create.useMutation({
     onSuccess: async (result) => {
@@ -113,6 +126,7 @@ export default function CompanyDocumentsManager({
   const deleteMutation = trpc.companyDocuments.delete.useMutation({
     onSuccess: async () => {
       toast.success("Documento da empresa removido.");
+      await utils.deletionRequests.pendingByCompany.invalidate({ companyId });
       await utils.companyDocuments.listByCompany.invalidate({ companyId });
       await utils.companyDocuments.statsByCompany.invalidate({ companyId });
     },
@@ -285,24 +299,41 @@ export default function CompanyDocumentsManager({
                           >
                             <Edit className="h-4 w-4" />
                           </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => {
-                              if (window.confirm("Deseja remover este arquivo da empresa?")) {
-                                deleteMutation.mutate({ id: latest.id });
-                              }
-                            }}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {podeExcluirDireto || !pedidosPorDoc.has(latest.id) ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              aria-label={podeExcluirDireto ? `Excluir ${item.nome}` : `Pedir exclusão de ${item.nome}`}
+                              title={podeExcluirDireto ? "Excluir" : "Pedir exclusão"}
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => {
+                                if (!podeExcluirDireto) {
+                                  setPedidoTarget({ alvo: "empresa", documentoId: latest.id, nome: latest.nome });
+                                } else if (window.confirm("Excluir este documento? Todas as versões dele saem da lista (os registros ficam guardados).")) {
+                                  deleteMutation.mutate({ id: latest.id });
+                                }
+                              }}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                         </>
                       ) : null}
                     </div>
                   )}
                 </div>
+
+                {latest && pedidosPorDoc.has(latest.id) ? (
+                  <p className="flex flex-wrap items-center gap-2 rounded-xl bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                    Exclusão solicitada: aguardando a decisão da equipe SmartDocPlan.
+                    {canEdit && !podeExcluirDireto ? (
+                      <button type="button" disabled={cancelPedidoMutation.isPending} onClick={() => cancelPedidoMutation.mutate({ id: pedidosPorDoc.get(latest.id)! })} className="font-medium underline">
+                        Cancelar pedido
+                      </button>
+                    ) : null}
+                  </p>
+                ) : null}
 
                 {item.nova ? (
                   <div className={`rounded-xl border p-3 text-sm ${item.nova.status === "rejeitado" ? "border-red-500/30 bg-red-500/5" : "border-blue-500/30 bg-blue-500/5"}`}>
@@ -374,6 +405,12 @@ export default function CompanyDocumentsManager({
           </CardContent>
         </Card>
       ) : null}
+
+      <DeletionRequestDialog
+        target={pedidoTarget}
+        onClose={() => setPedidoTarget(null)}
+        onDone={() => { setPedidoTarget(null); utils.deletionRequests.pendingByCompany.invalidate({ companyId }); }}
+      />
 
       <Dialog open={!!uploadTarget} onOpenChange={(open) => !open && setUploadTarget(null)}>
         <DialogContent>
