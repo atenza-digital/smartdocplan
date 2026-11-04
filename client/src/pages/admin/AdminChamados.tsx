@@ -52,6 +52,7 @@ const tipoLabels: Record<string, string> = {
   criacao_usuario: "Criação de Usuário",
   bloqueio_usuario: "Bloqueio de Usuário",
   alteracao_acesso: "Alteração de Acesso",
+  alteracao_cadastral: "Alteração cadastral",
   suporte_tecnico: "Suporte Técnico",
   duvida: "Dúvida",
   outros: "Outros",

@@ -9,6 +9,8 @@ export type LocalUser = {
   email: string | null;
   role: string;
   companyId: number | null;
+  /** Senha provisória: a pessoa precisa criar a própria no primeiro acesso. */
+  mustChangePassword?: boolean;
 };
 
 type AuthState = {

@@ -23,6 +23,9 @@ export const MIGRATIONS = [
   "20261007_health_campaigns.sql",
   "20261007_audit_client_info.sql",
   "20261008_session_revocations.sql",
+  "20261009_requisito_legal_opcional.sql",
+  "20261009_processo_outros.sql",
+  "20261009_senha_inicial.sql",
 ];
 
 const BASELINE = "0000_sleepy_cargill.sql";

@@ -115,6 +115,7 @@ export const TIPO_CHAMADO: Record<string, string> = {
   criacao_usuario: "Criação de usuário",
   bloqueio_usuario: "Bloqueio de usuário",
   alteracao_acesso: "Alteração de acesso",
+  alteracao_cadastral: "Alteração cadastral",
   suporte_tecnico: "Suporte técnico",
   duvida: "Dúvida",
   outros: "Outros",

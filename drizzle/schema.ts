@@ -55,7 +55,7 @@ export const vacationEvents = smartdocSchema.table("vacation_events", {
 });
 const companyStatusEnum = smartdocSchema.enum("company_status", ["ativo", "inativo", "suspenso"] as const);
 const positionRequirementCategoryEnum = smartdocSchema.enum("position_requirement_category", ["treinamento", "exame_medico", "psicossocial", "outros"] as const);
-const positionRequirementRequestTypeEnum = smartdocSchema.enum("position_requirement_request_type", ["admissao", "demissao", "mudanca_funcao", "todos"] as const);
+const positionRequirementRequestTypeEnum = smartdocSchema.enum("position_requirement_request_type", ["admissao", "demissao", "mudanca_funcao", "todos", "outros"] as const);
 
 // --- USERS ---
 // Papeis da plataforma:
@@ -72,6 +72,7 @@ export const users = smartdocSchema.table("users", {
   name: text("name"),
   email: varchar("email", { length: 320 }).unique(),
   passwordHash: varchar("passwordHash", { length: 255 }), // autenticacao propria
+  mustChangePassword: boolean("mustChangePassword").default(false).notNull(), // senha provisória: trocar no primeiro acesso
   loginMethod: varchar("loginMethod", { length: 64 }).default("local"),
   ativo: boolean("ativo").default(true).notNull(),
   role: text("role").default("company_viewer").notNull(),
@@ -198,7 +199,7 @@ export const legalRequirements = smartdocSchema.table("legal_requirements", {
   id: serial("id").primaryKey(),
   companyId: integer("companyId").notNull(), // vinculado Ã  empresa
   norma: varchar("norma", { length: 50 }).notNull(),
-  requisito: varchar("requisito", { length: 255 }).notNull(),
+  requisito: varchar("requisito", { length: 255 }), // opcional; sem ele, as telas mostram o documento exigido
   documentoExigido: varchar("documentoExigido", { length: 255 }).notNull(),
   validadeMeses: integer("validadeMeses"),
   descricao: text("descricao"),
