@@ -2,6 +2,8 @@
 
 ## [Não publicado]
 
+- Motivo de rejeição de documento da empresa e de recorrente não aparece mais com ponto duplicado quando a equipe termina o texto com ponto.
+- Sino de avisos com nome acessível (“Avisos” e o total de não lidos) para leitores de tela.
 - Férias de quem já é contratado: novo campo “Férias em dia até” no colaborador (no cadastro e no dossiê, botão “Informar/Alterar”). Os períodos aquisitivos que terminam até essa data contam como já tirados, e todos os períodos vencidos depois dela passam a aparecer. Sem o campo, nada muda (vencido some 30 dias após o prazo). Nova coluna `feriasEmDiaAte` (migration só adiciona).
 - Dossiê: o quadro “Próximas férias” lista os “Períodos vencidos”, com “Programar” em cada um. Férias: novo painel “Férias vencidas”, e o formulário abre já com o período escolhido. O sino continua avisando só o vencido recente, sem leva de avisos de períodos antigos.
 - Exclusão de documento só por pedido aprovado: no dossiê e em Documentos da Empresa, o Admin e o RH da empresa passam a “Pedir exclusão” (com motivo; o Admin da empresa também para documento de saúde). O documento continua no lugar com o selo “Exclusão solicitada” (e opção de cancelar) até a equipe SmartDocPlan aprovar ou rejeitar, na nova aba “Pedidos de exclusão” da validação; a empresa é avisada no sino. A equipe continua excluindo direto. Nova tabela `document_change_requests` (migration só cria).

@@ -41,3 +41,8 @@ export function splitDocumentVersions<T extends VersionedDocument>(docs: T[]) {
   }
   return { emVigor, novasVersoes };
 }
+
+/** Motivo digitado pela equipe sem a pontuação final, para a tela poder acrescentar ". " sem duplicar o ponto. */
+export function motivoSemPontoFinal(motivo: string): string {
+  return motivo.trim().replace(/[.!;:…\s]+$/, "");
+}

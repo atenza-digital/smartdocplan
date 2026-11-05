@@ -48,7 +48,7 @@ export default function NotificationCenter() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative text-muted-foreground">
+        <Button variant="ghost" size="icon" className="relative text-muted-foreground" aria-label={unreadCount > 0 ? `Avisos: ${unreadCount} não lido${unreadCount === 1 ? "" : "s"}` : "Avisos"} title="Avisos">
           <Bell className="h-4 w-4" />
           {unreadCount > 0 && (
             <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground">
