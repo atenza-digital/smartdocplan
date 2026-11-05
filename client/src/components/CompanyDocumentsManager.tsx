@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AlertTriangle, CalendarClock, CheckCircle2, Download, Edit, FileText, Plus, Trash2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { DOCUMENT_FILE_ACCEPT, MAX_DOCUMENT_FILE_BYTES, fileToBase64 } from "@/lib/files";
+import { motivoSemPontoFinal } from "@shared/documentVersions";
 import { COMPANY_DOCUMENT_TYPES, splitCompanyDocuments } from "@shared/companyDocuments";
 import { isPlatformOperator, isPlatformUser } from "@shared/permissions";
 import { DeletionRequestDialog, type DeletionTarget } from "@/components/DeletionRequestDialog";
@@ -249,7 +250,7 @@ export default function CompanyDocumentsManager({
                           <p className="text-xs">Aguardando a validação da equipe SmartDocPlan para passar a valer.</p>
                         ) : null}
                         {!item.emVigor && latest.status === "rejeitado" ? (
-                          <p className="text-xs text-red-700 dark:text-red-400">Motivo da rejeição: {latest.motivoRejeicao ?? "não informado"}. Envie uma nova versão.</p>
+                          <p className="text-xs text-red-700 dark:text-red-400">Motivo da rejeição: {latest.motivoRejeicao ? motivoSemPontoFinal(latest.motivoRejeicao) : "não informado"}. Envie uma nova versão.</p>
                         ) : null}
                         <p>Última atualização: {formatDate(latest.updatedAt) ?? "-"}</p>
                         {latest.dataEmissao ? <p>Emissão: {formatDateOnlyBr(latest.dataEmissao)}</p> : null}
@@ -344,7 +345,7 @@ export default function CompanyDocumentsManager({
                       Enviada em {formatDate(item.nova.createdAt) ?? "-"}
                       {item.nova.validade ? ` · validade ${formatDateOnlyBr(item.nova.validade)}` : ""}
                       {item.nova.status === "rejeitado"
-                        ? ` · motivo: ${item.nova.motivoRejeicao ?? "não informado"}. A versão acima continua valendo.`
+                        ? ` · motivo: ${item.nova.motivoRejeicao ? motivoSemPontoFinal(item.nova.motivoRejeicao) : "não informado"}. A versão acima continua valendo.`
                         : ". A versão acima continua valendo até a equipe SmartDocPlan aprovar a nova."}
                     </p>
                     {item.nova.fileUrl ? (

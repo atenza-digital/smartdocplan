@@ -2,6 +2,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { CalendarClock } from "lucide-react";
 import { PERIODICIDADE_LABELS, RECURRING_STATE_LABELS, type Periodicidade, type RecurringCellState } from "@shared/recurring";
 import { formatDateOnlyBr } from "@shared/formValidation";
+import { motivoSemPontoFinal } from "@shared/documentVersions";
 
 export const RECURRING_STATE_COLORS: Record<RecurringCellState, string> = {
   aprovado: "bg-green-500/10 text-green-700 dark:text-green-400 border-green-500/30",
@@ -81,10 +82,10 @@ export function MonthlyDocsGrid({
                   const label = RECURRING_STATE_LABELS[cell.estado];
                   const nova = cell.novaVersao
                     ? cell.novaVersao.status === "rejeitado"
-                      ? ` Nova versão rejeitada${cell.novaVersao.motivoRejeicao ? `: ${cell.novaVersao.motivoRejeicao}` : ""}.`
+                      ? ` Nova versão rejeitada${cell.novaVersao.motivoRejeicao ? `: ${motivoSemPontoFinal(cell.novaVersao.motivoRejeicao)}` : ""}.`
                       : " Nova versão aguardando validação; esta continua valendo até a aprovação."
                     : "";
-                  const motivo = cell.documento?.motivoRejeicao ? ` Motivo: ${cell.documento.motivoRejeicao}.` : "";
+                  const motivo = cell.documento?.motivoRejeicao ? ` Motivo: ${motivoSemPontoFinal(cell.documento.motivoRejeicao)}.` : "";
                   const title = `${row.tipo.nome} ${cell.rotulo}: ${label}.${motivo}${nova} Prazo ${formatDateOnlyBr(cell.prazo)}.`;
                   const className = `inline-block rounded-md border px-2 py-1 text-xs ${RECURRING_STATE_COLORS[cell.estado]}`;
                   return (

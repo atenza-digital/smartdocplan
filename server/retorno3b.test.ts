@@ -90,3 +90,13 @@ describe("Migration da Etapa 3b-1", () => {
     expect(sql).toMatch(/"exigeValidacao" boolean NOT NULL DEFAULT true/);
   });
 });
+
+describe("Motivo de rejeição na tela", () => {
+  it("tira a pontuação final para a tela não mostrar ponto duplicado", async () => {
+    const { motivoSemPontoFinal } = await import("../shared/documentVersions");
+    expect(motivoSemPontoFinal("Arquivo ilegível.")).toBe("Arquivo ilegível");
+    expect(motivoSemPontoFinal("Falta assinatura... ")).toBe("Falta assinatura");
+    expect(motivoSemPontoFinal("Sem data")).toBe("Sem data");
+    expect(motivoSemPontoFinal("Versão 1.2 errada!")).toBe("Versão 1.2 errada");
+  });
+});
