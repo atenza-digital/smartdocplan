@@ -62,7 +62,7 @@ const emptyForm = {
 export default function EmpresaColaboradores() {
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
-  const canCreate = canManageCompanyData(user?.role ?? null);
+  const canCreate = canManageCompanyData(user);
   const maxBirthDate = getBirthDateMax(12);
 
   // Cada aba guarda os próprios filtros e página ("duas telas em uma").

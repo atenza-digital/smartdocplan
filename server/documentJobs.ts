@@ -3,7 +3,8 @@ import { companies, companyDocuments, employeeDocuments, employees, userNotifica
 import { getDb } from "./db";
 import { recalcCompliance } from "./compliance";
 import { buildCompanyMonthlyOverview } from "./recurring";
-import { canAccessHealthData, isHealthCategory, isPlatformUser } from "@shared/permissions";
+import { canAccessHealthData, isCompanyUser, isHealthCategory, isPlatformUser, temPermissao } from "@shared/permissions";
+import { perfisDaEmpresa, resolverPerfil } from "./companyProfiles";
 import { splitDocumentVersions } from "@shared/documentVersions";
 import { documentAlertThreshold, documentAlertTitle } from "@shared/documentAlerts";
 import { COMPANY_DOCUMENT_TYPES, latestCompanyDocuments } from "@shared/companyDocuments";
@@ -13,7 +14,7 @@ import { addDaysDateOnly } from "@shared/dates";
 import { buildVacationSuggestions } from "./vacationSuggestions";
 
 type Db = NonNullable<Awaited<ReturnType<typeof getDb>>>;
-type Recipient = { id: number; role: string; companyId: number | null };
+type Recipient = { id: number; role: string; companyId: number | null; permissoes?: string[] | null };
 type Alert = {
   companyId: number;
   key: string; // chave de deduplicação: um aviso por usuário e chave
@@ -24,15 +25,27 @@ type Alert = {
   saude: boolean; // dado de saúde: só quem pode ver dados de saúde recebe
 };
 
-/** Destinatários: admin e RH da empresa, mais admin e analistas da plataforma. */
-async function loadRecipients(db: Db) {
-  return db
-    .select({ id: users.id, role: users.role, companyId: users.companyId })
+/** Destinatários: admin e analistas da plataforma, mais quem tem "Receber avisos" no perfil da empresa. */
+async function loadRecipients(db: Db): Promise<Recipient[]> {
+  const rows = await db
+    .select({ id: users.id, role: users.role, companyId: users.companyId, profileId: users.profileId })
     .from(users)
     .where(and(
       eq(users.ativo, true),
-      or(inArray(users.role, ["platform_admin", "platform_analyst"]), inArray(users.role, ["company_admin", "company_hr"])),
+      or(inArray(users.role, ["platform_admin", "platform_analyst"]), inArray(users.role, ["company_admin", "company_hr", "company_manager", "company_viewer"])),
     ));
+  const out: Recipient[] = [];
+  for (const row of rows) {
+    if (!isCompanyUser(row.role)) {
+      out.push({ id: row.id, role: row.role, companyId: row.companyId });
+      continue;
+    }
+    if (!row.companyId) continue;
+    const perfil = resolverPerfil(row, await perfisDaEmpresa(db, row.companyId));
+    const ator = { role: row.role, permissoes: perfil?.permissoes ?? [] };
+    if (temPermissao(ator, "avisos.receber")) out.push({ id: row.id, role: row.role, companyId: row.companyId, permissoes: ator.permissoes });
+  }
+  return out;
 }
 
 async function employeeDocumentAlerts(db: Db, today: string): Promise<Alert[]> {
@@ -186,7 +199,7 @@ async function deliver(db: Db, alerts: Alert[], recipients: Recipient[]) {
   const values = alerts.flatMap((alert) =>
     recipients
       .filter((user) => isPlatformUser(user.role) || user.companyId === alert.companyId)
-      .filter((user) => !alert.saude || canAccessHealthData(user.role))
+      .filter((user) => !alert.saude || canAccessHealthData(user))
       .filter((user) => !sent.has(`${user.id}|${alert.key}`))
       .map((user) => ({
         userId: user.id,

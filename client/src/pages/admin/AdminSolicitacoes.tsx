@@ -72,7 +72,7 @@ type ViewMode = "kanban" | "lista";
 export default function AdminSolicitacoes() {
   const { user } = useAuth();
   const canReview = canManageRequestWorkflow(user?.role ?? null);
-  const canCreate = canCreateRequests(user?.role ?? null);
+  const canCreate = canCreateRequests(user);
   const [viewMode, setViewMode] = useState<ViewMode>("kanban");
   const [search, setSearch] = useState("");
   const [filterEmpresa, setFilterEmpresa] = useState("0");

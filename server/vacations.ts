@@ -14,7 +14,10 @@ import {
   canManageCompanyData,
   canManageRequestWorkflow,
   isPlatformUser,
+  podeVer,
+  temPermissao,
 } from "../shared/permissions";
+import { usuariosDaEmpresaCom } from "./companyProfiles";
 import {
   brazilToday,
   deadlineDays,
@@ -38,10 +41,11 @@ const periodFields = z.object({
   endDate: z.iso.date(),
   notes: z.string().trim().max(20000).default(""),
 });
-function access(user: User, companyId: number, write = false) {
+function access(user: User & { permissoes?: readonly string[] | null }, companyId: number, write = false) {
   if (
     (!isPlatformUser(user.role) && user.companyId !== companyId) ||
-    (write && !canManageCompanyData(user.role))
+    !podeVer(user, "ferias.ver") ||
+    (write && !canManageCompanyData(user, "ferias.gerenciar"))
   )
     throw new TRPCError({
       code: "FORBIDDEN",
@@ -441,21 +445,12 @@ export async function notifyVacationDeadlines(today = brazilToday()) {
       if (days === null || days > 30) continue;
       const threshold = days < 0 ? "vencido" : days <= 7 ? "7" : "30";
       const type = `ferias_prazo_${record.id}_${record.revision}_${threshold}`;
-      const recipients = await tx
-        .select()
+      const equipe = await tx
+        .select({ id: users.id, role: users.role })
         .from(users)
-        .where(
-          and(
-            eq(users.ativo, true),
-            or(
-              inArray(users.role, ["platform_admin", "platform_analyst"]),
-              and(
-                eq(users.companyId, record.companyId),
-                inArray(users.role, ["company_admin", "company_hr"])
-              )
-            )
-          )
-        );
+        .where(and(eq(users.ativo, true), inArray(users.role, ["platform_admin", "platform_analyst"])));
+      const daEmpresa = await usuariosDaEmpresaCom(tx as any, record.companyId, (ator) => temPermissao(ator, "avisos.receber"));
+      const recipients = [...equipe, ...daEmpresa.map((id) => ({ id, role: "company" }))];
       for (const user of recipients) {
         const [existing] = await tx
           .select({ id: userNotifications.id })

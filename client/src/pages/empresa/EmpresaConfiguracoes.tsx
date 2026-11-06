@@ -27,7 +27,7 @@ export default function EmpresaConfiguracoes() {
           <h2 className="text-2xl font-bold text-foreground">Configurações</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             Suas preferências de uso, salvas neste navegador.
-            {canSeeCompanySettings(user?.role) && (
+            {canSeeCompanySettings(user) && (
               <>
                 {" "}Os dados e as regras da empresa ficam em{" "}
                 <Link href="/empresa/parametros" className="text-primary underline">Parâmetros da empresa</Link>.
@@ -105,7 +105,7 @@ export default function EmpresaConfiguracoes() {
             </CardContent>
           </Card>
 
-          {canSeeCompanySettings(user?.role) && (
+          {canSeeCompanySettings(user) && (
             <Card className="lg:col-span-2">
               <CardContent className="flex flex-wrap items-center justify-between gap-3 p-5">
                 <div className="flex items-center gap-3">

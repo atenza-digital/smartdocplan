@@ -2,7 +2,7 @@ import { z } from "zod";
 import { sql, type SQL } from "drizzle-orm";
 import { adminProcedure, protectedProcedure, router } from "./_core/trpc";
 import { getDb } from "./db";
-import { isPlatformUser } from "@shared/permissions";
+import { isPlatformUser, podeVer } from "@shared/permissions";
 import { brazilToday } from "@shared/vacations";
 
 // Datas gravadas em UTC (timestamp sem fuso) são convertidas para o dia no fuso de Brasília.
@@ -185,7 +185,7 @@ export const biRouter = router({
   company: protectedProcedure
     .input(z.object({ companyId: z.number() }).and(periodInput))
     .query(async ({ ctx, input }) => {
-      if (!isPlatformUser(ctx.user.role) && ctx.user.companyId !== input.companyId) {
+      if (!isPlatformUser(ctx.user.role) && (ctx.user.companyId !== input.companyId || !podeVer(ctx.user, "bi.ver"))) {
         throw new Error("Acesso negado");
       }
       const db = await getDb();

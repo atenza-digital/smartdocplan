@@ -102,8 +102,8 @@ export default function EmpresaNovaSolicitacao() {
   const { user, effectiveCompanyId } = useAuth();
   const utils = trpc.useUtils();
   const [, navigate] = useLocation();
-  const canCreate = canCreateRequests(user?.role ?? null);
-  const canManageHelpers = canManageCompanyData(user?.role ?? null);
+  const canCreate = canCreateRequests(user);
+  const canManageHelpers = canManageCompanyData(user, "parametros.gerenciar");
   const isPlatformAdmin = user?.role === "platform_admin";
   const listRoute = isPlatformAdmin ? "/admin/solicitacoes" : "/empresa/solicitacoes";
   const LayoutComponent = isPlatformAdmin ? AdminLayout : CompanyLayout;
@@ -295,7 +295,7 @@ export default function EmpresaNovaSolicitacao() {
     nome: string;
     categoria: PendingUpload["categoria"];
   }) => {
-    if (isHealthCategory(target.categoria) && !canAccessHealthData(user?.role)) {
+    if (isHealthCategory(target.categoria) && !canAccessHealthData(user)) {
       toast.error("Este documento deve ser anexado pelo RH ou Administrador Geral.");
       return;
     }
@@ -647,7 +647,7 @@ export default function EmpresaNovaSolicitacao() {
             </CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {PROCESS_OPTIONS.filter(option => !isHealthCategory(option.key) || canAccessHealthData(user?.role)).map((option) => {
+            {PROCESS_OPTIONS.filter(option => !isHealthCategory(option.key) || canAccessHealthData(user)).map((option) => {
               const isSelected = form.tipo === option.key;
               return (
                 <button

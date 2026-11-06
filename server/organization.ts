@@ -26,13 +26,13 @@ const fields = z.object({
   status: z.enum(["ativo", "inativo"]).default("ativo"),
 });
 function authorize(
-  user: { role: string; companyId: number | null },
+  user: { role: string; companyId: number | null; permissoes?: readonly string[] | null },
   companyId: number,
   write = false
 ) {
   if (
     (!isPlatformUser(user.role) && user.companyId !== companyId) ||
-    (write && !canManageCompanyData(user.role))
+    (write && !canManageCompanyData(user, "parametros.gerenciar"))
   ) {
     throw new TRPCError({
       code: "FORBIDDEN",

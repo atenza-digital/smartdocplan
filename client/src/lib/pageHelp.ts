@@ -232,6 +232,24 @@ const PARAMETROS: Record<string, PageHelpContent> = {
     dicas: ["Os prazos são regras da empresa para organizar a programação e não substituem a CLT.", "Eles alimentam a sugestão de férias e os avisos do sino."],
     quemPode: "Admin e RH da empresa.",
   },
+  perfis: {
+    titulo: "Parâmetros da empresa · Perfis e permissões",
+    paraQueServe: "Define o que cada perfil da empresa pode ver e fazer: os perfis padrão (Admin, RH, Gestor e Consulta) e perfis criados com nome próprio, como “Encarregado de obra”.",
+    passos: [
+      "À esquerda, escolha um perfil. À direita aparecem as permissões, agrupadas por área.",
+      "Marque ou desmarque o que o perfil pode fazer e clique em “Salvar alterações”. A mudança vale para todos os usuários do perfil em até 30 segundos.",
+      "Para criar um perfil, clique em “Novo perfil”, dê um nome e escolha em qual perfil ele se baseia; depois ajuste as permissões.",
+      "Em “Usuários deste perfil”, mude o perfil de uma pessoa escolhendo outro na lista.",
+      "“Restaurar padrão” volta um perfil padrão às permissões originais; “Desativar perfil” tira um perfil criado que não tenha usuários.",
+    ],
+    dicas: [
+      "Documentos de saúde (LGPD) só podem ser liberados em perfis baseados em Admin ou RH da empresa; as caixas travadas explicam o motivo.",
+      "O Admin da empresa sempre mantém “Gerenciar perfis”, para ninguém perder o acesso a esta tela.",
+      "Toda mudança fica na auditoria, e mudanças no acesso a dados de saúde avisam a equipe SmartDocPlan.",
+      "Novos usuários continuam sendo criados pela equipe SmartDocPlan.",
+    ],
+    quemPode: "Admin da empresa e Administrador Geral.",
+  },
 };
 
 type Entry = { rota: string; conteudo: PageHelpContent };
@@ -369,6 +387,7 @@ const ENTRADAS: Entry[] = [
         "Busque por nome ou e-mail e, se quiser, filtre por empresa.",
         "Clique em “Novo Usuário”: nome, e-mail, senha inicial (o olho mostra o que você digitou), papel e empresa. Clique em “Criar Usuário”.",
         "No menu de três pontos de cada usuário: Editar dados, Alterar Papel, Redefinir Senha, Obras / locais e Ativar ou Desativar.",
+        "Se a empresa criou perfis próprios (Parâmetros › Perfis e permissões), escolha também o “Perfil da empresa” ao criar o usuário ou alterar o papel.",
         "Entregue a senha inicial por um canal seguro. No primeiro acesso o sistema pede que a pessoa crie a própria senha; o mesmo acontece depois de “Redefinir Senha”.",
       ],
       dicas: ["O e-mail é o login e é gravado em minúsculas; dois usuários não podem ter o mesmo e-mail.", "Desativar impede o acesso sem apagar o histórico."],

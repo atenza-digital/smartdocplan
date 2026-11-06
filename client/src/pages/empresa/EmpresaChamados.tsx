@@ -44,7 +44,7 @@ const tipoLabels: Record<string, string> = {
 export default function EmpresaChamados() {
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
-  const canCreate = canCreateTickets(user?.role ?? null);
+  const canCreate = canCreateTickets(user);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
     titulo: "", tipo: "duvida" as const, descricao: "", prioridade: "media" as const,

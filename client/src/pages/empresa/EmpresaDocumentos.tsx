@@ -8,7 +8,7 @@ import { canManageCompanyData } from "@shared/permissions";
 export default function EmpresaDocumentos() {
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
-  const canEdit = canManageCompanyData(user?.role ?? null);
+  const canEdit = canManageCompanyData(user, "documentos_empresa.gerenciar");
 
   return (
     <CompanyLayout title="Documentos da Empresa">

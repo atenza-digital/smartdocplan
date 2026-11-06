@@ -54,7 +54,7 @@ const statusColors: Record<string, string> = {
 export default function EmpresaSolicitacoes() {
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
-  const canCreate = canCreateRequests(user?.role ?? null);
+  const canCreate = canCreateRequests(user);
 
   const [docModal, setDocModal] = useState<{ id: number; tipo: string; titulo: string } | null>(null);
   const [view, setView] = useState<"kanban" | "lista">("kanban");
