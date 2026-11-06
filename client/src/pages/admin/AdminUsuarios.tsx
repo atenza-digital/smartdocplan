@@ -60,6 +60,27 @@ function SenhaInput({ value, onChange, placeholder }: { value: string; onChange:
   );
 }
 
+/** Perfil personalizado da empresa (opcional): lista os perfis criados com o mesmo perfil-base do papel escolhido. */
+function PerfilPersonalizadoSelect({ companyId, role, value, onChange }: { companyId: string; role: string; value: string; onChange: (v: string) => void }) {
+  const id = companyId ? parseInt(companyId) : 0;
+  const { data } = trpc.profiles.list.useQuery({ companyId: id }, { enabled: id > 0 });
+  const opcoes = (data?.perfis ?? []).filter((p) => p.tipo === "personalizado" && p.baseRole === role);
+  if (!id || opcoes.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      <Label>Perfil da empresa</Label>
+      <Select value={value || "padrao"} onValueChange={(v) => onChange(v === "padrao" ? "" : v)}>
+        <SelectTrigger><SelectValue /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="padrao">Perfil padrão do papel</SelectItem>
+          {opcoes.map((p) => <SelectItem key={p.id} value={String(p.id)}>{p.nome}</SelectItem>)}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground">Perfis criados pela empresa em Parâmetros › Perfis e permissões.</p>
+    </div>
+  );
+}
+
 export default function AdminUsuarios() {
   const [search, setSearch] = useState("");
   const [empresaFiltro, setEmpresaFiltro] = useState("todas");
@@ -68,12 +89,12 @@ export default function AdminUsuarios() {
 
   // Form de criacao
   const [createForm, setCreateForm] = useState({
-    name: "", email: "", password: "", role: "company_hr", companyId: "",
+    name: "", email: "", password: "", role: "company_hr", companyId: "", profileId: "",
   });
   // Form de edicao de dados (nome e e-mail)
   const [editForm, setEditForm] = useState({ name: "", email: "" });
   // Form de edicao de papel
-  const [editRole, setEditRole] = useState({ role: "", companyId: "" });
+  const [editRole, setEditRole] = useState({ role: "", companyId: "", profileId: "" });
   // Form de reset de senha
   const [newPassword, setNewPassword] = useState("");
 
@@ -84,7 +105,7 @@ export default function AdminUsuarios() {
     onSuccess: () => {
       toast.success("Usuário criado com sucesso!");
       setModal(null);
-      setCreateForm({ name: "", email: "", password: "", role: "company_hr", companyId: "" });
+      setCreateForm({ name: "", email: "", password: "", role: "company_hr", companyId: "", profileId: "" });
       refetch();
     },
     onError: (e) => toast.error(e.message),
@@ -248,7 +269,7 @@ export default function AdminUsuarios() {
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           <Badge variant="outline" className={`text-xs hidden sm:flex ${roleColors[u.role] ?? ""}`}>
-                            {roleLabels[u.role] ?? u.role}
+                            {roleLabels[u.role] ?? u.role}{u.perfilNome ? ` · ${u.perfilNome}` : ""}
                           </Badge>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -267,7 +288,7 @@ export default function AdminUsuarios() {
                               </DropdownMenuItem>
                               <DropdownMenuItem onClick={() => {
                                 setSelectedUser(u);
-                                setEditRole({ role: u.role, companyId: u.companyId?.toString() ?? "" });
+                                setEditRole({ role: u.role, companyId: u.companyId?.toString() ?? "", profileId: u.perfilNome && u.profileId ? String(u.profileId) : "" });
                                 setModal("editRole");
                               }}>
                                 <UserCog className="w-4 h-4 mr-2" />
@@ -385,7 +406,7 @@ export default function AdminUsuarios() {
             </div>
             <div className="space-y-1.5">
               <Label>Papel *</Label>
-              <Select value={createForm.role} onValueChange={(v) => setCreateForm({ ...createForm, role: v })}>
+              <Select value={createForm.role} onValueChange={(v) => setCreateForm({ ...createForm, role: v, profileId: "" })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(roleLabels).map(([k, v]) => (
@@ -397,7 +418,7 @@ export default function AdminUsuarios() {
             {!isPlatformRole(createForm.role) && (
               <div className="space-y-1.5">
                 <Label>Empresa *</Label>
-                <Select value={createForm.companyId} onValueChange={(v) => setCreateForm({ ...createForm, companyId: v })}>
+                <Select value={createForm.companyId} onValueChange={(v) => setCreateForm({ ...createForm, companyId: v, profileId: "" })}>
                   <SelectTrigger><SelectValue placeholder="Selecione a empresa..." /></SelectTrigger>
                   <SelectContent>
                     {empresas.map((e) => (
@@ -406,6 +427,9 @@ export default function AdminUsuarios() {
                   </SelectContent>
                 </Select>
               </div>
+            )}
+            {!isPlatformRole(createForm.role) && (
+              <PerfilPersonalizadoSelect companyId={createForm.companyId} role={createForm.role} value={createForm.profileId} onChange={(profileId) => setCreateForm({ ...createForm, profileId })} />
             )}
           </div>
           <DialogFooter>
@@ -417,6 +441,7 @@ export default function AdminUsuarios() {
                 password: createForm.password,
                 role: createForm.role as any,
                 companyId: createForm.companyId ? parseInt(createForm.companyId) : undefined,
+                profileId: createForm.profileId ? parseInt(createForm.profileId) : null,
               })}
               disabled={!createForm.name || !createForm.email || !createForm.password || createMutation.isPending}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -466,7 +491,7 @@ export default function AdminUsuarios() {
           <div className="space-y-4 py-2">
             <div className="space-y-1.5">
               <Label>Novo Papel</Label>
-              <Select value={editRole.role} onValueChange={(v) => setEditRole({ ...editRole, role: v })}>
+              <Select value={editRole.role} onValueChange={(v) => setEditRole({ ...editRole, role: v, profileId: "" })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   {Object.entries(roleLabels).map(([k, v]) => (
@@ -478,7 +503,7 @@ export default function AdminUsuarios() {
             {!isPlatformRole(editRole.role) && (
               <div className="space-y-1.5">
                 <Label>Empresa</Label>
-                <Select value={editRole.companyId} onValueChange={(v) => setEditRole({ ...editRole, companyId: v })}>
+                <Select value={editRole.companyId} onValueChange={(v) => setEditRole({ ...editRole, companyId: v, profileId: "" })}>
                   <SelectTrigger><SelectValue placeholder="Selecione a empresa..." /></SelectTrigger>
                   <SelectContent>
                     {empresas.map((e) => (
@@ -488,6 +513,9 @@ export default function AdminUsuarios() {
                 </Select>
               </div>
             )}
+            {!isPlatformRole(editRole.role) && (
+              <PerfilPersonalizadoSelect companyId={editRole.companyId} role={editRole.role} value={editRole.profileId} onChange={(profileId) => setEditRole({ ...editRole, profileId })} />
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setModal(null)}>Cancelar</Button>
@@ -496,6 +524,7 @@ export default function AdminUsuarios() {
                 userId: selectedUser.id,
                 role: editRole.role as any,
                 companyId: editRole.companyId ? parseInt(editRole.companyId) : undefined,
+                profileId: editRole.profileId ? parseInt(editRole.profileId) : null,
               })}
               disabled={!editRole.role || updateRoleMutation.isPending}
               className="bg-primary hover:bg-primary/90 text-primary-foreground"

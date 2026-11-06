@@ -5,12 +5,13 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { AlertTriangle, ClipboardList, Plus, Ticket, UserMinus, Users } from "lucide-react";
-import { canCreateRequests } from "@shared/permissions";
+import { canCreateRequests, podeVer, type Permissao } from "@shared/permissions";
 
 export default function EmpresaDashboard() {
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
-  const canOpenRequests = canCreateRequests(user?.role ?? null);
+  const canOpenRequests = canCreateRequests(user);
+  const ver = (chave: Permissao) => podeVer(user, chave);
 
   const { data: dash, isLoading } = trpc.dashboard.company.useQuery(
     { companyId },
@@ -34,6 +35,7 @@ export default function EmpresaDashboard() {
       color: "text-primary",
       bg: "bg-primary/10",
       href: "/empresa/colaboradores",
+      perm: "colaboradores.ver" as Permissao,
     },
     {
       title: "Afastados",
@@ -43,6 +45,7 @@ export default function EmpresaDashboard() {
       color: "text-amber-500",
       bg: "bg-amber-500/10",
       href: "/empresa/colaboradores",
+      perm: "colaboradores.ver" as Permissao,
     },
     {
       title: "Solicitações novas",
@@ -52,6 +55,7 @@ export default function EmpresaDashboard() {
       color: "text-blue-500",
       bg: "bg-blue-500/10",
       href: "/empresa/solicitacoes",
+      perm: "solicitacoes.ver" as Permissao,
     },
     {
       title: "Chamados abertos",
@@ -61,8 +65,9 @@ export default function EmpresaDashboard() {
       color: "text-red-500",
       bg: "bg-red-500/10",
       href: "/empresa/chamados",
+      perm: "chamados.ver" as Permissao,
     },
-  ];
+  ].filter((kpi) => ver(kpi.perm));
 
   return (
     <CompanyLayout title="Dashboard">
@@ -108,6 +113,7 @@ export default function EmpresaDashboard() {
         </div>
 
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          {ver("documentos_empresa.ver") && (
           <Card className="border-border lg:col-span-2">
             <CardHeader className="pb-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -135,7 +141,9 @@ export default function EmpresaDashboard() {
               </div>
             </CardContent>
           </Card>
+          )}
 
+          {ver("solicitacoes.ver") && (
           <Card className="border-border">
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-base font-semibold">
@@ -158,6 +166,7 @@ export default function EmpresaDashboard() {
               ))}
             </CardContent>
           </Card>
+          )}
 
           <Card className="border-border">
             <CardHeader className="pb-3">
@@ -166,11 +175,11 @@ export default function EmpresaDashboard() {
             <CardContent>
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: "Colaboradores", href: "/empresa/colaboradores", icon: Users },
-                  { label: canOpenRequests ? "Nova solicitação" : "Solicitações", href: canOpenRequests ? "/empresa/solicitacoes/nova" : "/empresa/solicitacoes", icon: ClipboardList },
-                  { label: "Ver pendências", href: "/empresa/pendencias", icon: AlertTriangle },
-                  { label: "Abrir chamado", href: "/empresa/chamados", icon: Ticket },
-                ].map((item) => (
+                  { label: "Colaboradores", href: "/empresa/colaboradores", icon: Users, ok: ver("colaboradores.ver") },
+                  { label: canOpenRequests ? "Nova solicitação" : "Solicitações", href: canOpenRequests ? "/empresa/solicitacoes/nova" : "/empresa/solicitacoes", icon: ClipboardList, ok: canOpenRequests || ver("solicitacoes.ver") },
+                  { label: "Ver pendências", href: "/empresa/pendencias", icon: AlertTriangle, ok: ver("pendencias.ver") },
+                  { label: podeVer(user, "chamados.abrir") ? "Abrir chamado" : "Chamados", href: "/empresa/chamados", icon: Ticket, ok: ver("chamados.ver") },
+                ].filter((item) => item.ok).map((item) => (
                   <Link key={item.label} href={item.href}>
                     <div className="group flex cursor-pointer flex-col items-center gap-2 rounded-lg border border-border p-3 text-center transition-colors hover:border-primary/30 hover:bg-accent">
                       <div className="rounded-lg bg-primary/10 p-2 transition-colors group-hover:bg-primary/20">

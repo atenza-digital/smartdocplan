@@ -77,6 +77,7 @@ export const users = smartdocSchema.table("users", {
   ativo: boolean("ativo").default(true).notNull(),
   role: text("role").default("company_viewer").notNull(),
   companyId: integer("companyId"), // null = usuario interno da plataforma
+  profileId: integer("profileId"), // perfil personalizado da empresa (null = perfil padrão do papel)
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
@@ -178,6 +179,21 @@ export const documentChangeRequests = smartdocSchema.table("document_change_requ
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().notNull(),
 });
+
+// --- PERFIS DA EMPRESA (permissões editáveis; sem linha = permissões padrão do papel) ---
+export const companyProfiles = smartdocSchema.table("company_profiles", {
+  id: serial("id").primaryKey(),
+  companyId: integer("companyId").notNull(),
+  nome: varchar("nome", { length: 120 }).notNull(),
+  baseRole: text("baseRole").notNull(), // company_admin | company_hr | company_manager | company_viewer
+  permissoes: text("permissoes").array().notNull(),
+  padrao: boolean("padrao").default(false).notNull(), // true = edição do perfil padrão do papel na empresa
+  ativo: boolean("ativo").default(true).notNull(),
+  criadoPor: integer("criadoPor"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().notNull(),
+});
+export type CompanyProfile = typeof companyProfiles.$inferSelect;
 
 // --- WORKSITES (OBRAS/CNOs) ---
 export const worksites = smartdocSchema.table("worksites", {

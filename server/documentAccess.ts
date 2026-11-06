@@ -126,7 +126,7 @@ export function registerDocumentAccess(app: Express) {
       if (
         !records.length ||
         deletedForUser ||
-        (sensitive && !canAccessHealthData(user.role)) ||
+        (sensitive && !canAccessHealthData(user)) ||
         !records.every(
           r => isPlatformUser(user.role) || r.companyId === user.companyId
         )

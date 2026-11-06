@@ -122,7 +122,7 @@ describe("Ajuda das telas (botão ?)", () => {
   });
 
   it("Parâmetros da empresa tem uma ajuda por aba", () => {
-    const abas = ["empresa", "cargos", "locais", "matriz", "mensais", "ferias"];
+    const abas = ["empresa", "cargos", "locais", "matriz", "mensais", "ferias", "perfis"];
     const titulos = abas.map((aba) => getPageHelp("/empresa/parametros", `?aba=${aba}`)!.titulo);
     expect(new Set(titulos).size).toBe(abas.length);
     expect(getPageHelp("/empresa/parametros", "?aba=inexistente")!.titulo).toBe(titulos[0]);

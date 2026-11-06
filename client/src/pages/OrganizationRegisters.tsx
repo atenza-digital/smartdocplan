@@ -51,7 +51,7 @@ export default function OrganizationRegisters() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(empty);
-  const canEdit = canManageCompanyData(user?.role);
+  const canEdit = canManageCompanyData(user, "parametros.gerenciar");
   const companies = trpc.companies.list.useQuery();
   const records = trpc.organization.list.useQuery(
     { kind, companyId, includeInactive },

@@ -7,7 +7,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { AccessibilityProvider } from "./contexts/AccessibilityContext";
 import { DisplayPreferencesProvider } from "./contexts/DisplayPreferencesContext";
-import { LocalAuthProvider, useLocalAuth } from "./contexts/LocalAuthContext";
+import { LocalAuthProvider, useLocalAuth, type LocalUser } from "./contexts/LocalAuthContext";
 import { AccessibilityBar } from "./components/AccessibilityBar";
 import { CookieBanner } from "./components/CookieBanner";
 import { ForcedPasswordChange } from "./components/ForcedPasswordChange";
@@ -15,7 +15,11 @@ import Login from "./pages/Login";
 import Home from "./pages/Home";
 
 import { Loader2 } from "lucide-react";
-import { canManagePlatformSettings, canSeeCompanySettings, isPlatformUser } from "@shared/permissions";
+import { canCreateRequests, canManagePlatformSettings, canManageProfiles, canSeeCompanySettings, isPlatformUser, podeVer, type Permissao } from "@shared/permissions";
+
+/** Guarda de rota da empresa: a área precisa estar liberada no perfil (a equipe SmartDocPlan vê tudo). */
+const verArea = (chave: Permissao) => (_role?: string | null, user?: LocalUser | null) => podeVer(user, chave);
+
 // Páginas carregadas sob demanda: cada tela vira um arquivo próprio e o carregamento inicial fica leve.
 const AdminDashboard = lazy(() => import("./pages/admin/AdminDashboard"));
 const AdminEmpresas = lazy(() => import("./pages/admin/AdminEmpresas"));
@@ -73,7 +77,7 @@ function RoleGuard({
   redirectTo,
   children,
 }: {
-  allow: (role?: string | null) => boolean;
+  allow: (role?: string | null, user?: LocalUser | null) => boolean;
   redirectTo: string;
   children: React.ReactNode;
 }) {
@@ -81,7 +85,7 @@ function RoleGuard({
   const [, navigate] = useLocation();
 
   useEffect(() => {
-    if (!loading && isAuthenticated && user && !allow(user.role)) {
+    if (!loading && isAuthenticated && user && !allow(user.role, user)) {
       navigate(redirectTo);
     }
   }, [allow, isAuthenticated, loading, navigate, redirectTo, user]);
@@ -94,7 +98,7 @@ function RoleGuard({
     );
   }
 
-  if (!user || !allow(user.role)) return null;
+  if (!user || !allow(user.role, user)) return null;
   return <>{children}</>;
 }
 
@@ -141,8 +145,8 @@ function Router() {
       </Route>
       <Route path="/admin/estrutura"><AuthGuard><RoleGuard allow={isPlatformUser} redirectTo="/empresa"><OrganizationRegisters /></RoleGuard></AuthGuard></Route>
       <Route path="/admin/ferias"><AuthGuard><RoleGuard allow={isPlatformUser} redirectTo="/empresa"><Vacations /></RoleGuard></AuthGuard></Route>
-      <Route path="/empresa/ferias"><AuthGuard><Vacations /></AuthGuard></Route>
-      <Route path="/empresa/estrutura"><AuthGuard><RoleGuard allow={canSeeCompanySettings} redirectTo="/empresa"><OrganizationRegisters /></RoleGuard></AuthGuard></Route>
+      <Route path="/empresa/ferias"><AuthGuard><RoleGuard allow={verArea("ferias.ver")} redirectTo="/empresa"><Vacations /></RoleGuard></AuthGuard></Route>
+      <Route path="/empresa/estrutura"><AuthGuard><RoleGuard allow={(_, u) => canSeeCompanySettings(u)} redirectTo="/empresa"><OrganizationRegisters /></RoleGuard></AuthGuard></Route>
       <Route path="/admin/colaboradores/:id">
         <AuthGuard>
           <RoleGuard allow={isPlatformUser} redirectTo="/empresa">
@@ -249,49 +253,65 @@ function Router() {
       </Route>
       <Route path="/empresa/solicitacoes/nova">
         <AuthGuard>
-          <EmpresaNovaSolicitacao />
+          <RoleGuard allow={(_, u) => canCreateRequests(u)} redirectTo="/empresa">
+            <EmpresaNovaSolicitacao />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/solicitacoes">
         <AuthGuard>
-          <EmpresaSolicitacoes />
+          <RoleGuard allow={verArea("solicitacoes.ver")} redirectTo="/empresa">
+            <EmpresaSolicitacoes />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/colaboradores">
         <AuthGuard>
-          <EmpresaColaboradores />
+          <RoleGuard allow={verArea("colaboradores.ver")} redirectTo="/empresa">
+            <EmpresaColaboradores />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/colaboradores/:id">
         <AuthGuard>
-          <EmpresaDossie />
+          <RoleGuard allow={verArea("colaboradores.ver")} redirectTo="/empresa">
+            <EmpresaDossie />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/parametros">
         <AuthGuard>
-          <RoleGuard allow={canSeeCompanySettings} redirectTo="/empresa">
+          <RoleGuard allow={(_, u) => canSeeCompanySettings(u) || canManageProfiles(u)} redirectTo="/empresa">
             <EmpresaParametros />
           </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/documentos">
         <AuthGuard>
-          <EmpresaDocumentos />
+          <RoleGuard allow={verArea("documentos_empresa.ver")} redirectTo="/empresa">
+            <EmpresaDocumentos />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/pendencias">
         <AuthGuard>
-          <EmpresaPendencias />
+          <RoleGuard allow={verArea("pendencias.ver")} redirectTo="/empresa">
+            <EmpresaPendencias />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/chamados">
         <AuthGuard>
-          <EmpresaChamados />
+          <RoleGuard allow={verArea("chamados.ver")} redirectTo="/empresa">
+            <EmpresaChamados />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/bi">
         <AuthGuard>
-          <EmpresaBI />
+          <RoleGuard allow={verArea("bi.ver")} redirectTo="/empresa">
+            <EmpresaBI />
+          </RoleGuard>
         </AuthGuard>
       </Route>
       <Route path="/empresa/perfil">

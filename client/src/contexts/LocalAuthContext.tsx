@@ -11,6 +11,10 @@ export type LocalUser = {
   companyId: number | null;
   /** Senha provisória: a pessoa precisa criar a própria no primeiro acesso. */
   mustChangePassword?: boolean;
+  /** Permissões efetivas do perfil da empresa (null para a equipe SmartDocPlan). */
+  permissoes?: string[] | null;
+  /** Nome do perfil (padrão ou personalizado). */
+  perfilNome?: string | null;
 };
 
 type AuthState = {

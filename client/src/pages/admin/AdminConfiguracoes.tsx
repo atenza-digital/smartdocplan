@@ -129,7 +129,8 @@ export default function AdminConfiguracoes() {
                 <Shield className="w-4 h-4 text-primary" /> Permissões por Perfil
               </CardTitle>
               <CardDescription className="text-xs">
-                Visão geral das permissões de cada perfil na plataforma.
+                Permissões padrão de cada perfil. Os perfis da empresa podem ser ajustados por empresa, e perfis novos criados,
+                em Parâmetros da empresa › Perfis e permissões (pelo Admin da empresa ou pelo Administrador Geral, em “Operar como empresa”).
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -138,9 +139,9 @@ export default function AdminConfiguracoes() {
                   { role: "Administrador Geral", perms: ["Acesso total", "Usuários", "Configurações", "Checklist de documentos", "Calendário da saúde", "Dados de saúde", "Auditoria com IP e navegador"] },
                   { role: "Analista de RH", perms: ["Empresas e colaboradores", "Andamento das solicitações", "Validação de documentos", "Chamados", "Auditoria"] },
                   { role: "Auditor", perms: ["Empresas (somente leitura)", "Solicitações", "Chamados", "Auditoria"] },
-                  { role: "Admin da empresa", perms: ["Painel da empresa", "Colaboradores", "Solicitações", "Chamados", "Parâmetros da empresa", "Estrutura da empresa"] },
-                  { role: "RH da empresa", perms: ["Colaboradores", "Solicitações", "Documentos", "Dados de saúde", "Parâmetros da empresa", "Estrutura da empresa"] },
-                  { role: "Gestor", perms: ["Ver colaboradores", "Ver solicitações", "Abrir chamados"] },
+                  { role: "Admin da empresa", perms: ["Painel da empresa", "Colaboradores e documentos", "Envia documentos de saúde (sem abrir)", "Solicitações", "Chamados", "Parâmetros e Estrutura", "Perfis e permissões"] },
+                  { role: "RH da empresa", perms: ["Colaboradores e documentos", "Dados de saúde", "Solicitações", "Chamados", "Parâmetros e Estrutura"] },
+                  { role: "Gestor", perms: ["Visualização", "Abrir chamados"] },
                   { role: "Consulta", perms: ["Somente visualização"] },
                 ].map(p => (
                   <div key={p.role} className="flex flex-wrap items-start gap-2 py-2 border-b border-border last:border-0">

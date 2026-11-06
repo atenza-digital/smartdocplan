@@ -5,12 +5,14 @@ import { RecurringTypesManager } from "@/components/RecurringTypesManager";
 import { VacationParametersCard } from "@/components/VacationParametersCard";
 import { AddressFields } from "@/components/AddressFields";
 import { emptyAddress, formatAddress, type AddressValue } from "@shared/address";
-import { CalendarClock, CalendarDays } from "lucide-react";
+import { CalendarClock, CalendarDays, UserCog } from "lucide-react";
 
 // Abas que podem ser abertas direto pelo link (?aba=).
-const ABAS_PARAMETROS = ["empresa", "cargos", "locais", "matriz", "mensais", "ferias"];
+const ABAS_PARAMETROS = ["empresa", "cargos", "locais", "matriz", "mensais", "ferias", "perfis"];
 import { trpc } from "@/lib/trpc";
 import { useLocalAuth as useAuth } from "@/contexts/LocalAuthContext";
+import { canManageProfiles, canSeeCompanySettings } from "@shared/permissions";
+import { CompanyProfilesManager } from "@/components/CompanyProfilesManager";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -102,7 +104,7 @@ export default function EmpresaParametros() {
   const abaAtiva = ABAS_PARAMETROS.includes(abaDoEndereco) ? abaDoEndereco : "empresa";
   const { user, effectiveCompanyId } = useAuth();
   const companyId = effectiveCompanyId ?? 0;
-  const canEdit = ["platform_admin", "company_admin", "company_hr"].includes(user?.role ?? "");
+  const canEdit = canSeeCompanySettings(user);
 
   const { data: empresa } = trpc.companies.get.useQuery({ id: companyId }, { enabled: companyId > 0 });
   const { data: companyUpdateRequests = [], refetch: refetchCompanyUpdateRequests } = trpc.companyUpdateRequests.listByCompany.useQuery(
@@ -485,6 +487,12 @@ export default function EmpresaParametros() {
               <CalendarDays className="mr-1 h-3.5 w-3.5" />
               Férias
             </TabsTrigger>
+            {canManageProfiles(user) && (
+              <TabsTrigger value="perfis" className="text-xs">
+                <UserCog className="mr-1 h-3.5 w-3.5" />
+                Perfis e permissões
+              </TabsTrigger>
+            )}
           </TabsList>
 
           <TabsContent value="empresa" className="mt-4">
@@ -907,6 +915,12 @@ export default function EmpresaParametros() {
           <TabsContent value="ferias" className="mt-4">
             <VacationParametersCard companyId={companyId} canEdit={canEdit} />
           </TabsContent>
+
+          {canManageProfiles(user) && companyId > 0 && (
+            <TabsContent value="perfis" className="mt-4">
+              <CompanyProfilesManager companyId={companyId} currentUserId={user?.id} />
+            </TabsContent>
+          )}
         </Tabs>
       </div>
 

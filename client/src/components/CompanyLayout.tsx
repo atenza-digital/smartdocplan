@@ -32,7 +32,7 @@ import {
   X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { canSeeCompanySettings } from "@shared/permissions";
+import { canManageProfiles, canSeeCompanySettings, podeVer, PERFIL_BASE_LABEL, type Ator, type CompanyRole } from "@shared/permissions";
 import BrandLogo from "@/components/BrandLogo";
 import { CampaignBanner, CampaignPreviewBar, CampaignRibbon, CampaignStrip, CampaignTheme, useActiveCampaign } from "@/components/HealthCampaign";
 import { trpc } from "@/lib/trpc";
@@ -46,19 +46,19 @@ type NavItem = {
   href: string;
   icon: typeof LayoutDashboard;
   label: string;
-  visible?: (role?: string | null) => boolean;
+  visible?: (user: Ator) => boolean;
 };
 
 const navItems: NavItem[] = [
   { href: "/empresa", icon: LayoutDashboard, label: "Dashboard" },
-  { href: "/empresa/solicitacoes", icon: ClipboardList, label: "Solicitações de RH" },
-  { href: "/empresa/colaboradores", icon: Users, label: "Colaboradores" },
-  { href: "/empresa/documentos", icon: FileStack, label: "Documentos da Empresa" },
-  { href: "/empresa/ferias", icon: ClipboardList, label: "Férias" },
-  { href: "/empresa/pendencias", icon: AlertTriangle, label: "Pendências" },
-  { href: "/empresa/chamados", icon: Ticket, label: "Chamados" },
-  { href: "/empresa/bi", icon: BarChart3, label: "BI / Relatórios" },
-  { href: "/empresa/parametros", icon: SlidersHorizontal, label: "Parâmetros da empresa", visible: canSeeCompanySettings },
+  { href: "/empresa/solicitacoes", icon: ClipboardList, label: "Solicitações de RH", visible: (u) => podeVer(u, "solicitacoes.ver") },
+  { href: "/empresa/colaboradores", icon: Users, label: "Colaboradores", visible: (u) => podeVer(u, "colaboradores.ver") },
+  { href: "/empresa/documentos", icon: FileStack, label: "Documentos da Empresa", visible: (u) => podeVer(u, "documentos_empresa.ver") },
+  { href: "/empresa/ferias", icon: ClipboardList, label: "Férias", visible: (u) => podeVer(u, "ferias.ver") },
+  { href: "/empresa/pendencias", icon: AlertTriangle, label: "Pendências", visible: (u) => podeVer(u, "pendencias.ver") },
+  { href: "/empresa/chamados", icon: Ticket, label: "Chamados", visible: (u) => podeVer(u, "chamados.ver") },
+  { href: "/empresa/bi", icon: BarChart3, label: "BI / Relatórios", visible: (u) => podeVer(u, "bi.ver") },
+  { href: "/empresa/parametros", icon: SlidersHorizontal, label: "Parâmetros da empresa", visible: (u) => canSeeCompanySettings(u) || canManageProfiles(u) },
   { href: "/empresa/estrutura", icon: Settings, label: "Estrutura da empresa", visible: canSeeCompanySettings },
   { href: "/empresa/configuracoes", icon: Settings, label: "Configurações" },
 ];
@@ -126,7 +126,7 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
     company_viewer: "Consulta",
   };
 
-  const visibleNavItems = navItems.filter((item) => !item.visible || item.visible(user?.role ?? null));
+  const visibleNavItems = navItems.filter((item) => !item.visible || item.visible(user));
 
   const NavList = ({ mobile = false }: { mobile?: boolean }) => (
     <nav className="flex-1 overflow-y-auto space-y-1 px-2 py-3">
@@ -258,7 +258,7 @@ export default function CompanyLayout({ children, title }: CompanyLayoutProps) {
                   <div className="hidden text-left sm:block">
                     <p className="text-xs font-medium leading-tight">{user?.name ?? "Usuário"}</p>
                     <p className="text-[10px] leading-tight text-muted-foreground">
-                      {roleLabel[user?.role ?? ""] ?? user?.role}
+                      {user?.perfilNome && user.perfilNome !== PERFIL_BASE_LABEL[user.role as CompanyRole] ? user.perfilNome : roleLabel[user?.role ?? ""] ?? user?.role}
                     </p>
                   </div>
                 </Button>

@@ -2,6 +2,10 @@
 
 ## [Não publicado]
 
+- Perfis e permissões por empresa (pedido do CT-25): nova aba “Perfis e permissões” em Parâmetros da empresa, para o Admin da empresa e o Administrador Geral ajustarem o que Admin, RH, Gestor e Consulta podem ver e fazer, criarem perfis com nome próprio (com base num dos quatro) e moverem usuários entre eles. Sem nenhum ajuste, cada perfil continua exatamente como antes.
+- Travas dos perfis, conferidas no servidor: documentos de saúde só em perfis baseados em Admin ou RH da empresa; o Admin sempre mantém “Gerenciar perfis”; ninguém troca o próprio perfil. Toda mudança vai para a auditoria e mudanças no acesso a dados de saúde avisam a equipe SmartDocPlan.
+- Menus, telas e consultas da empresa passam a seguir as permissões do perfil (ver colaboradores, documentos da empresa, solicitações, férias, pendências, chamados e BI), inclusive quando a API é chamada direto. Avisos do sino à empresa vão a quem tem “Receber avisos”.
+- Usuários: ao criar ou alterar o papel, a equipe SmartDocPlan pode escolher um perfil criado pela empresa; a lista mostra o perfil de cada um. Nova tabela `company_profiles` e coluna `users.profileId` (migration só cria e adiciona).
 - Motivo de rejeição de documento da empresa e de recorrente não aparece mais com ponto duplicado quando a equipe termina o texto com ponto.
 - Sino de avisos com nome acessível (“Avisos” e o total de não lidos) para leitores de tela.
 - Férias de quem já é contratado: novo campo “Férias em dia até” no colaborador (no cadastro e no dossiê, botão “Informar/Alterar”). Os períodos aquisitivos que terminam até essa data contam como já tirados, e todos os períodos vencidos depois dela passam a aparecer. Sem o campo, nada muda (vencido some 30 dias após o prazo). Nova coluna `feriasEmDiaAte` (migration só adiciona).

@@ -12,7 +12,20 @@ import {
   isPlatformUser,
   canManagePlatformSettings,
   platformTeamRecipients,
+  podeVer,
+  temPermissao,
+  canManageProfiles,
+  isCompanyUser,
+  normalizarPermissoes,
+  permissoesPermitidas,
+  COMPANY_ROLES,
+  PERFIL_BASE_LABEL,
+  PERMISSOES,
+  PERMISSOES_PADRAO,
+  type Ator,
+  type CompanyRole,
 } from "@shared/permissions";
+import { limparCachePerfis, perfisDaEmpresa, resolverPerfil, usuariosDaEmpresaCom } from "./companyProfiles";
 import { describeCompanyChanges } from "@shared/companyChanges";
 import { APPROVED_STATUSES, NOT_IN_FORCE_STATUSES, splitDocumentVersions } from "@shared/documentVersions";
 import { REQUEST_STATUS_LABELS, canTransitionRequest, type RequestStatus } from "@shared/requestStatus";
@@ -29,7 +42,7 @@ import { z } from "zod";
 import { getDb, getUserByEmail, createLocalUser } from "./db";
 import {
   companies, employees, requests, tickets, auditLogs,
-  positions, worksites, companyDocuments, employeeDocuments, documentChangeRequests,
+  positions, worksites, companyDocuments, employeeDocuments, documentChangeRequests, companyProfiles,
   legalRequirements, positionRequirements, recurringDocumentTypes, healthCampaigns, users, documentTypeTemplates, requestDocumentUploads,
   companyUpdateRequests, userNotifications, ticketMessages, userWorksites
 } from "../drizzle/schema";
@@ -214,9 +227,8 @@ async function notifyCompanyStaff(opts: {
   try {
     const db = await getDb();
     if (!db) return;
-    const rows = await db.select({ id: users.id, role: users.role }).from(users)
-      .where(and(eq(users.companyId, opts.companyId), inArray(users.role, ["company_admin", "company_hr"]), eq(users.ativo, true)));
-    await createNotifications({ ...opts, userIds: rows.filter((row) => !opts.saude || canAccessHealthData(row.role)).map((row) => row.id) });
+    const userIds = await usuariosDaEmpresaCom(db, opts.companyId, (ator) => temPermissao(ator, "avisos.receber") && (!opts.saude || canAccessHealthData(ator)));
+    await createNotifications({ ...opts, userIds });
   } catch { /* não bloquear a ação principal */ }
 }
 
@@ -446,7 +458,7 @@ const companiesRouter = router({
     feriasMesesParaSolicitar: z.number().int().min(1, "Use de 1 a 12 meses para solicitar.").max(12, "Use de 1 a 12 meses para solicitar."),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar os parâmetros da empresa.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode alterar os parâmetros da empresa.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const [antes] = await db.select({
@@ -569,7 +581,7 @@ const companyUpdateRequestsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode solicitar alteração cadastral.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode solicitar alteração cadastral.");
 
     const company = await db.select().from(companies).where(eq(companies.id, input.companyId)).limit(1);
     const currentCompany = company[0];
@@ -670,17 +682,10 @@ const companyUpdateRequestsRouter = router({
       updatedAt: new Date(),
     } as any).where(eq(companyUpdateRequests.id, request.id));
 
-    const companyUsers = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(and(
-        eq(users.companyId, request.companyId),
-        eq(users.ativo, true),
-        or(eq(users.role, "company_admin"), eq(users.role, "company_hr"))
-      ));
+    const companyUsers = await usuariosDaEmpresaCom(db, request.companyId, (ator) => temPermissao(ator, "avisos.receber"));
 
     await createNotifications({
-      userIds: [request.requestedBy, ...companyUsers.map((item) => item.id)],
+      userIds: [request.requestedBy, ...companyUsers],
       companyId: request.companyId,
       tipo: "company_update_request_approved",
       titulo: "Atualização cadastral aprovada",
@@ -840,7 +845,7 @@ const companyDocumentsRouter = router({
   listByCompany: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "documentos_empresa.ver")) return [];
     // Exclusão lógica: o registro e o arquivo ficam guardados, mas saem da lista.
     return db
       .select()
@@ -853,7 +858,7 @@ const companyDocumentsRouter = router({
     const vazio = { total: 0, enviados: 0, obrigatoriosPendentes: 0, vencidos: 0, aVencer: 0, emValidacao: 0 };
     const db = await getDb();
     if (!db) return vazio;
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return vazio;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "documentos_empresa.ver")) return vazio;
 
     const docs = await db.select().from(companyDocuments).where(and(eq(companyDocuments.companyId, input.companyId), ne(companyDocuments.status, "excluido")));
     // Só a versão em vigor (aprovada mais recente) de cada tipo conta: versões antigas vencidas não são pendência.
@@ -972,7 +977,7 @@ const companyDocumentsRouter = router({
     substituir: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    assertAccess(canManageCompanyData(ctx.user, "documentos_empresa.gerenciar") || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
@@ -1038,7 +1043,7 @@ const companyDocumentsRouter = router({
     const doc = result[0];
     if (!doc || doc.status === "excluido") throw new Error("Documento da empresa não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role) || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
+    assertAccess(canManageCompanyData(ctx.user, "documentos_empresa.gerenciar") || isPlatformOperator(ctx.user.role), "Seu perfil não pode gerenciar documentos da empresa.");
     const datas = mergedDocumentDates(input, doc);
     assertDocumentDates(datas.dataEmissao, datas.validade);
 
@@ -1134,7 +1139,7 @@ const employeesRouter = router({
   })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !(podeVer(ctx.user, "colaboradores.ver") || podeVer(ctx.user, "solicitacoes.ver") || podeVer(ctx.user, "ferias.ver"))) return [];
     const conditions = [eq(employees.companyId, input.companyId)];
     if (input.status) conditions.push(eq(employees.status, input.status));
     if (input.liberacao) conditions.push(eq(employees.liberacao, input.liberacao));
@@ -1149,7 +1154,7 @@ const employeesRouter = router({
     const result = await db.select().from(employees).where(eq(employees.id, input.id)).limit(1);
     const emp = result[0];
     if (!emp) return null;
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, emp.companyId)) return null;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, emp.companyId) || !podeVer(ctx.user, "colaboradores.ver")) return null;
     return emp;
   }),
 
@@ -1167,7 +1172,7 @@ const employeesRouter = router({
     telefone: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar colaboradores.");
+    assertAccess(canManageCompanyData(ctx.user), "Seu perfil não pode cadastrar colaboradores.");
     const erroFerias = feriasEmDiaAteError(input.feriasEmDiaAte, input.dataAdmissao, brazilToday());
     if (erroFerias) throw new Error(erroFerias);
     const db = await getDb();
@@ -1225,7 +1230,7 @@ const employeesRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar colaboradores.");
+    assertAccess(canManageCompanyData(ctx.user), "Seu perfil não pode editar colaboradores.");
     const erroFerias = feriasEmDiaAteError(input.feriasEmDiaAte, employee.dataAdmissao, brazilToday());
     if (erroFerias) throw new Error(erroFerias);
     const { id, feriasEmDiaAte, ...data } = input;
@@ -1271,7 +1276,7 @@ const employeesRouter = router({
     const empty = { rows: [] as (typeof employees.$inferSelect)[], total: 0, contagens: { ativos: 0, efetivacao: 0, desligados: 0 } };
     const db = await getDb();
     if (!db) return empty;
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return empty;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "colaboradores.ver")) return empty;
 
     // Mesma regra de shared/employeeSections.ts, em SQL.
     const emEfetivacao = inArray(employees.liberacao, ["aguardando_documentacao", "em_analise"]);
@@ -1315,7 +1320,7 @@ const employeesRouter = router({
     const db = await getDb();
     const empty = { total: 0, ativos: 0, afastados: 0, desligados: 0, liberados: 0, emAnalise: 0, aguardandoDocumentacao: 0, semRequisitos: 0 };
     if (!db) return empty;
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return empty;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "colaboradores.ver")) return empty;
     const [total] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(eq(employees.companyId, input.companyId));
     const [ativos] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(and(eq(employees.companyId, input.companyId), eq(employees.status, "ativo")));
     const [afastados] = await db.select({ count: sql<number>`count(*)` }).from(employees).where(and(eq(employees.companyId, input.companyId), eq(employees.status, "afastado")));
@@ -1353,15 +1358,15 @@ const requestsRouter = router({
     if (input.companyId === 0) {
       if (!isPlatformUser(ctx.user.role)) return [];
       const conditions = [];
-      if (!canAccessHealthData(ctx.user.role)) conditions.push(sql`${requests.tipo} NOT IN ('atestado_medico', 'afastamento')`);
+      if (!canAccessHealthData(ctx.user)) conditions.push(sql`${requests.tipo} NOT IN ('atestado_medico', 'afastamento')`);
       if (input.status) conditions.push(eq(requests.status, input.status));
       if (input.tipo) conditions.push(eq(requests.tipo, input.tipo));
       if (input.employeeId) conditions.push(eq(requests.employeeId, input.employeeId));
       return db.select().from(requests).where(conditions.length ? and(...conditions) : undefined).orderBy(desc(requests.createdAt));
     }
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "solicitacoes.ver")) return [];
     const conditions = [eq(requests.companyId, input.companyId)] as any[];
-    if (!canAccessHealthData(ctx.user.role)) conditions.push(sql`${requests.tipo} NOT IN ('atestado_medico', 'afastamento')`);
+    if (!canAccessHealthData(ctx.user)) conditions.push(sql`${requests.tipo} NOT IN ('atestado_medico', 'afastamento')`);
     if (input.status) conditions.push(eq(requests.status, input.status));
     if (input.tipo) conditions.push(eq(requests.tipo, input.tipo));
     if (input.employeeId) conditions.push(eq(requests.employeeId, input.employeeId));
@@ -1374,15 +1379,15 @@ const requestsRouter = router({
     const result = await db.select().from(requests).where(eq(requests.id, input.id)).limit(1);
     const req = result[0];
     if (!req) return null;
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, req.companyId)) return null;
-    if (isHealthCategory(req.tipo) && !canAccessHealthData(ctx.user.role)) return null;
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, req.companyId) || !podeVer(ctx.user, "solicitacoes.ver")) return null;
+    if (isHealthCategory(req.tipo) && !canAccessHealthData(ctx.user)) return null;
     return req;
   }),
 
   create: protectedProcedure.input(requestCreationInput).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canCreateRequests(ctx.user.role), "Seu perfil não pode abrir solicitações.");
-    assertAccess(!isHealthCategory(input.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(canCreateRequests(ctx.user), "Seu perfil não pode abrir solicitações.");
+    assertAccess(!isHealthCategory(input.tipo) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     const result = await createRequestWithRequirements(input, ctx.user.id);
     if (!isPlatformUser(ctx.user.role)) {
       await notifyPlatformTeam({
@@ -1406,7 +1411,7 @@ const requestsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const request = await getRequestByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
-    assertAccess(!isHealthCategory(request.tipo) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!isHealthCategory(request.tipo) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(canManageRequestWorkflow(ctx.user.role), "Seu perfil não pode alterar o status da solicitação.");
     assertAccess(
       canTransitionRequest(request.status, input.status),
@@ -1434,7 +1439,7 @@ const requestsRouter = router({
   stats: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return { total: 0, novas: 0, emAnalise: 0, concluidas: 0, rejeitadas: 0 };
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return { total: 0, novas: 0, emAnalise: 0, concluidas: 0, rejeitadas: 0 };
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "solicitacoes.ver")) return { total: 0, novas: 0, emAnalise: 0, concluidas: 0, rejeitadas: 0 };
     const [total] = await db.select({ count: sql<number>`count(*)` }).from(requests).where(eq(requests.companyId, input.companyId));
     const [novas] = await db.select({ count: sql<number>`count(*)` }).from(requests).where(and(eq(requests.companyId, input.companyId), eq(requests.status, "nova")));
     const [emAnalise] = await db.select({ count: sql<number>`count(*)` }).from(requests).where(and(eq(requests.companyId, input.companyId), eq(requests.status, "em_analise")));
@@ -1470,10 +1475,10 @@ const ticketsRouter = router({
     if (!db) return [];
     const conditions = [];
     if (input.companyId) {
-      if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId)) return [];
+      if (!canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId) || !podeVer(ctx.user, "chamados.ver")) return [];
       conditions.push(eq(tickets.companyId, input.companyId));
     } else if (!isPlatformUser(ctx.user.role)) {
-      if (!ctx.user.companyId) return [];
+      if (!ctx.user.companyId || !podeVer(ctx.user, "chamados.ver")) return [];
       conditions.push(eq(tickets.companyId, ctx.user.companyId));
     }
     if (input.status) conditions.push(eq(tickets.status, input.status));
@@ -1501,7 +1506,7 @@ const ticketsRouter = router({
     const db = await getDb();
     if (!db) return [];
     const ticket = await getTicketByIdOrThrow(db, input.ticketId);
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId)) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, ticket.companyId) || !podeVer(ctx.user, "chamados.ver")) return [];
     return db.select({
       id: ticketMessages.id,
       origem: ticketMessages.origem,
@@ -1521,7 +1526,7 @@ const ticketsRouter = router({
     mensagem: z.string().trim().min(1, "Escreva a mensagem.").max(5000),
   })).mutation(async ({ ctx, input }) => {
     const isPlatform = canManageRequestWorkflow(ctx.user.role);
-    assertAccess(isPlatform || canCreateTickets(ctx.user.role), "Seu perfil não pode responder chamados.");
+    assertAccess(isPlatform || canCreateTickets(ctx.user), "Seu perfil não pode responder chamados.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const ticket = await getTicketByIdOrThrow(db, input.ticketId);
@@ -1554,7 +1559,7 @@ const ticketsRouter = router({
     prioridade: z.enum(["baixa","media","alta","urgente"]).default("media"),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canCreateTickets(ctx.user.role), "Seu perfil não pode abrir chamados.");
+    assertAccess(canCreateTickets(ctx.user), "Seu perfil não pode abrir chamados.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const [novo] = await db.insert(tickets).values({ ...input, criadoPor: ctx.user.id }).returning({ id: tickets.id });
@@ -1606,7 +1611,7 @@ const ticketsRouter = router({
 
   stats: protectedProcedure.query(async ({ ctx }) => {
     const db = await getDb();
-    if (!db) return { total: 0, abertos: 0, emAtendimento: 0, resolvidos: 0 };
+    if (!db || !podeVer(ctx.user, "chamados.ver")) return { total: 0, abertos: 0, emAtendimento: 0, resolvidos: 0 };
     const conditions = isPlatformUser(ctx.user.role) ? [] : ctx.user.companyId ? [eq(tickets.companyId, ctx.user.companyId)] : [];
     const whereClause = conditions.length ? and(...conditions) : undefined;
     const [total] = await db.select({ count: sql<number>`count(*)` }).from(tickets).where(whereClause);
@@ -1638,7 +1643,7 @@ const positionsRouter = router({
     cbo: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar cargos.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode cadastrar cargos.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     await db.insert(positions).values({
@@ -1667,7 +1672,7 @@ const positionsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const position = await getPositionByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar cargos.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar cargos.");
 
     const payload = {
       nome: input.nome.trim(),
@@ -1706,7 +1711,7 @@ const worksitesRouter = router({
     dataFim: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode cadastrar frentes de trabalho.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode cadastrar frentes de trabalho.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     if (input.dataInicio && input.dataFim && input.dataFim < input.dataInicio) throw new Error("A data final deve ser posterior à inicial.");
@@ -1741,7 +1746,7 @@ const worksitesRouter = router({
     const worksite = result[0];
     if (!worksite) throw new Error("Frente / local não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, worksite.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar frentes de trabalho.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar frentes de trabalho.");
 
     const payload = {
       nome: input.nome.trim(),
@@ -1863,7 +1868,7 @@ const positionRequirementsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const position = await getPositionByIdOrThrow(db, input.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar requisitos por função.");
 
     if (input.legalRequirementId) {
       const legalResult = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.legalRequirementId)).limit(1);
@@ -1919,7 +1924,7 @@ const positionRequirementsRouter = router({
     if (!requirement) throw new Error("Requisito da função não encontrado");
     const position = await getPositionByIdOrThrow(db, requirement.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar requisitos por função.");
 
     if (input.legalRequirementId) {
       const legalResult = await db.select().from(legalRequirements).where(eq(legalRequirements.id, input.legalRequirementId)).limit(1);
@@ -1961,7 +1966,7 @@ const positionRequirementsRouter = router({
     if (!requirement) throw new Error("Requisito da função não encontrado");
     const position = await getPositionByIdOrThrow(db, requirement.positionId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, position.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar requisitos por função.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar requisitos por função.");
 
     await db.update(positionRequirements).set({ ativo: false }).where(eq(positionRequirements.id, input.id));
     await insertAuditLog({
@@ -1998,7 +2003,7 @@ const legalReqRouter = router({
     descricao: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar a matriz legal.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     await db.insert(legalRequirements).values({
@@ -2032,7 +2037,7 @@ const legalReqRouter = router({
     const requirement = result[0];
     if (!requirement) throw new Error("Requisito legal não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, requirement.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar a matriz legal.");
 
     const payload = {
       norma: input.norma.trim(),
@@ -2061,7 +2066,7 @@ const legalReqRouter = router({
     const requirement = result[0];
     if (!requirement) throw new Error("Requisito legal não encontrado");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, requirement.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode editar a matriz legal.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode editar a matriz legal.");
     await db.update(legalRequirements).set({ ativo: false }).where(eq(legalRequirements.id, input.id));
     await insertAuditLog({
       userId: ctx.user.id,
@@ -2139,7 +2144,7 @@ const auditRouter = router({
       db.select({ total: sql<number>`count(*)::int` }).from(auditLogs).where(where),
     ]);
     // Raw document/request payloads may contain health information from older events.
-    const canSeeHealth = canAccessHealthData(ctx.user.role);
+    const canSeeHealth = canAccessHealthData(ctx.user);
     // IP e navegador são dados pessoais: só o Administrador Geral vê.
     const canSeeClient = canManagePlatformSettings(ctx.user.role);
     const visibleRows = rows
@@ -2161,6 +2166,209 @@ const auditRouter = router({
 });
 
 // USERS ROUTER (gestão de usuários das empresas)
+// --- PERFIS E PERMISSÕES DA EMPRESA (Etapa 5) ---
+const companyRoleSchema = z.enum(["company_admin", "company_hr", "company_manager", "company_viewer"]);
+
+/** Quem gerencia os perfis desta empresa: Administrador Geral ou quem tem "Gerenciar perfis" na própria empresa. */
+function assertGerenciaPerfis(user: { role: string; companyId: number | null; permissoes?: readonly string[] | null }, companyId: number) {
+  assertAccess(canAccessCompany(user.role, user.companyId, companyId), "Acesso negado");
+  assertAccess(canManageProfiles(user), "Seu perfil não pode gerenciar perfis e permissões.");
+}
+
+const temSaude = (lista: readonly string[]) => lista.filter((p) => p.startsWith("saude.")).sort().join(",");
+
+const profilesRouter = router({
+  /** Perfis da empresa (4 padrão + personalizados), com o catálogo e os usuários de cada um. */
+  list: protectedProcedure.input(z.object({ companyId: z.number() })).query(async ({ ctx, input }) => {
+    assertGerenciaPerfis(ctx.user, input.companyId);
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    limparCachePerfis(input.companyId);
+    const perfis = await perfisDaEmpresa(db, input.companyId);
+    const pessoas = await db.select({ id: users.id, name: users.name, email: users.email, role: users.role, profileId: users.profileId, ativo: users.ativo })
+      .from(users).where(eq(users.companyId, input.companyId)).orderBy(users.name);
+    const resolvidos = pessoas.map((p) => ({ ...p, perfil: resolverPerfil({ ...p, companyId: input.companyId }, perfis) }));
+    const usaPersonalizado = (p: (typeof resolvidos)[number]) =>
+      !!p.profileId && perfis.some((x) => x.id === p.profileId && x.ativo && !x.padrao && x.baseRole === p.role);
+    const padroes = COMPANY_ROLES.map((baseRole) => {
+      const editado = perfis.find((x) => x.padrao && x.ativo && x.baseRole === baseRole);
+      return {
+        id: editado?.id ?? null,
+        tipo: "padrao" as const,
+        nome: PERFIL_BASE_LABEL[baseRole],
+        baseRole,
+        editado: !!editado,
+        permissoes: editado ? normalizarPermissoes(baseRole, editado.permissoes, true) : [...PERMISSOES_PADRAO[baseRole]],
+        usuarios: resolvidos.filter((p) => p.role === baseRole && !usaPersonalizado(p)).map(({ id, name, email, ativo }) => ({ id, name, email, ativo })),
+      };
+    });
+    const personalizados = perfis.filter((x) => !x.padrao && x.ativo).map((x) => ({
+      id: x.id,
+      tipo: "personalizado" as const,
+      nome: x.nome,
+      baseRole: x.baseRole as CompanyRole,
+      editado: true,
+      permissoes: normalizarPermissoes(x.baseRole as CompanyRole, x.permissoes, false),
+      usuarios: resolvidos.filter((p) => p.profileId === x.id && usaPersonalizado(p)).map(({ id, name, email, ativo }) => ({ id, name, email, ativo })),
+    }));
+    return {
+      perfis: [...padroes, ...personalizados],
+      catalogo: PERMISSOES,
+      permitidas: Object.fromEntries(COMPANY_ROLES.map((r) => [r, permissoesPermitidas(r)])) as Record<CompanyRole, string[]>,
+      padroesOriginais: PERMISSOES_PADRAO,
+    };
+  }),
+
+  /** Salva um perfil padrão (por papel) ou personalizado (novo ou existente). As travas são aplicadas aqui. */
+  save: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    id: z.number().optional(),
+    padraoDe: companyRoleSchema.optional(),
+    nome: z.string().trim().min(2, "Dê um nome ao perfil.").max(120).optional(),
+    baseRole: companyRoleSchema.optional(),
+    permissoes: z.array(z.string()).max(50),
+  })).mutation(async ({ ctx, input }) => {
+    assertGerenciaPerfis(ctx.user, input.companyId);
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const perfis = await db.select().from(companyProfiles).where(eq(companyProfiles.companyId, input.companyId));
+    let antes: string[];
+    let depois: string[];
+    let perfilId: number;
+    let nome: string;
+    let baseRole: CompanyRole;
+    if (input.padraoDe) {
+      baseRole = input.padraoDe;
+      nome = PERFIL_BASE_LABEL[baseRole];
+      const atual = perfis.find((x) => x.padrao && x.baseRole === baseRole);
+      antes = atual?.ativo ? normalizarPermissoes(baseRole, atual.permissoes, true) : [...PERMISSOES_PADRAO[baseRole]];
+      depois = normalizarPermissoes(baseRole, input.permissoes, true);
+      if (atual) {
+        await db.update(companyProfiles).set({ permissoes: depois, ativo: true, updatedAt: new Date() }).where(eq(companyProfiles.id, atual.id));
+        perfilId = atual.id;
+      } else {
+        const [novo] = await db.insert(companyProfiles).values({ companyId: input.companyId, nome, baseRole, permissoes: depois, padrao: true, criadoPor: ctx.user.id }).returning({ id: companyProfiles.id });
+        perfilId = novo.id;
+      }
+    } else if (input.id) {
+      const atual = perfis.find((x) => x.id === input.id && !x.padrao && x.ativo);
+      if (!atual) throw new Error("Perfil não encontrado.");
+      baseRole = atual.baseRole as CompanyRole;
+      nome = input.nome ?? atual.nome;
+      antes = normalizarPermissoes(baseRole, atual.permissoes, false);
+      depois = normalizarPermissoes(baseRole, input.permissoes, false);
+      // Quem gerencia pelo próprio perfil personalizado não pode tirar de si "Gerenciar perfis".
+      if (ctx.user.profileId === atual.id && antes.includes("perfis.gerenciar") && !depois.includes("perfis.gerenciar")) {
+        throw new Error("Você perderia o acesso a esta tela: mantenha \"Gerenciar perfis\" no seu próprio perfil.");
+      }
+      if (perfis.some((x) => x.ativo && x.id !== atual.id && x.nome.trim().toLowerCase() === nome.toLowerCase())) throw new Error("Já existe um perfil com esse nome.");
+      await db.update(companyProfiles).set({ nome, permissoes: depois, updatedAt: new Date() }).where(eq(companyProfiles.id, atual.id));
+      perfilId = atual.id;
+    } else {
+      if (!input.nome || !input.baseRole) throw new Error("Informe o nome e o perfil-base do novo perfil.");
+      baseRole = input.baseRole;
+      nome = input.nome;
+      if (Object.values(PERFIL_BASE_LABEL).some((rotulo) => rotulo.toLowerCase() === nome.toLowerCase())
+        || perfis.some((x) => x.ativo && x.nome.trim().toLowerCase() === nome.toLowerCase())) {
+        throw new Error("Já existe um perfil com esse nome.");
+      }
+      antes = [];
+      depois = normalizarPermissoes(baseRole, input.permissoes, false);
+      const [novo] = await db.insert(companyProfiles).values({ companyId: input.companyId, nome, baseRole, permissoes: depois, padrao: false, criadoPor: ctx.user.id }).returning({ id: companyProfiles.id });
+      perfilId = novo.id;
+    }
+    limparCachePerfis(input.companyId);
+    await insertAuditLog({
+      userId: ctx.user.id,
+      companyId: input.companyId,
+      acao: "alterou_permissoes_perfil",
+      entidade: "company_profiles",
+      entidadeId: perfilId,
+      dadosDepois: { nome, baseRole, antes, depois },
+    });
+    if (temSaude(antes) !== temSaude(depois) && !isPlatformUser(ctx.user.role)) {
+      await notifyPlatformTeam({
+        companyId: input.companyId,
+        tipo: "perfil_saude_alterado",
+        titulo: "Acesso a dados de saúde alterado",
+        mensagem: `A empresa alterou o acesso a documentos de saúde do perfil "${nome}".`,
+        link: `/admin/auditoria`,
+      });
+    }
+    return { id: perfilId, permissoes: depois };
+  }),
+
+  /** Volta um perfil padrão às permissões originais do papel. */
+  restoreDefault: protectedProcedure.input(z.object({ companyId: z.number(), baseRole: companyRoleSchema })).mutation(async ({ ctx, input }) => {
+    assertGerenciaPerfis(ctx.user, input.companyId);
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [atual] = await db.select().from(companyProfiles)
+      .where(and(eq(companyProfiles.companyId, input.companyId), eq(companyProfiles.baseRole, input.baseRole), eq(companyProfiles.padrao, true))).limit(1);
+    if (!atual || !atual.ativo) return { success: true };
+    await db.update(companyProfiles).set({ ativo: false, updatedAt: new Date() }).where(eq(companyProfiles.id, atual.id));
+    limparCachePerfis(input.companyId);
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: input.companyId, acao: "restaurou_perfil_padrao", entidade: "company_profiles", entidadeId: atual.id,
+      dadosDepois: { baseRole: input.baseRole, antes: atual.permissoes, depois: PERMISSOES_PADRAO[input.baseRole] },
+    });
+    return { success: true };
+  }),
+
+  /** Desativa um perfil personalizado sem ninguém usando (o registro fica guardado). */
+  deactivate: protectedProcedure.input(z.object({ companyId: z.number(), id: z.number() })).mutation(async ({ ctx, input }) => {
+    assertGerenciaPerfis(ctx.user, input.companyId);
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [atual] = await db.select().from(companyProfiles).where(and(eq(companyProfiles.id, input.id), eq(companyProfiles.companyId, input.companyId))).limit(1);
+    if (!atual || atual.padrao || !atual.ativo) throw new Error("Perfil não encontrado.");
+    const [emUso] = await db.select({ id: users.id }).from(users).where(and(eq(users.profileId, atual.id), eq(users.role, atual.baseRole))).limit(1);
+    if (emUso) throw new Error("Mova os usuários deste perfil para outro antes de desativá-lo.");
+    await db.update(companyProfiles).set({ ativo: false, updatedAt: new Date() }).where(eq(companyProfiles.id, atual.id));
+    limparCachePerfis(input.companyId);
+    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId, acao: "desativou_perfil", entidade: "company_profiles", entidadeId: atual.id, dadosDepois: { nome: atual.nome } });
+    return { success: true };
+  }),
+
+  /** Move um usuário da empresa para um perfil (padrão do papel ou personalizado). Criar usuário continua com a equipe SmartDocPlan. */
+  assignUser: protectedProcedure.input(z.object({
+    companyId: z.number(),
+    userId: z.number(),
+    baseRole: companyRoleSchema,
+    profileId: z.number().nullable(),
+  })).mutation(async ({ ctx, input }) => {
+    assertGerenciaPerfis(ctx.user, input.companyId);
+    assertAccess(input.userId !== ctx.user.id || isPlatformUser(ctx.user.role), "Você não pode trocar o seu próprio perfil.");
+    const db = await getDb();
+    if (!db) throw new Error("Banco de dados indisponível.");
+    const [pessoa] = await db.select().from(users).where(eq(users.id, input.userId)).limit(1);
+    if (!pessoa || pessoa.companyId !== input.companyId || !isCompanyUser(pessoa.role)) throw new Error("Usuário não encontrado nesta empresa.");
+    let baseRole = input.baseRole;
+    if (input.profileId) {
+      const [perfil] = await db.select().from(companyProfiles).where(eq(companyProfiles.id, input.profileId)).limit(1);
+      if (!perfil || perfil.companyId !== input.companyId || perfil.padrao || !perfil.ativo) throw new Error("Perfil não encontrado.");
+      baseRole = perfil.baseRole as CompanyRole;
+    }
+    await db.update(users).set({ role: baseRole, profileId: input.profileId, updatedAt: new Date() } as any).where(eq(users.id, pessoa.id));
+    limparCachePerfis(input.companyId);
+    await insertAuditLog({
+      userId: ctx.user.id, companyId: input.companyId, acao: "alterou_perfil_usuario", entidade: "users", entidadeId: pessoa.id,
+      dadosDepois: { antes: { role: pessoa.role, profileId: pessoa.profileId }, depois: { role: baseRole, profileId: input.profileId } },
+    });
+    return { success: true };
+  }),
+});
+
+/** Perfil personalizado escolhido para um usuário: precisa ser da mesma empresa, ativo e do mesmo perfil-base. */
+async function perfilParaUsuario(db: NonNullable<Awaited<ReturnType<typeof getDb>>>, profileId: number | null | undefined, role: string, companyId?: number) {
+  if (!profileId) return null;
+  const [perfil] = await db.select().from(companyProfiles).where(eq(companyProfiles.id, profileId)).limit(1);
+  if (!perfil || perfil.padrao || !perfil.ativo || perfil.companyId !== companyId || perfil.baseRole !== role) {
+    throw new Error("Perfil personalizado inválido para esta empresa e papel.");
+  }
+  return perfil;
+}
+
 const usersRouter = router({
   create: superAdminProcedure.input(z.object({
     name: z.string().min(1),
@@ -2168,9 +2376,11 @@ const usersRouter = router({
     password: z.string().min(6),
     role: z.enum(["platform_admin","platform_analyst","platform_auditor","company_admin","company_hr","company_manager","company_viewer"]),
     companyId: z.number().optional(),
+    profileId: z.number().nullable().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
+    const perfil = await perfilParaUsuario(db, input.profileId, input.role, input.companyId);
     // Verificar se email ja existe
     const existing = await getUserByEmail(input.email);
     if (existing) throw new Error("E-mail já cadastrado.");
@@ -2184,6 +2394,11 @@ const usersRouter = router({
       companyId: input.companyId ?? null,
       mustChangePassword: true, // a senha inicial é provisória: o usuário cria a própria no primeiro acesso
     });
+    if (perfil) {
+      const criado = await getUserByEmail(input.email);
+      if (criado) await db.update(users).set({ profileId: perfil.id } as any).where(eq(users.id, criado.id));
+      limparCachePerfis(perfil.companyId);
+    }
     await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId ?? null, acao: 'criou_usuario', entidade: 'users', dadosDepois: { email: input.email, role: input.role } });
     return { success: true };
   }),
@@ -2217,8 +2432,10 @@ const usersRouter = router({
     const rows = await db.select({
       id: users.id, name: users.name, email: users.email,
       role: users.role, companyId: users.companyId, createdAt: users.createdAt,
-      ativo: users.ativo,
+      ativo: users.ativo, profileId: users.profileId,
     }).from(users).orderBy(desc(users.createdAt));
+    const personalizados = await db.select({ id: companyProfiles.id, nome: companyProfiles.nome, baseRole: companyProfiles.baseRole })
+      .from(companyProfiles).where(and(eq(companyProfiles.padrao, false), eq(companyProfiles.ativo, true)));
     const vinculos = await db.select({ userId: userWorksites.userId, worksiteId: worksites.id, nome: worksites.nome })
       .from(userWorksites)
       .innerJoin(worksites, eq(worksites.id, userWorksites.worksiteId))
@@ -2226,6 +2443,7 @@ const usersRouter = router({
     return rows.map(row => ({
       ...row,
       obras: vinculos.filter(v => v.userId === row.id).map(v => ({ id: v.worksiteId, nome: v.nome })),
+      perfilNome: personalizados.find(p => p.id === row.profileId && p.baseRole === row.role)?.nome ?? null,
     }));
   }),
 
@@ -2283,10 +2501,14 @@ const usersRouter = router({
     userId: z.number(),
     role: z.enum(["platform_admin","platform_analyst","platform_auditor","company_admin","company_hr","company_manager","company_viewer"]),
     companyId: z.number().optional(),
+    profileId: z.number().nullable().optional(),
   })).mutation(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
-    await db.update(users).set({ role: input.role, companyId: input.companyId ?? null }).where(eq(users.id, input.userId));
+    const perfil = await perfilParaUsuario(db, input.profileId, input.role, input.companyId);
+    await db.update(users).set({ role: input.role, companyId: input.companyId ?? null, profileId: perfil?.id ?? null } as any).where(eq(users.id, input.userId));
+    if (input.companyId) limparCachePerfis(input.companyId);
+    await insertAuditLog({ userId: ctx.user.id, companyId: input.companyId ?? null, acao: "alterou_papel_usuario", entidade: "users", entidadeId: input.userId, dadosDepois: { role: input.role, profileId: perfil?.id ?? null } });
     return { success: true };
   }),
 });
@@ -2343,7 +2565,7 @@ const recurringDocsRouter = router({
     exigeValidacao: z.boolean().default(true),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode configurar documentos recorrentes.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const [created] = await db.insert(recurringDocumentTypes).values({
@@ -2366,7 +2588,7 @@ const recurringDocsRouter = router({
     exigeValidacao: z.boolean().optional(),
     ativo: z.boolean().optional(),
   })).mutation(async ({ ctx, input }) => {
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode configurar documentos recorrentes.");
+    assertAccess(canManageCompanyData(ctx.user, "parametros.gerenciar"), "Seu perfil não pode configurar documentos recorrentes.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const [tipo] = await db.select().from(recurringDocumentTypes).where(eq(recurringDocumentTypes.id, input.id)).limit(1);
@@ -2387,6 +2609,7 @@ const recurringDocsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
+    assertAccess(podeVer(ctx.user, "colaboradores.ver"), "Seu perfil não tem acesso a esta área.");
     return buildEmployeeMonthlyGrid(db, employee, input.quantidade);
   }),
 
@@ -2395,6 +2618,7 @@ const recurringDocsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess(podeVer(ctx.user, "documentos_empresa.ver"), "Seu perfil não tem acesso a esta área.");
     return buildCompanyMonthlyGrid(db, input.companyId, input.quantidade);
   }),
 
@@ -2403,6 +2627,7 @@ const recurringDocsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
+    assertAccess((podeVer(ctx.user, "documentos_empresa.ver") || podeVer(ctx.user, "pendencias.ver")), "Seu perfil não tem acesso a esta área.");
     return buildCompanyMonthlyOverview(db, input.companyId, input.quantos);
   }),
 });
@@ -2486,9 +2711,9 @@ const MOTIVO_SAUDE_RESTRITO = "O motivo de documento de saúde fica visível só
  * O que cada perfil vê dos documentos do colaborador. Documento de saúde aparece para quem pode enviá-lo;
  * sem acesso a dado de saúde (Admin da empresa), aparece só com situação e datas, sem arquivo, observação e motivo.
  */
-function docVisibility(role: string) {
-  const veSaude = canAccessHealthData(role);
-  const enviaSaude = canSendHealthDocuments(role);
+function docVisibility(ator: Ator) {
+  const veSaude = canAccessHealthData(ator);
+  const enviaSaude = canSendHealthDocuments(ator);
   return {
     visivel: (doc: { categoria: string }) => !isHealthCategory(doc.categoria) || enviaSaude,
     ocultar: <T extends { categoria: string; fileUrl: string | null; fileKey: string | null; observacao: string | null; motivoRejeicao: string | null }>(doc: T) => {
@@ -2529,11 +2754,11 @@ const employeeDocsRouter = router({
     const db = await getDb();
     if (!db) return [];
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId)) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId) || !podeVer(ctx.user, "colaboradores.ver")) return [];
     const conditions = [eq(employeeDocuments.employeeId, input.employeeId), ne(employeeDocuments.status, "excluido")];
     if (input.categoria) conditions.push(eq(employeeDocuments.categoria, input.categoria));
     const docs = await db.select().from(employeeDocuments).where(and(...conditions)).orderBy(desc(employeeDocuments.createdAt));
-    const exibir = docVisibility(ctx.user.role);
+    const exibir = docVisibility(ctx.user);
     // Versão nova ainda não aprovada aparece junto do documento em vigor (novaVersao), não como outro documento.
     const { emVigor, novasVersoes } = splitDocumentVersions(docs.filter(exibir.visivel));
     return emVigor.map(doc => {
@@ -2557,7 +2782,8 @@ const employeeDocsRouter = router({
     if (!db) return [];
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
-    const exibir = docVisibility(ctx.user.role);
+    assertAccess(podeVer(ctx.user, "colaboradores.ver"), "Seu perfil não tem acesso a esta área.");
+    const exibir = docVisibility(ctx.user);
     if (!exibir.visivel(doc)) return [];
     const ids = [doc.id];
     let anterior = doc.substituiDocId;
@@ -2586,14 +2812,15 @@ const employeeDocsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const employee = await getEmployeeByIdOrThrow(db, input.employeeId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, employee.companyId), "Acesso negado");
+    assertAccess(podeVer(ctx.user, "colaboradores.ver"), "Seu perfil não tem acesso a esta área.");
     const result = await getEmployeeChecklist(db, employee);
-    const healthAccess = canAccessHealthData(ctx.user.role);
+    const healthAccess = canAccessHealthData(ctx.user);
     return {
       ...result,
       items: result.items.map(({ requirement, doc, estado }) => {
         // Sem acesso a dados de saúde, o arquivo não abre; o Admin da empresa ainda vê situação, nome e datas.
         const restrito = isHealthCategory(requirement.categoria) && !healthAccess;
-        const mostraDocumento = !restrito || canSendHealthDocuments(ctx.user.role);
+        const mostraDocumento = !restrito || canSendHealthDocuments(ctx.user);
         return {
           requirementId: requirement.id,
           documentoNome: requirement.documentoNome,
@@ -2619,7 +2846,7 @@ const employeeDocsRouter = router({
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
-    assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     const status = input.decisao === "aprovar" ? "valido" : "rejeitado";
     await db.transaction(async (tx) => {
       await tx.update(employeeDocuments).set({
@@ -2643,10 +2870,9 @@ const employeeDocsRouter = router({
       dadosDepois: { documentoId: doc.id, nome: doc.nome, motivo: motivo ?? null },
     });
     if (input.decisao === "rejeitar") {
-      const recipients = await db.select({ id: users.id }).from(users)
-        .where(and(eq(users.companyId, doc.companyId), inArray(users.role, ["company_admin", "company_hr"]), eq(users.ativo, true)));
+      const recipients = await usuariosDaEmpresaCom(db, doc.companyId, (ator) => temPermissao(ator, "avisos.receber"));
       await createNotifications({
-        userIds: recipients.map((user) => user.id),
+        userIds: recipients,
         companyId: doc.companyId,
         tipo: "documento_rejeitado",
         titulo: "Documento rejeitado",
@@ -2694,7 +2920,7 @@ const employeeDocsRouter = router({
       .innerJoin(companies, eq(companies.id, employeeDocuments.companyId))
       .where(and(...conditions))
       .orderBy(employeeDocuments.updatedAt);
-    return rows.filter((row) => !isHealthCategory(row.categoria) || canAccessHealthData(ctx.user.role));
+    return rows.filter((row) => !isHealthCategory(row.categoria) || canAccessHealthData(ctx.user));
   }),
 
   create: protectedProcedure.input(z.object({
@@ -2716,8 +2942,8 @@ const employeeDocsRouter = router({
     competencia: z.string().optional(),
   })).mutation(async ({ ctx, input }) => {
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, input.companyId), "Acesso negado");
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode enviar documentos de colaboradores.");
-    assertAccess(!isHealthCategory(input.categoria) || canSendHealthDocuments(ctx.user.role), "Documento de saúde só pode ser enviado pelo Administrador Geral, pelo RH ou pelo Administrador da empresa.");
+    assertAccess(canManageCompanyData(ctx.user), "Seu perfil não pode enviar documentos de colaboradores.");
+    assertAccess(!isHealthCategory(input.categoria) || canSendHealthDocuments(ctx.user), "Documento de saúde só pode ser enviado pelo Administrador Geral, pelo RH ou pelo Administrador da empresa.");
     assertDocumentDates(input.dataEmissao, input.validade);
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
@@ -2780,7 +3006,7 @@ const employeeDocsRouter = router({
     fileBase64: z.string().optional(),
     requirementId: z.number().nullable().optional(),
   })).mutation(async ({ ctx, input }) => {
-    assertAccess(canManageCompanyData(ctx.user.role), "Seu perfil não pode alterar documentos de colaboradores.");
+    assertAccess(canManageCompanyData(ctx.user), "Seu perfil não pode alterar documentos de colaboradores.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
@@ -2789,8 +3015,8 @@ const employeeDocsRouter = router({
     // O Admin da empresa envia nova versão de documento de saúde (sem abrir o arquivo), mas não muda a categoria.
     assertAccess(
       (!isHealthCategory(doc.categoria) && !isHealthCategory(categoria)) ||
-        canAccessHealthData(ctx.user.role) ||
-        (canSendHealthDocuments(ctx.user.role) && categoria === doc.categoria),
+        canAccessHealthData(ctx.user) ||
+        (canSendHealthDocuments(ctx.user) && categoria === doc.categoria),
       "Acesso a dados de saúde restrito ao Administrador Geral e RH.",
     );
     assertAccess(!isHealthCategory(categoria) || input.fileBase64 || !doc.fileUrl || doc.fileUrl.startsWith("/uploads/"), "Documentos de saúde devem usar o armazenamento protegido da plataforma.");
@@ -2911,7 +3137,7 @@ const employeeDocsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const doc = await getEmployeeDocByIdOrThrow(db, input.id);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, doc.companyId), "Acesso negado");
-    assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     // Exclusão lógica: o registro e o arquivo são mantidos para histórico e auditoria.
     await excluirDocumentoColaborador(db, doc.id);
     await encerrarPedidosDeExclusao(db, "colaborador", doc.id, ctx.user.id);
@@ -2939,14 +3165,15 @@ const deletionRequestsRouter = router({
     documentoId: z.number(),
     motivo: z.string().trim().min(5, "Explique o motivo da exclusão.").max(1000),
   })).mutation(async ({ ctx, input }) => {
-    assertAccess(canManageCompanyData(ctx.user.role) && !isPlatformUser(ctx.user.role), "Só o Admin e o RH da empresa pedem exclusão; a equipe SmartDocPlan exclui direto.");
+    assertAccess(!isPlatformUser(ctx.user.role), "A equipe SmartDocPlan exclui direto, sem pedido.");
+    assertAccess(canManageCompanyData(ctx.user, input.alvo === "empresa" ? "documentos_empresa.gerenciar" : "colaboradores.gerenciar"), "Seu perfil não pode pedir exclusão deste documento.");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     let alvo: { companyId: number; employeeId: number | null; nome: string; categoria: string | null; saude: boolean };
     if (input.alvo === "colaborador") {
       const doc = await getEmployeeDocByIdOrThrow(db, input.documentoId);
       const saude = isHealthCategory(doc.categoria);
-      assertAccess(!saude || canSendHealthDocuments(ctx.user.role), "Acesso a dados de saúde restrito.");
+      assertAccess(!saude || canSendHealthDocuments(ctx.user), "Acesso a dados de saúde restrito.");
       alvo = { companyId: doc.companyId, employeeId: doc.employeeId, nome: doc.nome, categoria: doc.categoria, saude };
     } else {
       const [doc] = await db.select().from(companyDocuments).where(eq(companyDocuments.id, input.documentoId)).limit(1);
@@ -2988,7 +3215,7 @@ const deletionRequestsRouter = router({
 
   /** A empresa desiste do pedido ainda pendente. */
   cancel: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
-    assertAccess(canManageCompanyData(ctx.user.role) && !isPlatformUser(ctx.user.role), "Acesso negado");
+    assertAccess(!isPlatformUser(ctx.user.role) && (canManageCompanyData(ctx.user) || canManageCompanyData(ctx.user, "documentos_empresa.gerenciar")), "Acesso negado");
     const db = await getDb();
     if (!db) throw new Error("Banco de dados indisponível.");
     const [pedido] = await db.select().from(documentChangeRequests).where(eq(documentChangeRequests.id, input.id)).limit(1);
@@ -3037,7 +3264,7 @@ const deletionRequestsRouter = router({
       .where(eq(documentChangeRequests.status, "pendente"))
       .orderBy(documentChangeRequests.createdAt);
     // Pedido de documento de saúde só aparece para quem pode ver dado de saúde.
-    const visiveis = rows.filter((row) => !isHealthCategory(row.categoria ?? "") || canAccessHealthData(ctx.user.role));
+    const visiveis = rows.filter((row) => !isHealthCategory(row.categoria ?? "") || canAccessHealthData(ctx.user));
     const idsColaborador = visiveis.filter((row) => row.alvo === "colaborador").map((row) => row.documentoId);
     const idsEmpresa = visiveis.filter((row) => row.alvo === "empresa").map((row) => row.documentoId);
     const arquivosColaborador = idsColaborador.length
@@ -3067,7 +3294,7 @@ const deletionRequestsRouter = router({
     if (!pedido) throw new Error("Pedido não encontrado.");
     if (pedido.status !== "pendente") throw new Error("Este pedido já foi decidido ou cancelado.");
     const saude = isHealthCategory(pedido.categoria ?? "");
-    assertAccess(!saude || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!saude || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     if (input.decisao === "aprovar") {
       if (pedido.alvo === "colaborador") {
         await excluirDocumentoColaborador(db, pedido.documentoId);
@@ -3118,10 +3345,12 @@ const dashboardRouter = router({
     const [reqNovas] = await db.select({ count: sql<number>`count(*)` }).from(requests).where(and(eq(requests.companyId, input.companyId), eq(requests.status, "nova")));
     const [totalTickets] = await db.select({ count: sql<number>`count(*)` }).from(tickets).where(and(eq(tickets.companyId, input.companyId), eq(tickets.status, "aberto")));
 
+    const verColab = podeVer(ctx.user, "colaboradores.ver");
+    const verSolic = podeVer(ctx.user, "solicitacoes.ver");
     return {
-      colaboradores: { total: totalEmp?.count ?? 0, ativos: ativos?.count ?? 0, afastados: afastados?.count ?? 0 },
-      solicitacoes: { total: totalReq?.count ?? 0, novas: reqNovas?.count ?? 0 },
-      chamadosAbertos: totalTickets?.count ?? 0,
+      colaboradores: verColab ? { total: totalEmp?.count ?? 0, ativos: ativos?.count ?? 0, afastados: afastados?.count ?? 0 } : { total: 0, ativos: 0, afastados: 0 },
+      solicitacoes: verSolic ? { total: totalReq?.count ?? 0, novas: reqNovas?.count ?? 0 } : { total: 0, novas: 0 },
+      chamadosAbertos: podeVer(ctx.user, "chamados.ver") ? totalTickets?.count ?? 0 : 0,
     };
   }),
 
@@ -3213,22 +3442,23 @@ const requestDocUploadsRouter = router({
     if (!db) return [];
     const request = await getRequestByIdOrThrow(db, input.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
-    if (isHealthCategory(request.tipo) && !canAccessHealthData(ctx.user.role)) return [];
+    assertAccess(podeVer(ctx.user, "solicitacoes.ver"), "Seu perfil não tem acesso a esta área.");
+    if (isHealthCategory(request.tipo) && !canAccessHealthData(ctx.user)) return [];
     const snapshot = request.requirementsSnapshot ? parseJsonText<{ templates: (typeof documentTypeTemplates.$inferSelect)[] }>(request.requirementsSnapshot) : null;
     const templates = snapshot?.templates ?? await db.select().from(documentTypeTemplates).where(and(eq(documentTypeTemplates.tipoSolicitacao, request.tipo), eq(documentTypeTemplates.ativo, true))).orderBy(documentTypeTemplates.ordem);
-    return templates.filter(t => !isHealthCategory(t.categoria) || canAccessHealthData(ctx.user.role));
+    return templates.filter(t => !isHealthCategory(t.categoria) || canAccessHealthData(ctx.user));
   }),
   // Listar uploads de uma solicitação
   listByRequest: protectedProcedure.input(z.object({ requestId: z.number() })).query(async ({ ctx, input }) => {
     const db = await getDb();
     if (!db) return [];
     const request = await getRequestByIdOrThrow(db, input.requestId);
-    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId)) return [];
-    if (isHealthCategory(request.tipo) && !canAccessHealthData(ctx.user.role)) return [];
+    if (!canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId) || !podeVer(ctx.user, "solicitacoes.ver")) return [];
+    if (isHealthCategory(request.tipo) && !canAccessHealthData(ctx.user)) return [];
     const docs = await db.select().from(requestDocumentUploads)
       .where(eq(requestDocumentUploads.requestId, input.requestId))
       .orderBy(requestDocumentUploads.categoria, requestDocumentUploads.nome);
-    return docs.filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user.role));
+    return docs.filter(doc => !isHealthCategory(doc.categoria) || canAccessHealthData(ctx.user));
   }),
 
   // Upload de documento (base64) — empresa faz upload
@@ -3251,9 +3481,9 @@ const requestDocUploadsRouter = router({
     if (!db) throw new Error("Banco de dados indisponível.");
     const request = await getRequestByIdOrThrow(db, input.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
-    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(input.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(input.categoria)) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(
-      canCreateRequests(ctx.user.role) || canManageRequestWorkflow(ctx.user.role),
+      canCreateRequests(ctx.user) || canManageRequestWorkflow(ctx.user.role),
       "Seu perfil não pode enviar documentos da solicitação."
     );
 
@@ -3326,7 +3556,7 @@ const requestDocUploadsRouter = router({
     assertDocumentDates(datas.dataEmissao, datas.validade);
     const request = await getRequestByIdOrThrow(db, document.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
-    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(document.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(document.categoria)) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     if (input.status === "reprovado" && !input.motivoReprovacao?.trim()) throw new Error("Informe o motivo da reprovação.");
     await db.update(requestDocumentUploads).set({
       status: input.status,
@@ -3350,9 +3580,9 @@ const requestDocUploadsRouter = router({
     if (!upload) throw new Error("Documento não encontrado");
     const request = await getRequestByIdOrThrow(db, upload.requestId);
     assertAccess(canAccessCompany(ctx.user.role, ctx.user.companyId, request.companyId), "Acesso negado");
-    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(upload.categoria)) || canAccessHealthData(ctx.user.role), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
+    assertAccess(!(isHealthCategory(request.tipo) || isHealthCategory(upload.categoria)) || canAccessHealthData(ctx.user), "Acesso a dados de saúde restrito ao Administrador Geral e RH.");
     assertAccess(
-      canCreateRequests(ctx.user.role) || canManageRequestWorkflow(ctx.user.role),
+      canCreateRequests(ctx.user) || canManageRequestWorkflow(ctx.user.role),
       "Seu perfil não pode excluir documentos da solicitação."
     );
     // Keep the requirement after deleting its attachment.
@@ -3401,6 +3631,7 @@ export const appRouter = router({
   legalRequirements: legalReqRouter,
   audit: auditRouter,
   users: usersRouter,
+  profiles: profilesRouter,
   employeeDocs: employeeDocsRouter,
   dashboard: dashboardRouter,
 });

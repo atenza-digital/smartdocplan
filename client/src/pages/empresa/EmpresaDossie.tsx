@@ -97,10 +97,10 @@ export default function EmpresaDossie() {
   const Layout = isAdminRoute ? AdminLayout : CompanyLayout;
   const employeeId = parseInt(params?.id ?? "0");
   const { user } = useAuth();
-  const canManage = canManageCompanyData(user?.role ?? null);
+  const canManage = canManageCompanyData(user);
   const canReview = canManageRequestWorkflow(user?.role ?? null);
   // O Admin da empresa envia documento de saúde e vê a situação, sem abrir o arquivo.
-  const canSendHealth = canManage && canSendHealthDocuments(user?.role ?? null);
+  const canSendHealth = canManage && canSendHealthDocuments(user);
   const utils = trpc.useUtils();
   const [rejectTarget, setRejectTarget] = useState<any | null>(null);
   const [rejectReason, setRejectReason] = useState("");

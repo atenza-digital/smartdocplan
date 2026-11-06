@@ -112,7 +112,7 @@ export default function Vacations() {
     setAction(null);
   }, [selectedId, companyId]);
   const [uploading, setUploading] = useState(false);
-  const canEdit = canManageCompanyData(user?.role);
+  const canEdit = canManageCompanyData(user, "ferias.gerenciar");
   const canReview = canManageRequestWorkflow(user?.role);
   const companies = trpc.companies.list.useQuery();
   const employees = trpc.employees.list.useQuery(

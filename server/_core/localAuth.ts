@@ -15,6 +15,7 @@ import { getSessionCookieOptions } from "./cookies";
 import { auditClientFields, requestClientInfo } from "./clientInfo";
 import { LOGIN_RULES, blockedMessage, loginLimiter, maskEmail } from "./loginRateLimit";
 import { isSessionRevoked, revokeSessionToken, revokeUserSessionsBefore } from "./sessionRevocation";
+import { comPermissoes, perfilPublico } from "../companyProfiles";
 
 /** Auditoria de autenticação (login, falha, bloqueio, troca de senha), com IP e navegador. */
 async function authAudit(action: string, opts: { userId?: number | null; companyId?: number | null; details?: unknown } = {}) {
@@ -68,7 +69,7 @@ export async function getUserFromLocalSession(cookieHeader: string | undefined) 
   if (await isSessionRevoked(token, session.userId, session.issuedAt)) return null;
 
   const user = await getUserById(session.userId);
-  return user?.ativo ? user : null;
+  return user?.ativo ? comPermissoes(user) : null;
 }
 
 /** Encerra a sessão do cookie (logout). Falha ao gravar não impede o logout: o cookie é apagado igual. */
@@ -166,6 +167,7 @@ export function registerLocalAuthRoutes(app: Express) {
         role: user.role,
         companyId: user.companyId,
         mustChangePassword: user.mustChangePassword ?? false,
+        ...(await perfilPublico(user)),
       });
     } catch (err) {
       console.error("[Auth] Login error:", err);
@@ -243,6 +245,7 @@ export function registerLocalAuthRoutes(app: Express) {
         role: user.role,
         companyId: user.companyId,
         mustChangePassword: user.mustChangePassword ?? false,
+        ...(await perfilPublico(user)),
       });
     } catch (err) {
       return res.status(500).json({ error: "Erro interno." });
